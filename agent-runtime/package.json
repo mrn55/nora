@@ -1,0 +1,13 @@
+{
+  "name": "@openclaw/agent-runtime",
+  "version": "1.0.0",
+  "description": "OpenClaw Agent Runtime — runs inside provisioned agent containers",
+  "bin": {
+    "openclaw": "./bin/openclaw.js"
+  },
+  "main": "lib/agent.js",
+  "scripts": {
+    "start": "node lib/agent.js"
+  },
+  "dependencies": {}
+}

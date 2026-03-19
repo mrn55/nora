@@ -1,0 +1,23 @@
+{
+  "name": "platform-api",
+  "private": true,
+  "scripts": {"start":"node server.js","test":"jest --forceExit --detectOpenHandles"},
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "pg": "^8.11.5",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "bullmq": "^5.7.0",
+    "ioredis": "^5.4.1",
+    "stripe": "^14.21.0",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.2.0",
+    "ws": "^8.16.0",
+    "dockerode": "^4.0.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
+  }
+}

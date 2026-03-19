@@ -1,0 +1,881 @@
+[
+  {
+    "id": "github",
+    "name": "GitHub",
+    "icon": "github",
+    "category": "developer-tools",
+    "description": "Access repos, issues, PRs, and GitHub Actions workflows",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "personal_access_token", "label": "Personal Access Token", "type": "password", "required": true, "placeholder": "ghp_..." },
+      { "key": "org", "label": "Organization", "type": "text", "required": false },
+      { "key": "repo", "label": "Default Repository", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "gitlab",
+    "name": "GitLab",
+    "icon": "gitlab",
+    "category": "developer-tools",
+    "description": "Manage GitLab repos, merge requests, pipelines, and issues",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "personal_access_token", "label": "Personal Access Token", "type": "password", "required": true, "placeholder": "glpat-..." },
+      { "key": "base_url", "label": "GitLab URL", "type": "url", "required": false, "placeholder": "https://gitlab.com" },
+      { "key": "group", "label": "Group/Namespace", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "bitbucket",
+    "name": "Bitbucket",
+    "icon": "bitbucket",
+    "category": "developer-tools",
+    "description": "Connect to Bitbucket Cloud repos, PRs, and pipelines",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "app_password", "label": "App Password", "type": "password", "required": true },
+      { "key": "username", "label": "Username", "type": "text", "required": true },
+      { "key": "workspace", "label": "Workspace", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "jira",
+    "name": "Jira",
+    "icon": "clipboard-list",
+    "category": "developer-tools",
+    "description": "Create and manage Jira issues, sprints, and boards",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true },
+      { "key": "email", "label": "Email", "type": "email", "required": true },
+      { "key": "site_url", "label": "Jira Site URL", "type": "url", "required": true, "placeholder": "https://your-domain.atlassian.net" },
+      { "key": "project_key", "label": "Default Project Key", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "linear",
+    "name": "Linear",
+    "icon": "target",
+    "category": "developer-tools",
+    "description": "Manage Linear issues, projects, and cycles",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "team_id", "label": "Team ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "icon": "slack",
+    "category": "communication",
+    "description": "Send messages, receive commands, and integrate with Slack workflows",
+    "authType": "oauth2",
+    "configFields": [
+      { "key": "bot_token", "label": "Bot Token", "type": "password", "required": true },
+      { "key": "default_channel", "label": "Default Channel", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "discord",
+    "name": "Discord",
+    "icon": "discord",
+    "category": "communication",
+    "description": "Interact with Discord servers via bots and webhooks",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "bot_token", "label": "Bot Token", "type": "password", "required": true },
+      { "key": "guild_id", "label": "Server (Guild) ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "teams",
+    "name": "Microsoft Teams",
+    "icon": "message-square",
+    "category": "communication",
+    "description": "Send notifications and messages to Microsoft Teams channels",
+    "authType": "webhook",
+    "configFields": [
+      { "key": "webhook_url", "label": "Incoming Webhook URL", "type": "url", "required": true }
+    ],
+    "capabilities": ["write"]
+  },
+  {
+    "id": "email",
+    "name": "Email (SMTP)",
+    "icon": "mail",
+    "category": "communication",
+    "description": "Send and receive emails via SMTP integration",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "smtp_host", "label": "SMTP Host", "type": "text", "required": true },
+      { "key": "smtp_port", "label": "SMTP Port", "type": "number", "required": true },
+      { "key": "smtp_user", "label": "Username", "type": "text", "required": true },
+      { "key": "smtp_pass", "label": "Password", "type": "password", "required": true },
+      { "key": "from_address", "label": "From Address", "type": "email", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "icon": "brain",
+    "category": "ai-ml",
+    "description": "Access GPT models, embeddings, DALL-E, and Whisper APIs",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "org_id", "label": "Organization ID", "type": "text", "required": false },
+      { "key": "model", "label": "Default Model", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "icon": "sparkles",
+    "category": "ai-ml",
+    "description": "Access Claude models for text generation and analysis",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "model", "label": "Default Model", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "huggingface",
+    "name": "Hugging Face",
+    "icon": "brain",
+    "category": "ai-ml",
+    "description": "Deploy and query ML models via Hugging Face Inference API",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Token", "type": "password", "required": true },
+      { "key": "model_id", "label": "Default Model ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "aws",
+    "name": "Amazon Web Services",
+    "icon": "cloud",
+    "category": "cloud",
+    "description": "Access AWS services — S3, Lambda, EC2, SES, and more",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "access_key_id", "label": "Access Key ID", "type": "text", "required": true },
+      { "key": "secret_access_key", "label": "Secret Access Key", "type": "password", "required": true },
+      { "key": "region", "label": "Default Region", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "gcp",
+    "name": "Google Cloud Platform",
+    "icon": "cloud",
+    "category": "cloud",
+    "description": "Access GCP services — Compute, Storage, BigQuery, and more",
+    "authType": "service_account",
+    "configFields": [
+      { "key": "service_account_json", "label": "Service Account JSON", "type": "textarea", "required": true },
+      { "key": "project_id", "label": "Project ID", "type": "text", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "azure",
+    "name": "Microsoft Azure",
+    "icon": "cloud",
+    "category": "cloud",
+    "description": "Access Azure services — VMs, Storage, Functions, and more",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "tenant_id", "label": "Tenant ID", "type": "text", "required": true },
+      { "key": "client_id", "label": "Client ID", "type": "text", "required": true },
+      { "key": "client_secret", "label": "Client Secret", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "digitalocean",
+    "name": "DigitalOcean",
+    "icon": "droplet",
+    "category": "cloud",
+    "description": "Manage DigitalOcean Droplets, Spaces, and Kubernetes clusters",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "postgresql",
+    "name": "PostgreSQL",
+    "icon": "database",
+    "category": "data",
+    "description": "Connect to PostgreSQL databases for querying and management",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "host", "label": "Host", "type": "text", "required": true },
+      { "key": "port", "label": "Port", "type": "number", "required": true },
+      { "key": "database", "label": "Database", "type": "text", "required": true },
+      { "key": "user", "label": "Username", "type": "text", "required": true },
+      { "key": "password", "label": "Password", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "mongodb",
+    "name": "MongoDB",
+    "icon": "database",
+    "category": "data",
+    "description": "Connect to MongoDB for document storage and querying",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "connection_string", "label": "Connection String", "type": "password", "required": true },
+      { "key": "database", "label": "Database", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "redis",
+    "name": "Redis",
+    "icon": "database",
+    "category": "data",
+    "description": "Connect to Redis for caching, pub/sub, and data storage",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "host", "label": "Host", "type": "text", "required": true },
+      { "key": "port", "label": "Port", "type": "number", "required": true },
+      { "key": "password", "label": "Password", "type": "password", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "datadog",
+    "name": "Datadog",
+    "icon": "activity",
+    "category": "monitoring",
+    "description": "Send metrics, events, and logs to Datadog for monitoring",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "app_key", "label": "Application Key", "type": "password", "required": false },
+      { "key": "site", "label": "Datadog Site", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "pagerduty",
+    "name": "PagerDuty",
+    "icon": "bell",
+    "category": "monitoring",
+    "description": "Create incidents and manage on-call schedules in PagerDuty",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "routing_key", "label": "Integration/Routing Key", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "icon": "file-text",
+    "category": "productivity",
+    "description": "Create and manage pages, databases, and workspaces in Notion",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "Integration Token", "type": "password", "required": true },
+      { "key": "workspace_id", "label": "Workspace ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "airtable",
+    "name": "Airtable",
+    "icon": "grid",
+    "category": "productivity",
+    "description": "Access and manage Airtable bases, tables, and records",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "Personal Access Token", "type": "password", "required": true },
+      { "key": "base_id", "label": "Default Base ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "google-sheets",
+    "name": "Google Sheets",
+    "icon": "table",
+    "category": "productivity",
+    "description": "Read from and write to Google Sheets spreadsheets",
+    "authType": "service_account",
+    "configFields": [
+      { "key": "service_account_json", "label": "Service Account JSON", "type": "textarea", "required": true },
+      { "key": "spreadsheet_id", "label": "Default Spreadsheet ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "trello",
+    "name": "Trello",
+    "icon": "layout",
+    "category": "productivity",
+    "description": "Manage Trello boards, lists, and cards",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "text", "required": true },
+      { "key": "token", "label": "Token", "type": "password", "required": true },
+      { "key": "board_id", "label": "Default Board ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "asana",
+    "name": "Asana",
+    "icon": "check-circle",
+    "category": "productivity",
+    "description": "Create and manage Asana tasks, projects, and workspaces",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "access_token", "label": "Personal Access Token", "type": "password", "required": true },
+      { "key": "workspace_gid", "label": "Workspace GID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "monday",
+    "name": "Monday.com",
+    "icon": "calendar",
+    "category": "productivity",
+    "description": "Manage Monday.com boards, items, and automations",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "clickup",
+    "name": "ClickUp",
+    "icon": "target",
+    "category": "productivity",
+    "description": "Manage ClickUp tasks, spaces, and lists",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "workspace_id", "label": "Workspace ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "salesforce",
+    "name": "Salesforce",
+    "icon": "cloud",
+    "category": "crm",
+    "description": "Access Salesforce CRM — leads, contacts, opportunities, and custom objects",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "access_token", "label": "Access Token", "type": "password", "required": true },
+      { "key": "instance_url", "label": "Instance URL", "type": "url", "required": true, "placeholder": "https://your-instance.salesforce.com" }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "hubspot",
+    "name": "HubSpot",
+    "icon": "users",
+    "category": "crm",
+    "description": "Manage HubSpot contacts, deals, tickets, and marketing campaigns",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "access_token", "label": "Private App Access Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "pipedrive",
+    "name": "Pipedrive",
+    "icon": "trending-up",
+    "category": "crm",
+    "description": "Manage Pipedrive deals, contacts, and sales pipelines",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true },
+      { "key": "company_domain", "label": "Company Domain", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "zendesk",
+    "name": "Zendesk",
+    "icon": "help-circle",
+    "category": "crm",
+    "description": "Manage Zendesk tickets, users, and support workflows",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "subdomain", "label": "Subdomain", "type": "text", "required": true },
+      { "key": "email", "label": "Email", "type": "email", "required": true },
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "google-drive",
+    "name": "Google Drive",
+    "icon": "hard-drive",
+    "category": "storage",
+    "description": "Access, upload, and manage files in Google Drive",
+    "authType": "service_account",
+    "configFields": [
+      { "key": "service_account_json", "label": "Service Account JSON", "type": "textarea", "required": true },
+      { "key": "folder_id", "label": "Default Folder ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "dropbox",
+    "name": "Dropbox",
+    "icon": "box",
+    "category": "storage",
+    "description": "Upload, download, and manage files in Dropbox",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "access_token", "label": "Access Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "s3",
+    "name": "Amazon S3",
+    "icon": "archive",
+    "category": "storage",
+    "description": "Manage objects and buckets in Amazon S3",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "access_key_id", "label": "Access Key ID", "type": "text", "required": true },
+      { "key": "secret_access_key", "label": "Secret Access Key", "type": "password", "required": true },
+      { "key": "bucket", "label": "Default Bucket", "type": "text", "required": false },
+      { "key": "region", "label": "Region", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "stripe",
+    "name": "Stripe",
+    "icon": "credit-card",
+    "category": "payment",
+    "description": "Manage payments, subscriptions, customers, and invoices via Stripe",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "secret_key", "label": "Secret Key", "type": "password", "required": true },
+      { "key": "webhook_secret", "label": "Webhook Signing Secret", "type": "password", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "paypal",
+    "name": "PayPal",
+    "icon": "dollar-sign",
+    "category": "payment",
+    "description": "Process payments and manage PayPal transactions",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "client_id", "label": "Client ID", "type": "text", "required": true },
+      { "key": "client_secret", "label": "Client Secret", "type": "password", "required": true },
+      { "key": "sandbox", "label": "Use Sandbox", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "twitter",
+    "name": "Twitter / X",
+    "icon": "twitter",
+    "category": "social",
+    "description": "Post tweets, read timelines, and manage Twitter/X accounts",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "bearer_token", "label": "Bearer Token", "type": "password", "required": true },
+      { "key": "api_key", "label": "API Key (optional)", "type": "text", "required": false },
+      { "key": "api_secret", "label": "API Secret (optional)", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "linkedin",
+    "name": "LinkedIn",
+    "icon": "linkedin",
+    "category": "social",
+    "description": "Post updates, manage company pages, and access LinkedIn APIs",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "access_token", "label": "Access Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "facebook",
+    "name": "Facebook",
+    "icon": "facebook",
+    "category": "social",
+    "description": "Manage Facebook pages, post updates, and read insights",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "page_access_token", "label": "Page Access Token", "type": "password", "required": true },
+      { "key": "page_id", "label": "Page ID", "type": "text", "required": true }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "google-analytics",
+    "name": "Google Analytics",
+    "icon": "bar-chart-2",
+    "category": "analytics",
+    "description": "Read Google Analytics data — pageviews, sessions, conversions",
+    "authType": "service_account",
+    "configFields": [
+      { "key": "service_account_json", "label": "Service Account JSON", "type": "textarea", "required": true },
+      { "key": "property_id", "label": "GA4 Property ID", "type": "text", "required": true }
+    ],
+    "capabilities": ["read"]
+  },
+  {
+    "id": "mixpanel",
+    "name": "Mixpanel",
+    "icon": "pie-chart",
+    "category": "analytics",
+    "description": "Track events, query analytics, and manage user data in Mixpanel",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "project_token", "label": "Project Token", "type": "text", "required": true },
+      { "key": "api_secret", "label": "API Secret", "type": "password", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "segment",
+    "name": "Segment",
+    "icon": "git-branch",
+    "category": "analytics",
+    "description": "Send events and manage data pipelines via Segment",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "write_key", "label": "Write Key", "type": "password", "required": true }
+    ],
+    "capabilities": ["write"]
+  },
+  {
+    "id": "elasticsearch",
+    "name": "Elasticsearch",
+    "icon": "search",
+    "category": "search",
+    "description": "Index, search, and analyze data in Elasticsearch clusters",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "node_url", "label": "Node URL", "type": "url", "required": true },
+      { "key": "username", "label": "Username", "type": "text", "required": false },
+      { "key": "password", "label": "Password", "type": "password", "required": false },
+      { "key": "index", "label": "Default Index", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "pinecone",
+    "name": "Pinecone",
+    "icon": "database",
+    "category": "search",
+    "description": "Store and query vector embeddings in Pinecone",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "environment", "label": "Environment", "type": "text", "required": true },
+      { "key": "index_name", "label": "Index Name", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "weaviate",
+    "name": "Weaviate",
+    "icon": "database",
+    "category": "search",
+    "description": "Vector database for AI-powered search and retrieval",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "host", "label": "Cluster URL", "type": "url", "required": true },
+      { "key": "api_key", "label": "API Key", "type": "password", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "supabase",
+    "name": "Supabase",
+    "icon": "database",
+    "category": "data",
+    "description": "Access Supabase databases, auth, storage, and edge functions",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "url", "label": "Project URL", "type": "url", "required": true },
+      { "key": "anon_key", "label": "Anon/Service Key", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "firebase",
+    "name": "Firebase",
+    "icon": "flame",
+    "category": "data",
+    "description": "Access Firebase Realtime DB, Firestore, Auth, and Cloud Functions",
+    "authType": "service_account",
+    "configFields": [
+      { "key": "service_account_json", "label": "Service Account JSON", "type": "textarea", "required": true },
+      { "key": "database_url", "label": "Database URL", "type": "url", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "twilio",
+    "name": "Twilio",
+    "icon": "phone",
+    "category": "communication",
+    "description": "Send SMS, make calls, and manage WhatsApp via Twilio APIs",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "account_sid", "label": "Account SID", "type": "text", "required": true },
+      { "key": "auth_token", "label": "Auth Token", "type": "password", "required": true },
+      { "key": "phone_number", "label": "From Number", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "sendgrid",
+    "name": "SendGrid",
+    "icon": "send",
+    "category": "communication",
+    "description": "Send transactional and marketing emails via SendGrid",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true },
+      { "key": "from_email", "label": "From Email", "type": "email", "required": false }
+    ],
+    "capabilities": ["write"]
+  },
+  {
+    "id": "terraform",
+    "name": "Terraform",
+    "icon": "layers",
+    "category": "devops",
+    "description": "Manage infrastructure as code with Terraform Cloud/Enterprise",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true },
+      { "key": "organization", "label": "Organization", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "jenkins",
+    "name": "Jenkins",
+    "icon": "settings",
+    "category": "devops",
+    "description": "Trigger builds, view job status, and manage Jenkins pipelines",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "url", "label": "Jenkins URL", "type": "url", "required": true },
+      { "key": "username", "label": "Username", "type": "text", "required": true },
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "circleci",
+    "name": "CircleCI",
+    "icon": "refresh-cw",
+    "category": "devops",
+    "description": "Trigger pipelines, view build status, and manage CircleCI projects",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_token", "label": "Personal API Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "vercel",
+    "name": "Vercel",
+    "icon": "triangle",
+    "category": "devops",
+    "description": "Manage Vercel deployments, domains, and environment variables",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true },
+      { "key": "team_id", "label": "Team ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "sentry",
+    "name": "Sentry",
+    "icon": "alert-triangle",
+    "category": "monitoring",
+    "description": "Track errors, performance, and releases in Sentry",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "auth_token", "label": "Auth Token", "type": "password", "required": true },
+      { "key": "organization", "label": "Organization Slug", "type": "text", "required": false },
+      { "key": "project", "label": "Project Slug", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "grafana",
+    "name": "Grafana",
+    "icon": "bar-chart",
+    "category": "monitoring",
+    "description": "Query dashboards, create alerts, and manage Grafana resources",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "url", "label": "Grafana URL", "type": "url", "required": true },
+      { "key": "api_key", "label": "API Key", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "zapier",
+    "name": "Zapier",
+    "icon": "zap",
+    "category": "automation",
+    "description": "Trigger Zapier Zaps and integrate with 5000+ apps",
+    "authType": "webhook",
+    "configFields": [
+      { "key": "webhook_url", "label": "Webhook URL", "type": "url", "required": true }
+    ],
+    "capabilities": ["write"]
+  },
+  {
+    "id": "make",
+    "name": "Make (Integromat)",
+    "icon": "repeat",
+    "category": "automation",
+    "description": "Trigger Make scenarios and orchestrate complex automations",
+    "authType": "webhook",
+    "configFields": [
+      { "key": "webhook_url", "label": "Webhook URL", "type": "url", "required": true }
+    ],
+    "capabilities": ["write"]
+  },
+  {
+    "id": "n8n",
+    "name": "n8n",
+    "icon": "git-merge",
+    "category": "automation",
+    "description": "Trigger n8n workflows via webhooks for self-hosted automation",
+    "authType": "webhook",
+    "configFields": [
+      { "key": "webhook_url", "label": "Webhook URL", "type": "url", "required": true },
+      { "key": "api_key", "label": "API Key (optional)", "type": "password", "required": false }
+    ],
+    "capabilities": ["write"]
+  },
+  {
+    "id": "shopify",
+    "name": "Shopify",
+    "icon": "shopping-cart",
+    "category": "ecommerce",
+    "description": "Manage Shopify products, orders, customers, and inventory",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "shop_domain", "label": "Shop Domain", "type": "text", "required": true },
+      { "key": "access_token", "label": "Admin API Access Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "woocommerce",
+    "name": "WooCommerce",
+    "icon": "shopping-bag",
+    "category": "ecommerce",
+    "description": "Manage WooCommerce products, orders, and customers via REST API",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "site_url", "label": "Site URL", "type": "url", "required": true },
+      { "key": "consumer_key", "label": "Consumer Key", "type": "text", "required": true },
+      { "key": "consumer_secret", "label": "Consumer Secret", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "google-calendar",
+    "name": "Google Calendar",
+    "icon": "calendar",
+    "category": "productivity",
+    "description": "Create, read, and manage Google Calendar events",
+    "authType": "service_account",
+    "configFields": [
+      { "key": "service_account_json", "label": "Service Account JSON", "type": "textarea", "required": true },
+      { "key": "calendar_id", "label": "Calendar ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "confluence",
+    "name": "Confluence",
+    "icon": "book-open",
+    "category": "productivity",
+    "description": "Create and manage Confluence pages, spaces, and content",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "base_url", "label": "Confluence URL", "type": "url", "required": true },
+      { "key": "email", "label": "Email", "type": "email", "required": true },
+      { "key": "api_token", "label": "API Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "docker-hub",
+    "name": "Docker Hub",
+    "icon": "box",
+    "category": "devops",
+    "description": "Manage Docker images, repositories, and automated builds",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "username", "label": "Username", "type": "text", "required": true },
+      { "key": "access_token", "label": "Access Token", "type": "password", "required": true }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "kubernetes",
+    "name": "Kubernetes",
+    "icon": "server",
+    "category": "devops",
+    "description": "Manage Kubernetes clusters, deployments, pods, and services",
+    "authType": "credentials",
+    "configFields": [
+      { "key": "kubeconfig", "label": "Kubeconfig (YAML)", "type": "textarea", "required": true },
+      { "key": "context", "label": "Context Name", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  },
+  {
+    "id": "algolia",
+    "name": "Algolia",
+    "icon": "search",
+    "category": "search",
+    "description": "Manage search indices and query records in Algolia",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "app_id", "label": "Application ID", "type": "text", "required": true },
+      { "key": "admin_api_key", "label": "Admin API Key", "type": "password", "required": true },
+      { "key": "index_name", "label": "Default Index", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write"]
+  }
+]

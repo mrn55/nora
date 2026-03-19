@@ -1,0 +1,10 @@
+FROM postgres:15-alpine
+
+RUN apk add --no-cache bash aws-cli
+
+COPY backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/backup.sh
+
+# Default: run backup once then exit. 
+# For cron, override CMD with a cron daemon or use Docker --restart.
+CMD ["/usr/local/bin/backup.sh"]
