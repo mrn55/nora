@@ -131,16 +131,53 @@ Use the Cron sub-panel to schedule recurring prompts with standard cron syntax. 
 ## Architecture
 
 ```
-  Nginx (:8080)
-  ├── /           → frontend-marketing  (Next.js)
-  ├── /app/*      → frontend-dashboard  (Next.js)
-  ├── /admin/*    → admin-dashboard     (Next.js)
-  └── /api/*      → backend-api         (Express.js)
-                        ├── PostgreSQL 15
-                        ├── Redis 7 + BullMQ  →  worker-provisioner
-                        │                          └── Docker / Proxmox / K8s / NemoClaw
-                        └── OpenClaw Gateway (WS-RPC :18789 per agent)
+                                    Users / Operators
+                                          |
+                                    +-----+-----+
+                                    |   Nginx   |  :8080 (reverse proxy)
+                                    +-----+-----+
+                                          |
+                  +-----------+-----------+-----------+
+                  |           |           |           |
+            /     |     /app/*    |    /admin/*  |     /api/*
+                  v           v           v           v
+          +-------+--+  +----+-----+  +--+------+  +-+--------+
+          | Marketing|  | Dashboard|  |  Admin  |  | Backend  |
+          |  Next.js |  |  Next.js |  | Next.js |  | Express  |
+          | (landing,|  | (agents, |  | (ops    |  | (REST +  |
+          |  login,  |  |  deploy, |  |  panel) |  |  WS-RPC) |
+          |  signup) |  |  monitor)|  +---------+  +----+-----+
+          +----------+  +----------+                    |
+                                              +---------+---------+
+                                              |                   |
+                                        +-----+------+    +------+------+
+                                        | PostgreSQL |    |    Redis    |
+                                        |    15      |    |  7 + BullMQ|
+                                        +------------+    +------+------+
+                                                                 |
+                                                          +------+------+
+                                                          |   Worker    |
+                                                          | Provisioner |
+                                                          +------+------+
+                                                                 |
+                                    +------------+---------------+---------------+
+                                    |            |               |               |
+                              +-----+----+ +----+-----+  +------+-----+  +------+-----+
+                              |  Docker  | |  Proxmox |  | Kubernetes |  |  NemoClaw  |
+                              |  (DinD)  | |   (LXC)  |  |   (Pods)   |  |  (NVIDIA)  |
+                              +-----+----+ +----------+  +------------+  +------------+
+                                    |
+                          +---------+---------+---------+
+                          |         |         |         |
+                     +----+---+ +--+---+ +---+--+ +----+---+
+                     | Agent  | | Agent| | Agent| | Agent  |
+                     | (OC GW)| | (OC) | | (OC) | | (OC GW)|
+                     | :18789 | |      | |      | | :18789 |
+                     +--------+ +------+ +------+ +--------+
+
+  OC GW = OpenClaw Gateway (WebSocket-RPC per agent)
 ```
+
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical breakdown including data flows, database schema, module inventory, and file map.
 
@@ -374,7 +411,6 @@ Nora is in active development and we're looking for developers who want to help 
 
 ## Community
 
-- [Discord](https://discord.gg/your-invite) — chat with contributors and the core team
 - [Discussions](https://github.com/solomon2773/nora/discussions) — ideas, questions, and RFC proposals
 - [Issues](https://github.com/solomon2773/nora/issues) — bug reports and feature requests
 
