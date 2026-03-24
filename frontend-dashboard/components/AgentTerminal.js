@@ -1,119 +1,125 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Terminal as TermIcon, WifiOff, Maximize2, Minimize2, Download } from "lucide-react";
+import { Terminal as TermIcon, WifiOff, Maximize2, Minimize2, Download, RefreshCw } from "lucide-react";
 
 const TOOLBAR_HEIGHT = 37;
 
-// Parse ANSI color codes into spans with CSS classes
-function parseAnsi(text) {
-  const colorMap = {
-    "30": "ansi-black", "31": "ansi-red", "32": "ansi-green", "33": "ansi-yellow",
-    "34": "ansi-blue", "35": "ansi-magenta", "36": "ansi-cyan", "37": "ansi-white",
-    "90": "ansi-bright-black", "91": "ansi-bright-red", "92": "ansi-bright-green",
-    "93": "ansi-bright-yellow", "94": "ansi-bright-blue", "95": "ansi-bright-magenta",
-    "96": "ansi-bright-cyan", "97": "ansi-bright-white",
-    "1": "ansi-bold", "0": "",
-  };
-  const parts = [];
-  let currentClass = "";
-  const regex = /\x1b\[([0-9;]*)m/g;
-  let lastIndex = 0;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ text: text.slice(lastIndex, match.index), className: currentClass });
-    }
-    const codes = match[1].split(";");
-    for (const code of codes) {
-      if (code === "0" || code === "") currentClass = "";
-      else if (colorMap[code]) currentClass = colorMap[code];
-    }
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push({ text: text.slice(lastIndex), className: currentClass });
-  }
-  return parts;
-}
-
-// Strip non-color ANSI sequences
-function stripControlSequences(text) {
-  return text
-    .replace(/\x1b\[[0-9;]*[A-HJKSTfhilmnsu]/g, "")
-    .replace(/\x1b\][^\x07]*\x07/g, "")
-    .replace(/\x1b[()][A-Z0-9]/g, "")
-    .replace(/\x1b[>=<]/g, "");
-}
-
 /**
- * Pure HTML terminal.
+ * xterm.js-backed terminal.
  *
  * Props:
  * - agentId: agent UUID
- * - historyRef: { current: [] } — external ref for persistent line history
+ * - historyRef: { current: [] } — unused (kept for API compat), xterm manages its own buffer
  * - wsRef: { current: null } — external ref for persistent WebSocket
- * - maxLines: max lines to keep (default 2000)
- * - visible: whether the terminal is currently visible (controls auto-scroll)
+ * - visible: whether the terminal is currently visible (triggers fit on show)
  */
-export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRef, maxLines = 2000, visible = true }) {
-  const outputRef = useRef(null);
+export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRef, visible = true }) {
+  const termContainerRef = useRef(null);
+  const xtermRef = useRef(null);
+  const fitAddonRef = useRef(null);
   const internalWsRef = useRef(null);
   const wsRef = externalWsRef || internalWsRef;
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState("Connecting...");
   const [expanded, setExpanded] = useState(false);
-  const [lines, setLines] = useState(() => historyRef?.current || []);
+  const [xtermReady, setXtermReady] = useState(false);
 
-  // Sync lines to external historyRef so parent can persist them
+  // Initialize xterm.js (dynamic import to avoid SSR issues with Next.js)
   useEffect(() => {
-    if (historyRef) historyRef.current = lines;
-  }, [lines, historyRef]);
+    let term;
+    let fitAddon;
+    let disposed = false;
 
-  const appendOutput = useCallback((text, className = "") => {
-    const cleaned = stripControlSequences(text);
-    const parts = cleaned.split(/\r?\n/);
+    async function init() {
+      const { Terminal } = await import("@xterm/xterm");
+      const { FitAddon } = await import("@xterm/addon-fit");
+      const { WebLinksAddon } = await import("@xterm/addon-web-links");
 
-    setLines(prev => {
-      const next = [...prev];
-      for (let i = 0; i < parts.length; i++) {
-        const parsed = parseAnsi(parts[i]);
-        if (i === 0 && next.length > 0) {
-          const last = next[next.length - 1];
-          next[next.length - 1] = { parts: [...last.parts, ...parsed.map(p => ({ ...p, className: p.className || className }))], ts: last.ts };
-        } else {
-          next.push({ parts: parsed.map(p => ({ ...p, className: p.className || className })), ts: new Date().toISOString() });
-        }
-      }
-      if (next.length > maxLines) next.splice(0, next.length - maxLines);
-      return next;
-    });
-  }, [maxLines]);
+      // Import xterm CSS
+      await import("@xterm/xterm/css/xterm.css");
 
-  // Auto-scroll when visible
-  useEffect(() => {
-    if (visible && outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [lines, visible]);
+      if (disposed) return;
 
-  // Scroll to bottom and focus when becoming visible again
-  useEffect(() => {
-    if (visible && outputRef.current) {
-      requestAnimationFrame(() => {
-        outputRef.current.scrollTop = outputRef.current.scrollHeight;
-        outputRef.current.focus();
+      term = new Terminal({
+        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
+        fontSize: 13,
+        lineHeight: 1.4,
+        cursorBlink: true,
+        cursorStyle: "block",
+        theme: {
+          background: "#0a0e1a",
+          foreground: "#e2e8f0",
+          cursor: "#60a5fa",
+          selectionBackground: "rgba(96, 165, 250, 0.3)",
+          black: "#1e293b",
+          red: "#ef4444",
+          green: "#22c55e",
+          yellow: "#eab308",
+          blue: "#3b82f6",
+          magenta: "#a855f7",
+          cyan: "#06b6d4",
+          white: "#e2e8f0",
+          brightBlack: "#475569",
+          brightRed: "#f87171",
+          brightGreen: "#4ade80",
+          brightYellow: "#facc15",
+          brightBlue: "#60a5fa",
+          brightMagenta: "#c084fc",
+          brightCyan: "#22d3ee",
+          brightWhite: "#f8fafc",
+        },
+        allowProposedApi: true,
       });
-    }
-  }, [visible]);
 
-  // WebSocket connection
-  useEffect(() => {
-    if (!agentId) return;
-    // If we already have a live connection, don't create a new one
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      setConnected(true);
-      setStatus("Connected");
-      return;
+      fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon());
+
+      if (termContainerRef.current) {
+        term.open(termContainerRef.current);
+        fitAddon.fit();
+      }
+
+      xtermRef.current = term;
+      fitAddonRef.current = fitAddon;
+      setXtermReady(true);
     }
+
+    init();
+
+    return () => {
+      disposed = true;
+      if (term) term.dispose();
+      xtermRef.current = null;
+      fitAddonRef.current = null;
+      setXtermReady(false);
+    };
+  }, []);
+
+  // Fit terminal on resize, visibility change, or expand/collapse
+  useEffect(() => {
+    if (!fitAddonRef.current || !visible) return;
+    const fit = () => {
+      try { fitAddonRef.current.fit(); } catch {}
+    };
+    // Delay fit to let DOM settle after expand/collapse
+    const timer = setTimeout(fit, 50);
+    window.addEventListener("resize", fit);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", fit);
+    };
+  }, [visible, expanded, xtermReady]);
+
+  // Connect / reconnect WebSocket
+  const connectWs = useCallback(() => {
+    if (!agentId || !xtermRef.current) return;
+    // Close existing connection if any
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch {}
+      wsRef.current = null;
+    }
+
+    setStatus("Connecting...");
 
     const token = localStorage.getItem("token");
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -121,17 +127,20 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
+    const term = xtermRef.current;
 
     ws.onopen = () => {
       setConnected(true);
       setStatus("Connected");
-      ws.send(JSON.stringify({ type: "resize", cols: 120, rows: 40 }));
+      // Send terminal dimensions
+      const dims = fitAddonRef.current?.proposeDimensions();
+      ws.send(JSON.stringify({ type: "resize", cols: dims?.cols || 120, rows: dims?.rows || 40 }));
     };
 
     ws.onclose = () => {
       setConnected(false);
       setStatus("Disconnected");
-      appendOutput("\n--- Session ended ---\n", "ansi-bright-black");
+      term.writeln("\r\n\x1b[90m--- Session ended ---\x1b[0m");
     };
 
     ws.onerror = () => {
@@ -142,77 +151,74 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg.type === "output") appendOutput(msg.data);
-        else if (msg.type === "system") appendOutput(msg.message + "\n", "ansi-cyan");
-        else if (msg.type === "error") appendOutput(msg.message + "\n", "ansi-red");
+        if (msg.type === "output") term.write(msg.data);
+        else if (msg.type === "system") term.writeln(`\x1b[36m${msg.message}\x1b[0m`);
+        else if (msg.type === "error") term.writeln(`\x1b[31m${msg.message}\x1b[0m`);
       } catch {
-        appendOutput(e.data);
+        term.write(e.data);
       }
     };
 
-    return () => ws.close();
-  }, [agentId, appendOutput]);
+  }, [agentId, xtermReady]);
 
-  const handleKeyDown = useCallback((e) => {
-    if (!wsRef.current || wsRef.current.readyState !== 1) return;
+  // Wire xterm input/resize to WebSocket — uses wsRef so it works across reconnects
+  useEffect(() => {
+    if (!xtermReady || !xtermRef.current) return;
+    const term = xtermRef.current;
 
-    // Allow browser copy (Ctrl/Cmd+C without terminal Ctrl+C)
-    if ((e.ctrlKey || e.metaKey) && e.key === "c" && window.getSelection()?.toString()) return;
-    // Allow browser paste — handled by onPaste
-    if ((e.ctrlKey || e.metaKey) && e.key === "v") return;
+    const dataDisposable = term.onData((data) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "input", data }));
+      }
+    });
 
-    let data = "";
-    if (e.key === "Enter") data = "\r";
-    else if (e.key === "Backspace") data = "\x08";
-    else if (e.key === "Tab") data = "\t";
-    else if (e.key === "Escape") data = "\x1b";
-    else if (e.key === "ArrowUp") data = "\x1b[A";
-    else if (e.key === "ArrowDown") data = "\x1b[B";
-    else if (e.key === "ArrowRight") data = "\x1b[C";
-    else if (e.key === "ArrowLeft") data = "\x1b[D";
-    else if (e.key === "Home") data = "\x1b[H";
-    else if (e.key === "End") data = "\x1b[F";
-    else if (e.key === "Delete") data = "\x1b[3~";
-    else if (e.key === " ") data = " ";
-    else if (e.ctrlKey && e.key === "c") data = "\x03";
-    else if (e.ctrlKey && e.key === "d") data = "\x04";
-    else if (e.ctrlKey && e.key === "z") data = "\x1a";
-    else if (e.ctrlKey && e.key === "l") data = "\x0c";
-    else if (e.ctrlKey && e.key === "a") data = "\x01";
-    else if (e.ctrlKey && e.key === "e") data = "\x05";
-    else if (e.ctrlKey && e.key === "u") data = "\x15";
-    else if (e.ctrlKey && e.key === "k") data = "\x0b";
-    else if (e.ctrlKey && e.key === "w") data = "\x17";
-    else if (e.ctrlKey && e.key === "r") data = "\x12";
-    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) data = e.key;
-    else return;
+    const resizeDisposable = term.onResize(({ cols, rows }) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
+    });
 
-    e.preventDefault();
-    e.stopPropagation();
-    wsRef.current.send(JSON.stringify({ type: "input", data }));
-  }, []);
+    return () => {
+      dataDisposable.dispose();
+      resizeDisposable.dispose();
+    };
+  }, [xtermReady]);
 
-  const handlePaste = useCallback((e) => {
-    if (!wsRef.current || wsRef.current.readyState !== 1) return;
-    e.preventDefault();
-    const text = e.clipboardData?.getData("text");
-    if (text) {
-      wsRef.current.send(JSON.stringify({ type: "input", data: text }));
+  // Initial connection (after xterm is ready)
+  useEffect(() => {
+    if (!xtermReady) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setConnected(true);
+      setStatus("Connected");
+      return;
     }
-  }, []);
+    connectWs();
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, [connectWs, xtermReady]);
 
-  const focusTerminal = useCallback(() => {
-    outputRef.current?.focus();
-  }, []);
+  // Focus terminal when becoming visible
+  useEffect(() => {
+    if (visible && xtermRef.current) {
+      requestAnimationFrame(() => {
+        xtermRef.current.focus();
+        try { fitAddonRef.current?.fit(); } catch {}
+      });
+    }
+  }, [visible]);
 
-  // Export terminal history as a text file
+  // Export terminal buffer as text file
   const exportHistory = useCallback(() => {
-    const text = lines.map(line => {
-      const ts = line.ts ? `[${line.ts}] ` : "";
-      const content = line.parts.map(p => p.text).join("");
-      return ts + content;
-    }).join("\n");
-
+    if (!xtermRef.current) return;
+    const term = xtermRef.current;
+    const buffer = term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) lines.push(line.translateToString(true));
+    }
+    const text = lines.join("\n");
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -220,7 +226,7 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
     a.download = `terminal-${agentId}-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.log`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [lines, agentId]);
+  }, [agentId]);
 
   return (
     <div
@@ -237,7 +243,6 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
         <div className="flex items-center gap-2">
           <TermIcon size={14} className="text-slate-500" />
           <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Terminal</span>
-          <span className="text-[10px] text-slate-600">{lines.length} lines</span>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -267,62 +272,27 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
               <>
                 <WifiOff size={12} className="text-red-400" />
                 <span className="text-[10px] text-red-400 font-bold">{status}</span>
+                <button
+                  onClick={connectWs}
+                  className="ml-1 flex items-center gap-1 px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] font-bold rounded transition-colors"
+                  title="Reconnect terminal"
+                >
+                  <RefreshCw size={10} />
+                  Reconnect
+                </button>
               </>
             )}
           </div>
         </div>
       </div>
 
-      {/* Terminal output — receives keyboard input directly via tabIndex */}
+      {/* Terminal container — xterm.js renders here */}
       <div
-        ref={outputRef}
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        onClick={focusTerminal}
-        className="flex-1 overflow-y-auto cursor-text outline-none"
+        ref={termContainerRef}
+        onClick={() => xtermRef.current?.focus()}
+        className="flex-1 overflow-hidden"
         style={{ height: `calc(100% - ${TOOLBAR_HEIGHT}px)`, backgroundColor: "#0a0e1a" }}
-        autoFocus
-      >
-        <pre
-          className="p-3 m-0 text-[13px] leading-[1.4] whitespace-pre-wrap break-all"
-          style={{
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-            color: "#e2e8f0",
-            minHeight: "100%",
-          }}
-        >
-          {lines.map((line, i) => (
-            <div key={i}>
-              {line.parts.map((part, j) => (
-                part.className
-                  ? <span key={j} className={part.className}>{part.text}</span>
-                  : <span key={j}>{part.text}</span>
-              ))}
-            </div>
-          ))}
-        </pre>
-      </div>
-
-      <style jsx global>{`
-        .ansi-black { color: #1e293b; }
-        .ansi-red { color: #ef4444; }
-        .ansi-green { color: #22c55e; }
-        .ansi-yellow { color: #eab308; }
-        .ansi-blue { color: #3b82f6; }
-        .ansi-magenta { color: #a855f7; }
-        .ansi-cyan { color: #06b6d4; }
-        .ansi-white { color: #e2e8f0; }
-        .ansi-bright-black { color: #475569; }
-        .ansi-bright-red { color: #f87171; }
-        .ansi-bright-green { color: #4ade80; }
-        .ansi-bright-yellow { color: #facc15; }
-        .ansi-bright-blue { color: #60a5fa; }
-        .ansi-bright-magenta { color: #c084fc; }
-        .ansi-bright-cyan { color: #22d3ee; }
-        .ansi-bright-white { color: #f8fafc; }
-        .ansi-bold { font-weight: bold; }
-      `}</style>
+      />
     </div>
   );
 }

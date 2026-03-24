@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
+  <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" />
   <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg" alt="Node" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED.svg" alt="Docker" />
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" />
@@ -64,12 +64,38 @@ Nora sits between you and your agent fleet. It provisions containers, injects cr
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/) v2+
-- Git
+> **Note:** The setup script auto-installs Docker, Docker Compose, and Git if they're missing.
+> Supported: macOS (via Homebrew), Linux (apt/yum/dnf), Windows (via winget/chocolatey).
 
-### Option A: Guided Setup (Recommended)
+- macOS 12+, Linux (Ubuntu 20.04+, Debian 11+, Fedora 38+), or Windows 10+ with WSL2
+- Admin/sudo access (for Docker installation if not already present)
 
-The interactive setup script generates secrets, configures your platform mode, provisioner backend, OAuth, and NemoClaw — then optionally starts everything for you.
+### One-line Install (Recommended)
+
+**macOS / Linux / WSL2:**
+
+```bash
+curl -fsSL https://nora.solomontsao.com/setup.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+iwr -useb https://nora.solomontsao.com/setup.ps1 | iex
+```
+
+The interactive installer will:
+
+1. Clone the repository
+2. Verify Docker, Docker Compose, and openssl are installed
+3. Auto-generate cryptographic secrets (JWT, AES-256-GCM, NextAuth)
+4. Configure platform mode (self-hosted or PaaS) and provisioner backend
+5. Set up your admin account
+6. **Collect an LLM API key** (Anthropic, OpenAI, Google, etc.)
+7. Start all services with `docker compose up`
+8. **Deploy your first agent and inject the LLM key** — ready to chat in 60 seconds
+
+### Option B: Manual Setup
 
 ```bash
 git clone https://github.com/solomon2773/nora.git
@@ -77,20 +103,9 @@ cd nora
 bash setup.sh
 ```
 
-The script will:
-1. Verify Docker, Docker Compose, and openssl are installed
-2. Auto-generate cryptographic secrets (JWT, AES-256-GCM, NextAuth)
-3. Ask you to choose platform mode (self-hosted or PaaS)
-4. Ask you to choose provisioner backend (Docker, Proxmox, or Kubernetes)
-5. Set up a default admin account (email + password for first login)
-6. Optionally configure NemoClaw (NVIDIA sandbox) and OAuth (Google/GitHub)
-7. Write `.env` and offer to start the platform
-
-### Option B: Manual Setup
+Or configure everything by hand:
 
 ```bash
-git clone https://github.com/solomon2773/nora.git
-cd nora
 cp .env.example .env
 ```
 
@@ -136,6 +151,8 @@ Eight services come up automatically: Nginx, two frontends, backend API, worker,
 | [localhost:8080/app/deploy](http://localhost:8080/app/deploy) | Deploy new agent |
 
 ### Deploy your first agent
+
+If you used the one-line installer, your first agent is already deployed and ready to chat. Otherwise:
 
 1. Log in with your admin account (default: `admin@nora.local` / `admin123`)
 2. Go to [Deploy](http://localhost:8080/app/deploy)
@@ -319,4 +336,4 @@ PRs reviewed within 48 hours. Issues tagged `good first issue` for newcomers.
 
 ## License
 
-This project is open source under the [MIT License](LICENSE).
+This project is open source under the [Apache License 2.0](LICENSE).

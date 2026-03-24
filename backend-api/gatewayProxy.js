@@ -112,7 +112,7 @@ class GatewayConnection {
               client: { id: "gateway-client", version: "1.0.0", platform: process.platform, mode: "backend" },
               role,
               scopes,
-              caps: [], commands: [],
+              caps: ["thinking-events"], commands: [],
               auth: this.token ? { password: this.token } : {},
               device
             }
@@ -276,11 +276,15 @@ async function getConnection(agent) {
   let conn = pool.get(key);
   if (conn?.isAlive) return conn;
 
-  // Check circuit breaker on existing connection before cleaning up
+  // Check circuit breaker — if cooldown elapsed, reset fully and retry
   if (conn?.circuitState === 'open') {
     if (Date.now() - conn._circuitOpenedAt < conn._circuitCooldown) {
       throw new Error('Circuit breaker open — gateway temporarily unavailable');
     }
+    // Cooldown expired — clean up and start fresh
+    conn.close();
+    pool.delete(key);
+    conn = null;
   }
 
   // Clean up dead connection
@@ -400,38 +404,78 @@ function createGatewayRouter() {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
         });
 
-        const chatHandler = (evt) => {
-          res.write(`data: ${JSON.stringify(evt.payload || evt)}\n\n`);
-        };
-        const agentHandler = (evt) => {
-          // Agent events carry chat output tokens
-          if (evt.payload) {
-            res.write(`data: ${JSON.stringify(evt.payload)}\n\n`);
+        // chat.send is NON-BLOCKING — it returns immediately with { runId, status: "started" }.
+        // The actual response streams via "chat" events (state: "delta", "final", "error").
+        // We must keep listening for events AFTER the RPC resolves.
+
+        let streamDone = false;
+        let sawAssistantContent = false;
+        const streamHandler = (evt) => {
+          const payload = evt.payload || evt;
+          const state = payload.state;
+          const role = payload.message?.role;
+
+          // Forward every event to the client as SSE
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+
+          // Track when assistant content starts streaming
+          if (role === "assistant" || (!role && state === "delta" && sawAssistantContent)) {
+            sawAssistantContent = true;
+          }
+
+          // Only mark done on the ASSISTANT's final/error — not the user message echo.
+          // The gateway sends a "final" for the user message before the assistant starts.
+          if (state === "final" || state === "error" || state === "aborted") {
+            if (role !== "user" && role !== "human" && sawAssistantContent) {
+              streamDone = true;
+            }
           }
         };
 
-        conn.on("chat", chatHandler);
-        conn.on("agent", agentHandler);
+        conn.on("chat", streamHandler);
+        conn.on("agent", streamHandler);
 
-        // Send the message via chat.send RPC
+        // Send the message — resolves immediately with { runId, status: "started" }
+        let runId = null;
         try {
-          const result = await conn.call("chat.send", params, CHAT_TIMEOUT);
-          res.write(`data: ${JSON.stringify({ type: "done", result: result.result || result.payload })}\n\n`);
-          // Record metrics
-          metrics.recordMetric(req.agent.id, req.user.id, 'messages_sent', 1).catch(() => {});
-          const tokens = result.result?.usage?.total_tokens || result.payload?.usage?.total_tokens;
-          if (tokens) metrics.recordMetric(req.agent.id, req.user.id, 'tokens_used', tokens).catch(() => {});
+          const result = await conn.call("chat.send", params, CALL_TIMEOUT);
+          runId = result.result?.runId || result.payload?.runId;
         } catch (err) {
           res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
+          conn.off("chat", streamHandler);
+          conn.off("agent", streamHandler);
+          res.write("data: [DONE]\n\n");
+          res.end();
           metrics.recordMetric(req.agent.id, req.user.id, 'error', 1, { error: err.message }).catch(() => {});
+          return;
         }
 
-        conn.off("chat", chatHandler);
-        conn.off("agent", agentHandler);
+        // Wait for the stream to complete (chat:final / chat:error / timeout)
+        const streamTimeout = CHAT_TIMEOUT;
+        const startTime = Date.now();
+        await new Promise((resolve) => {
+          const check = setInterval(() => {
+            if (streamDone || Date.now() - startTime > streamTimeout) {
+              clearInterval(check);
+              resolve();
+            }
+          }, 200);
+          // Also resolve if the client disconnects
+          req.on("close", () => { clearInterval(check); resolve(); });
+        });
+
+        conn.off("chat", streamHandler);
+        conn.off("agent", streamHandler);
+
+        // Record metrics
+        metrics.recordMetric(req.agent.id, req.user.id, 'messages_sent', 1).catch(() => {});
+
+        res.write(`data: ${JSON.stringify({ type: "done", runId })}\n\n`);
         res.write("data: [DONE]\n\n");
-        res.end();
+        if (!res.writableEnded) res.end();
       } else {
         // Non-streaming: wait for final response
         const result = await rpcCall(req.agent, "chat.send", params, CHAT_TIMEOUT);
@@ -582,6 +626,64 @@ function createGatewayRouter() {
     }
   });
 
+  // ── Gateway UI Proxy ──
+  // Proxies the OpenClaw gateway's built-in control UI for iframe embedding.
+  // The UI HTML uses relative paths (./assets/*, ./favicon.*), so we proxy:
+  //   /agents/:id/gateway/ui       → gateway root (HTML)
+  //   /agents/:id/gateway/assets/* → gateway /assets/* (JS, CSS)
+  //   /agents/:id/gateway/favicon* → gateway /favicon* (icons)
+  //   /agents/:id/gateway/__openclaw__/* → gateway internal paths
+  router.get("/agents/:agentId/gateway/ui", proxyGatewayPath(""));
+  router.get("/agents/:agentId/gateway/ui/*", proxyGatewayPath("ui/"));
+  router.get("/agents/:agentId/gateway/assets/*", proxyGatewayPath("assets/"));
+  router.get("/agents/:agentId/gateway/favicon*", proxyGatewayFavicon);
+  router.get("/agents/:agentId/gateway/__openclaw__/*", proxyGatewayPath("__openclaw__/"));
+  router.post("/agents/:agentId/gateway/__openclaw__/*", proxyGatewayPath("__openclaw__/"));
+
+  function proxyGatewayPath(prefix) {
+    return async (req, res) => {
+      try {
+        const subPath = req.params[0] || "";
+        const gatewayPath = prefix + subPath;
+        const targetUrl = `http://${req.agent.host}:${GATEWAY_PORT}/${gatewayPath}${req._parsedUrl?.search || ""}`;
+
+        const resp = await fetch(targetUrl, {
+          method: req.method,
+          headers: { "Accept": req.headers.accept || "*/*", "Accept-Encoding": "identity" },
+          signal: AbortSignal.timeout(15000),
+        });
+
+        res.status(resp.status);
+        const ct = resp.headers.get("content-type");
+        if (ct) res.setHeader("Content-Type", ct);
+        const cc = resp.headers.get("cache-control");
+        if (cc) res.setHeader("Cache-Control", cc);
+
+        const body = await resp.arrayBuffer();
+        res.send(Buffer.from(body));
+      } catch (err) {
+        if (!res.headersSent) {
+          res.status(502).json({ error: "Gateway UI unreachable", details: err.message });
+        }
+      }
+    };
+  }
+
+  async function proxyGatewayFavicon(req, res) {
+    try {
+      const fullPath = req.path.split("/gateway/")[1] || "favicon.svg";
+      const targetUrl = `http://${req.agent.host}:${GATEWAY_PORT}/${fullPath}`;
+      const resp = await fetch(targetUrl, { signal: AbortSignal.timeout(5000) });
+      res.status(resp.status);
+      const ct = resp.headers.get("content-type");
+      if (ct) res.setHeader("Content-Type", ct);
+      const body = await resp.arrayBuffer();
+      res.send(Buffer.from(body));
+    } catch {
+      res.status(404).end();
+    }
+  }
+
   return router;
 }
 
@@ -663,4 +765,15 @@ function attachGatewayWS(server) {
   return wss;
 }
 
-module.exports = { createGatewayRouter, attachGatewayWS, rpcCall, resolveAgent };
+/** Evict a cached gateway connection so the next request creates a fresh one.
+ *  Called after authSync restarts an agent container. */
+function evictConnection(host) {
+  const conn = pool.get(host);
+  if (conn) {
+    conn.close();
+    pool.delete(host);
+    console.log(`[gatewayProxy] Evicted connection for ${host}`);
+  }
+}
+
+module.exports = { createGatewayRouter, attachGatewayWS, rpcCall, resolveAgent, evictConnection };

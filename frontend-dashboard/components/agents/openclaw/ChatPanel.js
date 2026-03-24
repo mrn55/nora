@@ -78,16 +78,23 @@ export default function ChatPanel({ agentId }) {
         const history = session.messages || session.history || session.conversation || [];
         if (!Array.isArray(history) || history.length === 0) return;
 
-        // Extract text from content — handles string, array of {type,text}, or object
+        // Extract only human-readable text from content — handles string,
+        // array of {type,text}, or nested objects. Skips tool_use, tool_result,
+        // and other non-text content blocks.
         function extractContent(content) {
           if (!content) return "";
           if (typeof content === "string") return content;
           if (Array.isArray(content)) {
             return content
+              .filter(c => {
+                if (typeof c === "string") return true;
+                // Only include text blocks, skip tool_use/tool_result/image etc.
+                return c.type === "text" || (!c.type && (c.text || c.content));
+              })
               .map(c => (typeof c === "string" ? c : c.text || c.content || ""))
               .join("");
           }
-          if (typeof content === "object") return content.text || content.content || JSON.stringify(content);
+          if (typeof content === "object") return content.text || content.content || "";
           return String(content);
         }
 
@@ -113,12 +120,14 @@ export default function ChatPanel({ agentId }) {
       .finally(() => setLoadingHistory(false));
   }, [agentId]);
 
-  // Auto-scroll to bottom on new messages (only if already near bottom)
+  // Auto-scroll to bottom on new messages — always scroll when streaming,
+  // otherwise only if already near bottom
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    if (isNearBottom) {
+    const isStreaming = messages.some(m => m.streaming);
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+    if (isStreaming || isNearBottom) {
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
@@ -156,7 +165,8 @@ export default function ChatPanel({ agentId }) {
     setSending(true);
 
     // Create an assistant placeholder for streaming
-    const assistantId = Date.now();
+    // Use a distinct ID to avoid collision with the user message timestamp
+    const assistantId = Date.now() + 1;
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: "", ts: assistantId, streaming: true, toolCalls: [], thinking: "" },
@@ -216,46 +226,86 @@ export default function ChatPanel({ agentId }) {
 
             // Handle final done marker from proxy
             if (chunk.type === "done") {
-              // Capture session key from response if available
-              const sid = chunk.result?.sessionKey || chunk.result?.session_id || chunk.sessionKey;
+              const sid = chunk.sessionKey;
               if (sid) setSessionId(sid);
               continue;
             }
-            // Handle error from proxy
-            if (chunk.type === "error") {
+            // Handle error from proxy or gateway
+            if (chunk.type === "error" || chunk.state === "error") {
+              const errMsg = chunk.error || chunk.errorMessage || "Unknown error";
               setMessages((prev) =>
                 prev.map((m) =>
                   m.ts === assistantId
-                    ? { ...m, content: m.content || `Error: ${chunk.error}`, streaming: false }
+                    ? { ...m, content: m.content || `Error: ${errMsg}`, streaming: false }
                     : m
                 )
               );
               continue;
             }
 
-            // Gateway chat/agent events carry content in various shapes
-            // Try OpenAI-compat delta first, then raw payload text
-            const delta = chunk.choices?.[0]?.delta;
-            let rawText = delta?.content || chunk.text || chunk.content || chunk.message || "";
-            const toolCalls = delta?.tool_calls || chunk.tool_calls;
-            const thinking = delta?.reasoning || delta?.thinking || chunk.thinking || "";
+            // OpenClaw gateway event format:
+            //   state: "delta" → incremental content in message.content[].text
+            //   state: "final" → complete response in message.content[].text
+            //   stream: "thinking"/"tool"/"assistant" → agent sub-events
+            const state = chunk.state;
+            const agentStream = chunk.stream;
 
-            // Strip XML wrapper tags the gateway may emit (<final>, <thinking>, etc.)
-            // These are protocol artifacts — the user should see clean content only.
-            rawText = rawText
-              .replace(/<\/?final>/gi, "")
-              .replace(/<\/?thinking>/gi, "")
-              .replace(/<\/?reasoning>/gi, "")
-              .replace(/<\/?artifact[^>]*>/gi, "");
-            const text = rawText;
+            // Skip events for user messages — the gateway echoes user input back
+            // as delta/final events with role "user". We already show the user message.
+            const msgRole = chunk.message?.role;
+            if (msgRole === "user" || msgRole === "human") continue;
+
+            // Extract text from gateway chat events (delta/final)
+            let gatewayText = "";
+            if (state === "delta" || state === "final") {
+              const msgContent = chunk.message?.content;
+              if (typeof msgContent === "string") {
+                gatewayText = msgContent;
+              } else if (Array.isArray(msgContent)) {
+                gatewayText = msgContent
+                  .map(c => (typeof c === "string" ? c : c.text || ""))
+                  .join("");
+              }
+            }
+
+            // Also try OpenAI-compat format and raw text fields as fallback
+            const delta = chunk.choices?.[0]?.delta;
+            let rawText = gatewayText || delta?.content || chunk.text || chunk.content || "";
+            if (typeof chunk.message === "string") rawText = rawText || chunk.message;
+
+            const toolCalls = delta?.tool_calls || chunk.tool_calls;
+
+            // Agent thinking events
+            let thinking = "";
+            if (agentStream === "thinking") {
+              thinking = chunk.data?.delta || chunk.data?.text || delta?.reasoning || delta?.thinking || "";
+            }
+
+            // Strip protocol wrapper tags
+            rawText = stripProtocolTags(rawText);
+
+            // For delta events, the gateway sends accumulated text — replace instead of append
+            const isDelta = state === "delta" || state === "final";
+
+            if (state === "final") {
+              // Final event — set complete content and stop streaming
+              setMessages((prev) =>
+                prev.map((m) => {
+                  if (m.ts !== assistantId) return m;
+                  return { ...m, content: rawText || m.content, streaming: false };
+                })
+              );
+              continue;
+            }
 
             setMessages((prev) =>
               prev.map((m) => {
                 if (m.ts !== assistantId) return m;
                 const updated = { ...m };
 
-                if (text) {
-                  updated.content += text;
+                if (rawText) {
+                  // Gateway deltas send accumulated text, not incremental
+                  updated.content = isDelta ? rawText : (updated.content + rawText);
                 }
 
                 if (toolCalls) {
@@ -676,10 +726,13 @@ function MessageBubble({ message }) {
 
         {/* Streaming "typing" indicator when no content yet */}
         {message.streaming && !message.content && !message.thinking && message.toolCalls?.length === 0 && (
-          <div className="inline-flex items-center gap-1 px-3 py-2 bg-slate-100 rounded-xl">
-            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+          <div className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-xl">
+            <span className="text-xs text-slate-400 font-medium">Agent is thinking</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            </span>
           </div>
         )}
 

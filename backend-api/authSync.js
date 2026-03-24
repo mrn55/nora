@@ -49,7 +49,7 @@ async function buildAuthProfilesForAgent(userId, agentId) {
 
 /**
  * Write auth-profiles.json to a running container via Docker exec,
- * then restart the container so the gateway process re-reads the file.
+ * then gracefully restart the container so the gateway re-reads the file.
  * The startup CMD (docker.js) skips overwriting auth-profiles.json when
  * the file already exists, so the exec-written version is preserved.
  */
@@ -68,38 +68,53 @@ async function writeAuthToContainer(docker, containerId, authProfiles, defaultPr
   });
   await writeExec.start({});
 
-  // 2. Gracefully restart just the openclaw gateway process so it re-reads
-  //    auth-profiles.json — without restarting the entire container (which
-  //    would re-run apt-get + npm install and risk a crash loop if the
-  //    npm registry is unreachable).
-  //    `pkill -f "openclaw gateway"` kills the gateway; the parent shell
-  //    sees the child exit, exits itself, and Docker's "unless-stopped"
-  //    restart policy brings the container back up. The `which openclaw`
-  //    guard in the startup CMD skips reinstallation since it's already present.
+  // 2. Gracefully restart the container so the gateway re-reads auth-profiles.json.
+  //    Using container.restart() instead of pkill gives a clean Docker lifecycle —
+  //    SIGTERM → wait → SIGKILL → restart. The `which openclaw` guard in the startup
+  //    CMD skips reinstallation since it's already present.
   try {
-    const restartExec = await container.exec({
-      Cmd: ['sh', '-c', 'pkill -f "openclaw gateway" || true'],
-      AttachStdout: true,
-      AttachStderr: true,
-    });
-    await restartExec.start({});
+    await container.restart({ t: 5 });
   } catch { /* container may already be restarting */ }
 
-  // 3. After restart, set the default model (runs in the fresh gateway).
-  //    Wait briefly for the gateway to re-initialize before issuing CLI commands.
+  // 3. Wait for the gateway to be ready before setting the model.
+  //    Poll the gateway's HTTP endpoint inside the container instead of a blind sleep.
   if (defaultProvider) {
     const modelId = defaultProvider.model || PROVIDER_MODEL_DEFAULTS[defaultProvider.provider];
     if (modelId) {
       const fullModel = modelId.includes('/') ? modelId : `${defaultProvider.provider}/${modelId}`;
-      await new Promise(r => setTimeout(r, 8000));
-      try {
-        const modelExec = await container.exec({
-          Cmd: ['openclaw', 'models', 'set', fullModel],
-          AttachStdout: true,
-          AttachStderr: true,
-        });
-        await modelExec.start({});
-      } catch { /* non-critical */ }
+
+      // Poll until gateway is listening (up to 60s)
+      let ready = false;
+      for (let i = 0; i < 30; i++) {
+        try {
+          const checkExec = await container.exec({
+            Cmd: ['sh', '-c', 'curl -sf http://localhost:18789 >/dev/null 2>&1 || wget -q -O /dev/null http://localhost:18789 2>/dev/null'],
+            AttachStdout: true,
+            AttachStderr: true,
+          });
+          const stream = await checkExec.start({});
+          // Consume stream to completion
+          await new Promise((resolve) => {
+            stream.on('data', () => {});
+            stream.on('end', resolve);
+            stream.on('error', resolve);
+          });
+          const result = await checkExec.inspect();
+          if (result.ExitCode === 0) { ready = true; break; }
+        } catch { /* container may still be restarting */ }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      if (ready) {
+        try {
+          const modelExec = await container.exec({
+            Cmd: ['openclaw', 'models', 'set', fullModel],
+            AttachStdout: true,
+            AttachStderr: true,
+          });
+          await modelExec.start({});
+        } catch { /* non-critical */ }
+      }
     }
   }
 }
@@ -128,14 +143,25 @@ async function syncAuthToUserAgents(userId, agentId = null) {
   const defaultProvider = defaultRow.rows[0] || null;
 
   const agentQuery = agentId
-    ? "SELECT id, container_id FROM agents WHERE id = $1 AND user_id = $2 AND status IN ('running', 'warning') AND container_id IS NOT NULL"
-    : "SELECT id, container_id FROM agents WHERE user_id = $1 AND status IN ('running', 'warning') AND container_id IS NOT NULL";
+    ? "SELECT id, container_id, host FROM agents WHERE id = $1 AND user_id = $2 AND status IN ('running', 'warning') AND container_id IS NOT NULL"
+    : "SELECT id, container_id, host FROM agents WHERE user_id = $1 AND status IN ('running', 'warning') AND container_id IS NOT NULL";
   const agentParams = agentId ? [agentId, userId] : [userId];
   const agents = await db.query(agentQuery, agentParams);
+
+  // Evict stale gateway connections — the restart will invalidate them
+  let evictConnection;
+  try {
+    evictConnection = require('./gatewayProxy').evictConnection;
+  } catch { /* gatewayProxy not available in worker context */ }
 
   const results = [];
   for (const agent of agents.rows) {
     try {
+      // Evict the cached WS connection before restarting so the proxy
+      // creates a fresh one on the next request instead of hitting the circuit breaker
+      if (evictConnection && agent.host) {
+        evictConnection(agent.host);
+      }
       const authProfiles = await buildAuthProfilesForAgent(userId, agent.id);
       await writeAuthToContainer(docker, agent.container_id, authProfiles, defaultProvider);
       console.log(`[authSync] Synced auth-profiles.json to agent ${agent.id} (container restarted)`);

@@ -60,7 +60,11 @@ app.use(require("./middleware/requestMetrics"));
 
 // ─── Public Routes ────────────────────────────────────────────────
 
-app.get("/health", (req, res) => res.json({ status: "ok" }));
+let _startupComplete = false;
+app.get("/health", (req, res) => {
+  if (!_startupComplete) return res.status(503).json({ status: "starting" });
+  res.json({ status: "ok" });
+});
 
 app.get("/config/platform", (req, res) => {
   res.json({
@@ -103,6 +107,44 @@ app.post("/webhooks/:channelId", async (req, res) => {
 });
 
 app.use("/auth", require("./routes/auth"));
+
+// ─── Gateway UI static assets (before auth wall — JS/CSS/icons contain no user data) ──
+// These are served pre-auth because iframes can't set Authorization headers on sub-resource loads.
+// Only opaque static files (JS bundles, CSS, favicons) are exempted — not HTML or API endpoints.
+const gatewayUIAssetProxy = require("express").Router();
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/assets/*", proxyGatewayAsset);
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/favicon*", proxyGatewayAsset);
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/__openclaw__/*", proxyGatewayAsset);
+
+async function proxyGatewayAsset(req, res) {
+  try {
+    const db = require("./db");
+    const agentId = req.params.agentId;
+    const result = await db.query(
+      "SELECT host FROM agents WHERE id = $1 AND status IN ('running','warning') AND host IS NOT NULL",
+      [agentId]
+    );
+    if (!result.rows[0]) return res.status(404).end();
+    const host = result.rows[0].host;
+    const gatewayPath = req.path.split("/gateway/")[1] || "";
+    const targetUrl = `http://${host}:18789/${gatewayPath}`;
+    const resp = await fetch(targetUrl, {
+      headers: { "Accept": req.headers.accept || "*/*", "Accept-Encoding": "identity" },
+      signal: AbortSignal.timeout(10000),
+    });
+    res.status(resp.status);
+    const ct = resp.headers.get("content-type");
+    if (ct) res.setHeader("Content-Type", ct);
+    const cc = resp.headers.get("cache-control");
+    if (cc) res.setHeader("Cache-Control", cc);
+    else res.setHeader("Cache-Control", "public, max-age=3600");
+    const body = await resp.arrayBuffer();
+    res.send(Buffer.from(body));
+  } catch {
+    res.status(502).end();
+  }
+}
+app.use(gatewayUIAssetProxy);
 
 // ─── Auth Wall ────────────────────────────────────────────────────
 app.use(authenticateToken);
@@ -261,6 +303,9 @@ if (require.main === module) {
         console.log("Marketplace seeded with 3 default listings");
       }
     } catch (e) { console.error("Failed to seed marketplace:", e.message); }
+
+    _startupComplete = true;
+    console.log("Startup complete — health check now returning ok");
   });
 
   attachLogStream(server);

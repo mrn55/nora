@@ -86,9 +86,8 @@ const worker = new Worker('deployments', async (job) => {
       for (const row of keysResult.rows) {
         const envName = providerEnvMap[row.provider];
         if (envName && row.api_key) {
-          // Decrypt if crypto module available
           try {
-            const { decrypt } = require('../../backend-api/crypto');
+            const { decrypt } = require('./crypto');
             llmEnvVars[envName] = decrypt(row.api_key);
           } catch {
             llmEnvVars[envName] = row.api_key;
@@ -264,7 +263,7 @@ const worker = new Worker('deployments', async (job) => {
       "SELECT provider, access_token, config FROM integrations WHERE agent_id = $1 AND status = 'active'",
       [id]
     );
-    const { decrypt } = require('../../backend-api/crypto');
+    const { decrypt } = require('./crypto');
     for (const row of intResult.rows) {
       // Primary token
       const envName = INTEGRATION_ENV_MAP[row.provider];
@@ -315,6 +314,31 @@ const worker = new Worker('deployments', async (job) => {
     host = result.host;
     gatewayToken = result.gatewayToken;
     containerName = result.containerName || container_name;
+
+    // If network discovery failed, host may be "localhost" which is unreachable
+    // from backend-api. Attempt to resolve the correct Compose network IP.
+    if (host === "localhost" && containerId) {
+      try {
+        const Docker = require('dockerode');
+        const docker = new Docker({ socketPath: '/var/run/docker.sock' });
+        const info = await docker.getContainer(containerId).inspect();
+        const nets = info.NetworkSettings?.Networks || {};
+        for (const [netName, netInfo] of Object.entries(nets)) {
+          if (netName.endsWith('_default') && netInfo.IPAddress) {
+            host = netInfo.IPAddress;
+            console.log(`[provisioner] Resolved host via container inspect: ${host} (${netName})`);
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn(`[provisioner] Failed to resolve host from container networks: ${e.message}`);
+      }
+      // Last resort: use container name (Docker DNS resolves it on the compose network)
+      if (host === "localhost" && containerName) {
+        host = containerName;
+        console.log(`[provisioner] Falling back to container name as host: ${host}`);
+      }
+    }
   } catch (err) {
     console.error(`[${backendName}] Provisioning failed for agent ${id} (attempt ${job.attemptsMade + 1}/${job.opts?.attempts || 1}):`, err.message);
     // Mark as failed in DB

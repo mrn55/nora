@@ -14,17 +14,67 @@ class DockerBackend extends ProvisionerBackend {
   /**
    * Find the Docker Compose-managed network so agent containers can communicate
    * with backend-api and other platform services.
+   *
+   * Three strategies tried in order — the first match wins:
+   *   1. Self-inspect via HOSTNAME / /etc/hostname (container ID)
+   *   2. Find worker-provisioner container via Compose service label
+   *   3. Scan all networks for a Compose-labelled *_default network
    */
   async _findComposeNetwork() {
     if (this._composeNetwork) return this._composeNetwork;
-    const networks = await this.docker.listNetworks();
-    // Compose v2 names networks: <project>_default
-    const net = networks.find(n =>
-      n.Name.includes("openclaw") && n.Name.includes("default")
-    );
-    if (net) {
-      this._composeNetwork = net.Name;
-      console.log(`[docker] Using Compose network: ${net.Name}`);
+
+    // Strategy 1: self-inspect via container ID from hostname
+    try {
+      const fs = require("fs");
+      const hostname = (process.env.HOSTNAME || "").trim() ||
+        fs.readFileSync("/etc/hostname", "utf8").trim();
+      if (hostname) {
+        const self = this.docker.getContainer(hostname);
+        const info = await self.inspect();
+        const nets = info.NetworkSettings?.Networks || {};
+        const composeName = Object.keys(nets).find(n => n.endsWith("_default"));
+        if (composeName) {
+          this._composeNetwork = composeName;
+          console.log(`[docker] Using Compose network (self-inspect): ${composeName}`);
+          return this._composeNetwork;
+        }
+      }
+    } catch {
+      // Not running inside Docker or can't self-inspect — fall through
+    }
+
+    // Strategy 2: find our own container via Compose service label
+    try {
+      const containers = await this.docker.listContainers({
+        filters: { label: ["com.docker.compose.service=worker-provisioner"] }
+      });
+      if (containers.length > 0) {
+        const info = await this.docker.getContainer(containers[0].Id).inspect();
+        const nets = info.NetworkSettings?.Networks || {};
+        const composeName = Object.keys(nets).find(n => n.endsWith("_default"));
+        if (composeName) {
+          this._composeNetwork = composeName;
+          console.log(`[docker] Using Compose network (service label): ${composeName}`);
+          return this._composeNetwork;
+        }
+      }
+    } catch {
+      // Docker API error — fall through
+    }
+
+    // Strategy 3: scan all networks for a Compose-labelled *_default network
+    try {
+      const networks = await this.docker.listNetworks();
+      const net = networks.find(n =>
+        n.Name.endsWith("_default") &&
+        n.Labels?.["com.docker.compose.network"] === "default"
+      );
+      if (net) {
+        this._composeNetwork = net.Name;
+        console.log(`[docker] Using Compose network (label scan): ${net.Name}`);
+      }
+    } catch {
+      console.warn("[docker] Failed to scan networks");
     }
     return this._composeNetwork;
   }

@@ -1,21 +1,17 @@
 import { useState } from "react";
-import { MessageSquare, Clock, Wrench, Radio, CalendarClock, Share2, Puzzle } from "lucide-react";
+import { MessageSquare, Radio, CalendarClock, Puzzle, MonitorPlay } from "lucide-react";
 import StatusPanel from "./openclaw/StatusPanel";
 import ChatPanel from "./openclaw/ChatPanel";
-import SessionsPanel from "./openclaw/SessionsPanel";
-import ChannelsTab from "./ChannelsTab";
 import IntegrationsTab from "./IntegrationsTab";
 import CronPanel from "./openclaw/CronPanel";
-import ToolsPanel from "./openclaw/ToolsPanel";
+import OpenClawUIPanel from "./openclaw/OpenClawUIPanel";
 
 const subTabs = [
   { id: "status", label: "Status", icon: Radio },
   { id: "chat", label: "Chat", icon: MessageSquare },
-  { id: "sessions", label: "Sessions", icon: Clock },
-  { id: "channels", label: "Channels", icon: Share2 },
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "cron", label: "Cron", icon: CalendarClock },
-  { id: "tools", label: "Tools", icon: Wrench },
+  { id: "ui", label: "UI", icon: MonitorPlay },
 ];
 
 export default function OpenClawTab({ agentId, agentStatus }) {
@@ -64,11 +60,9 @@ export default function OpenClawTab({ agentId, agentStatus }) {
       <div>
         {activeSubTab === "status" && <StatusPanel agentId={agentId} />}
         {activeSubTab === "chat" && <ChatPanel agentId={agentId} />}
-        {activeSubTab === "sessions" && <SessionsPanel agentId={agentId} />}
-        {activeSubTab === "channels" && <ChannelsTab agentId={agentId} />}
         {activeSubTab === "integrations" && <IntegrationsTab agentId={agentId} />}
         {activeSubTab === "cron" && <CronPanel agentId={agentId} />}
-        {activeSubTab === "tools" && <ToolsPanel agentId={agentId} />}
+        {activeSubTab === "ui" && <OpenClawUIPanel agentId={agentId} />}
       </div>
     </div>
   );

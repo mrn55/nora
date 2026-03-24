@@ -65,8 +65,8 @@ export default function StatusPanel({ agentId }) {
       });
       const data = await res.json();
       if (res.ok && data.synced > 0) {
-        toast.success("LLM keys & model synced to agent");
-        setTimeout(fetchStatus, 3000); // refresh status after sync
+        toast.success("LLM keys & model synced — gateway restarting...");
+        setTimeout(fetchStatus, 15000); // gateway restart takes ~10s; wait before polling
       } else if (res.ok) {
         toast.error("Sync completed but no agents were updated");
       } else {

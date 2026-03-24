@@ -43,6 +43,75 @@ router.get("/:id", asyncHandler(async (req, res) => {
   res.json(agent);
 }));
 
+// Live container resource stats (CPU, memory, network, PIDs)
+router.get("/:id/stats", asyncHandler(async (req, res) => {
+  const result = await db.query(
+    "SELECT id, container_id, backend_type, user_id, status FROM agents WHERE id = $1 AND user_id = $2",
+    [req.params.id, req.user.id]
+  );
+  const agent = result.rows[0];
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+  if (!agent.container_id) return res.status(409).json({ error: "No container" });
+
+  try {
+    const Docker = require("dockerode");
+    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+    const container = docker.getContainer(agent.container_id);
+    const stats = await container.stats({ stream: false });
+    const info = await container.inspect();
+
+    // CPU %
+    const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - (stats.precpu_stats.cpu_usage?.total_usage || 0);
+    const systemDelta = stats.cpu_stats.system_cpu_usage - (stats.precpu_stats.system_cpu_usage || 0);
+    const cpuCount = stats.cpu_stats.online_cpus || stats.cpu_stats.cpu_usage?.percpu_usage?.length || 1;
+    const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * cpuCount * 100 : 0;
+
+    // Memory
+    const memUsage = stats.memory_stats.usage || 0;
+    const memLimit = stats.memory_stats.limit || 0;
+    const memCache = stats.memory_stats.stats?.cache || 0;
+    const memActual = memUsage - memCache;
+
+    // Network I/O (sum all interfaces)
+    let netRx = 0, netTx = 0;
+    if (stats.networks) {
+      for (const iface of Object.values(stats.networks)) {
+        netRx += iface.rx_bytes || 0;
+        netTx += iface.tx_bytes || 0;
+      }
+    }
+
+    // Disk I/O
+    let diskRead = 0, diskWrite = 0;
+    if (stats.blkio_stats?.io_service_bytes_recursive) {
+      for (const entry of stats.blkio_stats.io_service_bytes_recursive) {
+        if (entry.op === "read" || entry.op === "Read") diskRead += entry.value || 0;
+        if (entry.op === "write" || entry.op === "Write") diskWrite += entry.value || 0;
+      }
+    }
+
+    // Uptime
+    const startedAt = info.State?.StartedAt ? new Date(info.State.StartedAt).getTime() : 0;
+    const uptimeSeconds = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0;
+
+    res.json({
+      cpu_percent: Math.round(cpuPercent * 100) / 100,
+      memory_usage_mb: Math.round(memActual / 1024 / 1024),
+      memory_limit_mb: Math.round(memLimit / 1024 / 1024),
+      memory_percent: memLimit > 0 ? Math.round((memActual / memLimit) * 10000) / 100 : 0,
+      network_rx_mb: Math.round(netRx / 1024 / 1024 * 100) / 100,
+      network_tx_mb: Math.round(netTx / 1024 / 1024 * 100) / 100,
+      disk_read_mb: Math.round(diskRead / 1024 / 1024 * 100) / 100,
+      disk_write_mb: Math.round(diskWrite / 1024 / 1024 * 100) / 100,
+      pids: stats.pids_stats?.current || 0,
+      uptime_seconds: uptimeSeconds,
+      running: info.State?.Running || false,
+    });
+  } catch (e) {
+    res.status(502).json({ error: "Could not fetch container stats", details: e.message });
+  }
+}));
+
 router.post("/deploy", async (req, res) => {
   try {
     // Enforce billing limits
