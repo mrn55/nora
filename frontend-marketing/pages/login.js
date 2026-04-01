@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Lock, Mail, Zap, Loader2, CheckCircle2, Shield, TerminalSquare } from "lucide-react";
 import { signIn } from "next-auth/react";
-import { useToast } from "../components/Toast";
 
 const OAUTH_LOGIN_ENABLED = process.env.NEXT_PUBLIC_OAUTH_LOGIN_ENABLED === "true";
 const IS_SELF_HOSTED = process.env.NEXT_PUBLIC_PLATFORM_MODE === "selfhosted";
@@ -13,7 +12,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState("");
   const [error, setError] = useState("");
-  const toast = useToast();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
