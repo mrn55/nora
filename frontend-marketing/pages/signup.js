@@ -1,10 +1,11 @@
 import { useState } from "react";
 import Link from "next/link";
-import { Lock, Mail, Zap, Loader2 } from "lucide-react";
+import { CheckCircle2, Lock, Mail, Zap, Loader2, Shield, Server, Bot } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { useToast } from "../components/Toast";
 
 const OAUTH_LOGIN_ENABLED = process.env.NEXT_PUBLIC_OAUTH_LOGIN_ENABLED === "true";
+const IS_SELF_HOSTED = process.env.NEXT_PUBLIC_PLATFORM_MODE === "selfhosted";
 
 export default function Signup() {
   const [email, setEmail] = useState("");
@@ -23,7 +24,6 @@ export default function Signup() {
         body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
-        // Auto-login after signup
         const loginRes = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -52,17 +52,96 @@ export default function Signup() {
     signIn(provider, { callbackUrl: "/auth/callback" });
   }
 
+  const nextSteps = [
+    "Create your operator account",
+    "Add an LLM provider key in Settings",
+    "Deploy your first OpenClaw agent",
+    "Verify chat, logs, and terminal in one place",
+  ];
+
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white font-sans flex flex-col md:flex-row overflow-x-hidden">
-      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 lg:p-20 relative bg-[#0f172a]">
-         <div className="max-w-md w-full flex flex-col gap-8 md:gap-10">
-            <div className="flex flex-col gap-2">
-               <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-none mb-2">Create Account</h2>
-               <p className="text-sm text-slate-400 font-medium">Get started with Nora in seconds.</p>
+    <div className="min-h-screen bg-[#0f172a] text-white font-sans flex flex-col lg:flex-row overflow-x-hidden">
+      <div className="hidden lg:flex lg:w-[46%] border-r border-white/5 bg-[#0b1120] p-10 xl:p-14">
+        <div className="max-w-lg mx-auto flex flex-col justify-between gap-10">
+          <div>
+            <Link href="/" className="inline-flex items-center gap-2 mb-10">
+              <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center font-bold text-white">N</div>
+              <span className="text-xl font-black tracking-tight">Nora</span>
+            </Link>
+
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-semibold mb-6">
+              <Shield size={14} />
+              Self-hosted OpenClaw control plane
             </div>
 
-            {/* OAuth Buttons */}
-            {OAUTH_LOGIN_ENABLED && (
+            <h1 className="text-4xl font-black tracking-tight leading-tight mb-4">
+              Create the operator account for your Nora workspace
+            </h1>
+            <p className="text-slate-400 leading-relaxed text-base">
+              Nora is built for teams that want a credible, self-hosted way to deploy and operate OpenClaw agents without gluing together provisioning, key sync, and observability by hand.
+            </p>
+          </div>
+
+          <div className="grid gap-4">
+            <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <Server size={18} className="text-blue-400" />
+                <span className="font-bold">What happens after sign up</span>
+              </div>
+              <div className="space-y-3">
+                {nextSteps.map((step, index) => (
+                  <div key={step} className="flex items-start gap-3 text-sm text-slate-300">
+                    <div className="w-6 h-6 rounded-full bg-blue-600/20 text-blue-300 flex items-center justify-center text-xs font-black shrink-0">
+                      {index + 1}
+                    </div>
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-5">
+                <div className="flex items-center gap-2 mb-2 text-emerald-300">
+                  <Bot size={16} />
+                  <span className="text-sm font-bold">Built for operators</span>
+                </div>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  Deploy, inspect, and manage OpenClaw agents from one control plane.
+                </p>
+              </div>
+              <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-5">
+                <div className="flex items-center gap-2 mb-2 text-amber-300">
+                  <Shield size={16} />
+                  <span className="text-sm font-bold">BYO infra + keys</span>
+                </div>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  Keep your runtime, network, and provider credentials under your control.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 lg:p-16 bg-[#0f172a]">
+        <div className="max-w-md w-full flex flex-col gap-8 md:gap-10">
+          <div className="flex flex-col gap-2">
+            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-none mb-2">Create Account</h2>
+            <p className="text-sm text-slate-400 font-medium">
+              {IS_SELF_HOSTED
+                ? "This creates an operator account for your self-hosted Nora instance."
+                : "Create your Nora account and continue to the dashboard."}
+            </p>
+          </div>
+
+          {IS_SELF_HOSTED && (
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-sm text-blue-100 leading-relaxed">
+              <span className="font-bold">Self-hosted note:</span> after account creation, the fastest path to value is Settings → add an LLM provider → Deploy your first agent.
+            </div>
+          )}
+
+          {OAUTH_LOGIN_ENABLED && (
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => handleOAuth("google")}
@@ -89,59 +168,67 @@ export default function Signup() {
                 Continue with GitHub
               </button>
             </div>
-            )}
+          )}
 
-            <div className="flex items-center gap-4">
-              <div className="flex-1 h-px bg-white/10"></div>
-              <span className="text-xs text-slate-500 font-bold uppercase tracking-widest">{OAUTH_LOGIN_ENABLED ? "or" : "email"}</span>
-              <div className="flex-1 h-px bg-white/10"></div>
+          <div className="flex items-center gap-4">
+            <div className="flex-1 h-px bg-white/10"></div>
+            <span className="text-xs text-slate-500 font-bold uppercase tracking-widest">{OAUTH_LOGIN_ENABLED ? "or" : "email"}</span>
+            <div className="flex-1 h-px bg-white/10"></div>
+          </div>
+
+          <form onSubmit={handleSignup} className="flex flex-col gap-6">
+            <div className="flex flex-col gap-4 md:gap-5">
+              <div className="flex flex-col gap-2 group">
+                <label className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none ml-2 opacity-80">Email Address</label>
+                <div className="relative">
+                  <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="email"
+                    className="w-full pl-12 pr-6 py-3 md:py-4 bg-white/5 border border-white/10 rounded-2xl text-sm font-bold text-white outline-none transition-all focus:ring-2 focus:ring-blue-500/50"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 group">
+                <label className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none ml-2 opacity-80">Password</label>
+                <div className="relative">
+                  <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="password"
+                    className="w-full pl-12 pr-6 py-3 md:py-4 bg-white/5 border border-white/10 rounded-2xl text-sm font-bold text-white outline-none transition-all focus:ring-2 focus:ring-blue-500/50"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
             </div>
 
-            <form onSubmit={handleSignup} className="flex flex-col gap-6">
-               <div className="flex flex-col gap-4 md:gap-5">
-                  <div className="flex flex-col gap-2 group">
-                     <label className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none ml-2 opacity-80">Email Address</label>
-                     <div className="relative">
-                        <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <input
-                           type="email"
-                           className="w-full pl-12 pr-6 py-3 md:py-4 bg-white/5 border border-white/10 rounded-2xl text-sm font-bold text-white outline-none transition-all focus:ring-2 focus:ring-blue-500/50"
-                           value={email}
-                           onChange={e => setEmail(e.target.value)}
-                           required
-                        />
-                     </div>
-                  </div>
-                  <div className="flex flex-col gap-2 group">
-                     <label className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none ml-2 opacity-80">Password</label>
-                     <div className="relative">
-                        <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <input
-                           type="password"
-                           className="w-full pl-12 pr-6 py-3 md:py-4 bg-white/5 border border-white/10 rounded-2xl text-sm font-bold text-white outline-none transition-all focus:ring-2 focus:ring-blue-500/50"
-                           value={password}
-                           onChange={e => setPassword(e.target.value)}
-                           required
-                        />
-                     </div>
-                  </div>
-               </div>
-               <div className="flex flex-col gap-4 mt-2">
-                  <button 
-                     type="submit" 
-                     className="w-full flex items-center justify-center gap-3 px-8 py-4 md:py-5 bg-blue-600 hover:bg-blue-700 transition-all text-sm font-black text-white rounded-2xl shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50"
-                     disabled={loading}
-                  >
-                     {loading ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} className="fill-current" />}
-                     Create Account with Email
-                  </button>
-               </div>
-            </form>
+            <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 text-sm text-slate-300 space-y-2">
+              {nextSteps.slice(0, 3).map((step) => (
+                <div key={step} className="flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                  <span>{step}</span>
+                </div>
+              ))}
+            </div>
 
-            <p className="text-center text-sm text-slate-500">
-              Already have an account? <a href="/login" className="text-blue-400 font-bold hover:underline">Sign In</a>
-            </p>
-         </div>
+            <button
+              type="submit"
+              className="w-full flex items-center justify-center gap-3 px-8 py-4 md:py-5 bg-blue-600 hover:bg-blue-700 transition-all text-sm font-black text-white rounded-2xl shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50"
+              disabled={loading}
+            >
+              {loading ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} className="fill-current" />}
+              Create Account with Email
+            </button>
+          </form>
+
+          <p className="text-center text-sm text-slate-500">
+            Already have an account? <a href="/login" className="text-blue-400 font-bold hover:underline">Sign In</a>
+          </p>
+        </div>
       </div>
     </div>
   );
