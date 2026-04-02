@@ -4,10 +4,13 @@ const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const db = require("../db");
 const { authenticateToken } = require("../middleware/auth");
+const { normalizeEmail, normalizeProvider, verifyOAuthIdentity } = require("../oauthProviders");
 
 const router = express.Router();
 
-const OAUTH_LOGIN_ENABLED = process.env.OAUTH_LOGIN_ENABLED === "true";
+function isOAuthLoginEnabled() {
+  return process.env.OAUTH_LOGIN_ENABLED === "true";
+}
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -75,12 +78,59 @@ router.post("/login", authLimiter, async (req, res) => {
 });
 
 router.post("/oauth-login", authLimiter, async (req, res) => {
-  if (!OAUTH_LOGIN_ENABLED) {
+  if (!isOAuthLoginEnabled()) {
     return res.status(403).json({ error: "OAuth login is disabled until server-side provider verification is implemented" });
   }
-  const { email, name, provider, providerId } = req.body;
-  if (!email || !provider) return res.status(400).json({ error: "email and provider required" });
+
+  const {
+    email,
+    name,
+    provider,
+    providerId,
+    oauthAccessToken,
+    oauthIdToken,
+  } = req.body || {};
+
+  const normalizedProvider = normalizeProvider(provider);
+  if (!normalizedProvider) return res.status(400).json({ error: "provider required" });
+  if (!oauthAccessToken && !oauthIdToken) {
+    return res.status(400).json({ error: "oauthAccessToken or oauthIdToken required" });
+  }
+
   try {
+    const verified = await verifyOAuthIdentity({
+      provider: normalizedProvider,
+      accessToken: oauthAccessToken,
+      idToken: oauthIdToken,
+      email,
+      providerId,
+    });
+
+    const linkedResult = await db.query(
+      "SELECT id, email, role, name, provider, provider_id, password_hash FROM users WHERE provider = $1 AND provider_id = $2",
+      [normalizedProvider, verified.providerId]
+    );
+    const linkedUser = linkedResult.rows[0];
+    if (linkedUser && normalizeEmail(linkedUser.email) !== normalizeEmail(verified.email)) {
+      return res.status(409).json({ error: `This ${normalizedProvider} account is already linked to another Nora user email.` });
+    }
+
+    const existingResult = await db.query(
+      "SELECT id, email, role, name, provider, provider_id, password_hash FROM users WHERE email = $1",
+      [verified.email]
+    );
+    const existingUser = existingResult.rows[0];
+
+    if (existingUser?.password_hash && !existingUser.provider) {
+      return res.status(409).json({ error: "This email already uses password login. Sign in with password until account linking exists." });
+    }
+    if (existingUser?.provider && existingUser.provider !== normalizedProvider) {
+      return res.status(409).json({ error: `This account is already linked to ${existingUser.provider} login.` });
+    }
+    if (existingUser?.provider_id && String(existingUser.provider_id) !== String(verified.providerId)) {
+      return res.status(409).json({ error: `This ${normalizedProvider} account is linked to a different Nora user.` });
+    }
+
     const result = await db.query(
       `INSERT INTO users(email, name, provider, provider_id)
        VALUES($1, $2, $3, $4)
@@ -89,7 +139,7 @@ router.post("/oauth-login", authLimiter, async (req, res) => {
          provider = COALESCE(EXCLUDED.provider, users.provider),
          provider_id = COALESCE(EXCLUDED.provider_id, users.provider_id)
        RETURNING id, email, role, name`,
-      [email, name || null, provider, providerId || null]
+      [verified.email, verified.name || name || null, normalizedProvider, verified.providerId]
     );
     const user = result.rows[0];
     const token = jwt.sign(
@@ -99,6 +149,12 @@ router.post("/oauth-login", authLimiter, async (req, res) => {
     );
     res.json({ token, user });
   } catch (e) {
+    if (/Unsupported OAuth provider/i.test(e.message)) {
+      return res.status(400).json({ error: e.message });
+    }
+    if (/verification failed|audience mismatch|email is not verified|email is missing or unverified|did not match|required/i.test(e.message)) {
+      return res.status(401).json({ error: e.message });
+    }
     res.status(500).json({ error: e.message });
   }
 });

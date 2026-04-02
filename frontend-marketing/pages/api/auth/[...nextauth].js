@@ -72,7 +72,8 @@ export const authOptions = {
           token.userId = user.id;
           token.role = user.role;
         } else {
-          // OAuth provider — call backend to upsert user and get platform JWT
+          // OAuth provider — call backend to verify the provider token,
+          // upsert the user, and issue the platform JWT.
           try {
             const res = await fetch(`${API_INTERNAL}/auth/oauth-login`, {
               method: "POST",
@@ -82,6 +83,8 @@ export const authOptions = {
                 name: user.name || profile?.name,
                 provider: account.provider,
                 providerId: account.providerAccountId,
+                oauthAccessToken: account.access_token,
+                oauthIdToken: account.id_token,
               }),
             });
             const data = await res.json();
@@ -89,6 +92,8 @@ export const authOptions = {
               token.accessToken = data.token;
               token.userId = data.user.id;
               token.role = data.user.role;
+            } else {
+              console.error("OAuth backend verification failed:", data?.error || "unknown error");
             }
           } catch (e) {
             console.error("OAuth backend upsert failed:", e);
