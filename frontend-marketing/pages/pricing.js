@@ -100,7 +100,7 @@ const DECISION_PATHS = [
   },
   {
     eyebrow: "Best monetization bridge",
-    title: "Paid onboarding & support",
+    title: "Support-led rollout",
     desc: "Use this when you want the same OSS product but need rollout help, setup guidance, or a faster operator handoff.",
     firstStep: "Open a GitHub Discussion with your environment and goals",
     outcome: "Scope onboarding help, deployment review, and first-value support around the existing product.",
@@ -110,7 +110,7 @@ const DECISION_PATHS = [
   },
   {
     eyebrow: "Best for less ops overhead",
-    title: "Hosted evaluation / custom deployment",
+    title: "Hosted evaluation / enterprise path",
     desc: "Use this when self-hosting is not the preferred first step or you already expect a tailored deployment conversation.",
     firstStep: "Create an account through the hosted signup flow",
     outcome: "Start evaluation faster, then scope managed or enterprise requirements from current product proof.",
@@ -287,7 +287,7 @@ export default function Pricing() {
           <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Decision clarity</p>
           <h2 className="text-2xl md:text-4xl font-black tracking-tight">Choose the motion that matches how your team buys</h2>
           <p className="text-sm md:text-base text-slate-400 max-w-3xl mx-auto mt-4">
-            Nora does not need fake pricing tiers to convert. It needs a clear next action for each evaluator: self-host, ask for rollout help, or open a hosted/custom path.
+            Nora does not need fake pricing tiers to convert. It needs a clear next action for each evaluator: self-host, ask for rollout help, or open a hosted path.
           </p>
         </div>
         <div className="grid md:grid-cols-3 gap-6">
