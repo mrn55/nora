@@ -1,33 +1,33 @@
 <p align="center">
   <h1 align="center">Nora</h1>
-  <p align="center"><strong>The open-source control plane for self-hosted OpenClaw agents.</strong></p>
-  <p align="center">Deploy, observe, and operate OpenClaw agents from one dashboard — without stitching together provisioning scripts, key sync, chat access, and fleet ops by hand.</p>
+  <p align="center"><strong>The open-source control plane for agent operations.</strong></p>
+  <p align="center">Deploy, observe, and operate agent runtimes from one dashboard. OpenClaw is the strongest supported runtime today, while Nora stays aimed at broader runtime integration over time.</p>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" />
   <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg" alt="Node" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED.svg" alt="Docker" />
-  <img src="https://img.shields.io/badge/openclaw-native-yes-6d28d9.svg" alt="OpenClaw Native" />
   <img src="https://img.shields.io/badge/self--hosted-first-0ea5e9.svg" alt="Self-Hosted First" />
+  <img src="https://img.shields.io/badge/commercial%20use-Apache%202.0%20allowed-6d28d9.svg" alt="Commercial use allowed" />
 </p>
 
 <p align="center">
+  <a href="https://github.com/solomon2773/nora#quick-start">Quick Start</a>
+  ·
   <a href="https://nora.solomontsao.com">Live app</a>
   ·
-  <a href="docs/INSTALL.md">Install guide</a>
-  ·
-  <a href="https://nora.solomontsao.com/pricing">Pricing / commercial paths</a>
-  ·
-  <a href="https://nora.solomontsao.com/signup">Hosted evaluation</a>
-  ·
-  <a href="SUPPORT.md">Support paths</a>
-  ·
-  <a href="https://github.com/solomon2773/nora/discussions">Start support discussion</a>
+  <a href="https://nora.solomontsao.com/pricing">Usage rights</a>
   ·
   <a href="https://raw.githubusercontent.com/solomon2773/nora/master/setup.sh">Install script (bash)</a>
   ·
   <a href="https://raw.githubusercontent.com/solomon2773/nora/master/setup.ps1">Install script (PowerShell)</a>
+  ·
+  <a href="#open-source-proof-pack">Open-source proof pack</a>
+  ·
+  <a href="#screenshots">Screenshots</a>
+  ·
+  <a href="#runtime-direction">Runtime direction</a>
 </p>
 
 <p align="center">
@@ -38,164 +38,142 @@
 
 ## What is Nora?
 
-Nora is an open-source control plane built specifically for [OpenClaw](https://github.com/openclaw/openclaw) agents.
+Nora is an open-source control plane for self-hosted agent operations.
 
-It gives technical teams a single place to:
+Today, the best-supported path is [OpenClaw](https://github.com/openclaw/openclaw). That is the clearest way to evaluate Nora right now. But the product direction should stay broader than a single runtime: Nora should become easier to integrate with additional agent runtimes over time.
 
-- deploy agents into isolated runtimes
-- manage provider keys and sync them to running agents
+Nora gives technical teams a single place to:
+
+- deploy agent runtimes into isolated environments
+- manage provider keys and sync them to running runtimes
 - access chat, logs, and terminal workflows
 - connect channels and integrations
-- monitor agent activity and operator workflows
+- monitor operator activity and runtime workflows
 
-The core value proposition is simple: **if you are already serious enough about OpenClaw to care about infrastructure, observability, and repeatable operations, Nora helps you get to a usable control plane faster.**
+The core value proposition is simple: **if you care about infrastructure, observability, repeatable operations, and a trustworthy operator surface, Nora helps you get to a usable control plane faster.**
 
-## Start here if you're evaluating Nora today
+## Open source means open source
+
+Nora is licensed under **Apache 2.0**.
+
+That means you can:
+
+- self-host Nora on your own infrastructure
+- modify the codebase for your own needs
+- use Nora commercially inside your company
+- host Nora for clients or customers on infrastructure you control
+- build services, packaging, or integrations on top of Nora
+
+The repo should not market a maintainer-commercial relationship as the center of the product. The center of the product is the **fully open-source repo and self-hosted control-plane workflow**.
+
+## Current product direction
+
+### OpenClaw-first today
+
+OpenClaw is the most mature and best-supported runtime path in Nora today. If you want the fastest proof of value, start there.
+
+### Not OpenClaw-only forever
+
+Nora should not be permanently framed as useful only for OpenClaw. The product, docs, and interface should stay friendly to future integration with other agent runtimes.
+
+That means:
+
+- avoid branding the whole product as permanently single-runtime
+- describe OpenClaw as the strongest supported path **today**
+- keep runtime abstractions clean enough that future adapters are realistic
+- show examples with OpenClaw now without turning the platform story into “OpenClaw only, forever”
+
+## Who Nora is for
+
+Nora is best for:
+
+- internal AI platform teams
+- technical product teams
+- ops-minded operators running agent infrastructure
+- service providers who want to host and operate agent control planes for others
+
+Nora is not trying to be:
+
+- a vague “AI workforce” shell
+- a generic low-code automation toy
+- a closed wrapper around an otherwise-open repo
+
+## Fastest path to proof
 
 Use this path to reach first proof of value quickly:
 
 1. **Install Nora** with the setup script or Docker Compose flow
 2. **Create your operator account** and save one LLM provider key
-3. **Deploy one OpenClaw agent** and validate chat, logs, and terminal from the same surface
+3. **Deploy one agent runtime** and validate chat, logs, and terminal from the same surface
 
-If those three steps work cleanly, Nora has already proven the core self-hosted MVP.
+That path is still easiest with OpenClaw today, but the operator model should remain extensible.
 
-## Choose the path that matches your buying motion
+## Open-source proof pack
 
-- **Self-hosted open source** — start with the [Install guide](docs/INSTALL.md) or [Quick Start](#quick-start) if you want maximum infrastructure control and a transparent proof path.
-- **Paid onboarding & support** — use [Support paths](SUPPORT.md) or start a [GitHub Discussion](https://github.com/solomon2773/nora/discussions) if you want the same open-source product with faster rollout help.
-- **Managed Nora / custom deployment** — use the [pricing page](https://nora.solomontsao.com/pricing) or [hosted evaluation flow](https://nora.solomontsao.com/signup) if you want less self-managed infrastructure work.
+Nora should ask people to trust the product itself, the install path, and the operator workflow.
 
-## Open-source core, commercial paths around it
+Use these resources when you need to prove that the repo is real and usable:
 
-Nora should convert open-source repo interest into three clear motions:
+- [Open-source implementation proof](docs/IMPLEMENTATION_PROOF.md) — code-backed evidence for self-hosting, operator flows, and runtime direction
+- [Adoption checklist](docs/ADOPTION_CHECKLIST.md) — practical paths for self-hosting, Apache 2.0 commercial use, and runtime expansion
+- [Open-source usage guide](docs/OPEN_SOURCE_USAGE.md) — Apache 2.0 usage rights and public repo framing
+- [README screenshot plan](docs/README_SCREENSHOT_PLAN.md)
+- [Marketing proof asset plan](docs/MARKETING_PROOF_ASSET_PLAN.md)
+- [Operator screenshot capture script](e2e/scripts/capture-operator-screenshots.mjs) — regenerates the operator screenshots from a local self-hosted stack
 
-| Path | Best for | Current public CTA |
-|---|---|---|
-| **Self-hosted open source** | Teams who want full infrastructure control | [Install guide](docs/INSTALL.md) |
-| **Paid onboarding & support** | Teams who want help getting Nora live faster on their own infra | [Support paths](SUPPORT.md) |
-| **Managed Nora / custom deployment** | Teams exploring a hosted or tailored rollout | [Pricing / commercial paths](https://nora.solomontsao.com/pricing) |
+## Screenshots
 
-That framing keeps the repo honest: the product stays open-source at the core, while monetization happens around implementation speed, support, and deployment scope.
+The repo now includes real operator-side screenshots alongside the marketing and OSS-proof images. They show Nora as a working self-hosted control plane, with OpenClaw as the current best-supported runtime example rather than the forever-only frame.
 
-## Current public entry points
-
-- **Repo + install docs:** `https://github.com/solomon2773/nora`
-- **Install guide:** `https://github.com/solomon2773/nora/blob/master/docs/INSTALL.md`
-- **GitHub support paths:** `https://github.com/solomon2773/nora/blob/master/SUPPORT.md`
-- **Live app:** `https://nora.solomontsao.com`
-- **Pricing + commercial packaging:** `https://nora.solomontsao.com/pricing`
-- **Hosted evaluation:** `https://nora.solomontsao.com/signup`
-- **Paid support intake:** `https://github.com/solomon2773/nora/discussions`
-- **Install scripts:** `https://raw.githubusercontent.com/solomon2773/nora/master/setup.sh` and `https://raw.githubusercontent.com/solomon2773/nora/master/setup.ps1`
-
-That domain map is intentional: the repo and raw install scripts earn trust for self-hosted evaluation, while the live app, signup flow, and pricing page handle commercial follow-on paths.
-
-## Commercial offers at a glance
-
-Nora does not currently publish fixed support or managed-service pricing. Instead, the repo should make the offer boundaries clear so evaluators know which conversation to start.
-
-| Offer | Best fit | What you get | Start here |
-|---|---|---|---|
-| **Self-hosted open source** | You want full infrastructure control | Nora under Apache 2.0, install docs, setup scripts, and the current self-hosted product surface | [Quick Start](#quick-start) |
-| **Paid onboarding & support** | You want Nora live faster on your own infrastructure | Help with setup, rollout planning, onboarding, deployment review, and first-value delivery using the OSS product as the base | [GitHub Discussions](https://github.com/solomon2773/nora/discussions) |
-| **Managed Nora / custom deployment** | You want less self-managed ops or expect a tailored rollout | Hosted evaluation entry, managed deployment discussion, or enterprise/custom scoping based on current product proof | [Pricing / commercial paths](https://nora.solomontsao.com/pricing) |
-
-## How to start a paid conversation
-
-If you want paid help, the fastest way to get a useful answer is to include:
-
-- whether you want **self-hosted support** or a **managed / custom deployment** path
-- your target environment or hosting constraints
-- whether this is a proof-of-value, pilot, or production rollout
-- the OpenClaw workflows you need to prove first
-- any security, SSO, networking, or deployment constraints already known
-
-For the current offer framing and guardrails, see [docs/COMMERCIAL_PATHS.md](docs/COMMERCIAL_PATHS.md).
+### Landing and OSS proof
 
 <p align="center">
-  <img src="docs/assets/proof-pricing-commercial-paths.png" alt="Nora pricing and commercial paths proof" width="90%" />
+  <img src="docs/assets/proof-landing-open-source-funnel.png" alt="Nora landing page screenshot" width="90%" />
 </p>
 
-## Product positioning
+<p align="center">
+  <img src="docs/assets/proof-usage-rights-apache.png" alt="Nora usage rights screenshot" width="90%" />
+</p>
 
-### Nora is best for
+<p align="center">
+  <img src="docs/assets/proof-signup-operator-account.png" alt="Nora signup screenshot" width="90%" />
+</p>
 
-- **internal AI platform teams** running multiple OpenClaw agents
-- **technical product teams** who need a credible operator UX around OpenClaw
-- **ops-minded operators and technical teams** who want to self-host from day one
+### Operator overview and fleet
 
-### Nora is not trying to be
+<p align="center">
+  <img src="docs/assets/proof-operator-dashboard.png" alt="Nora dashboard screenshot showing fleet overview and recent deployments" width="90%" />
+</p>
 
-- a vague “AI workforce” marketing shell
-- a generic low-code automation product
-- an all-things-to-all-buyers enterprise platform on day one
+<p align="center">
+  <img src="docs/assets/proof-operator-fleet.png" alt="Nora fleet management screenshot showing multiple agents and validation actions" width="90%" />
+</p>
 
-### Current MVP focus
+### Deploy and validate
 
-The MVP is **self-hosted first** and optimized around the fastest trustworthy path to value:
+<p align="center">
+  <img src="docs/assets/proof-operator-deploy-flow.png" alt="Nora deploy flow screenshot for provisioning an OpenClaw agent" width="90%" />
+</p>
 
-1. install Nora
-2. create an operator account
-3. add an LLM provider key
-4. deploy an OpenClaw agent
-5. validate it via chat, logs, and terminal
+<p align="center">
+  <img src="docs/assets/proof-operator-agent-detail.png" alt="Nora agent detail screenshot showing the validation view, OpenClaw badge, logs, and terminal tabs" width="90%" />
+</p>
 
-That positioning is intentionally narrower and more credible than broad hosted-platform claims.
+### Provider setup
 
-### Commercial packaging logic
+<p align="center">
+  <img src="docs/assets/proof-operator-settings-provider-setup.png" alt="Nora settings screenshot showing configured LLM providers and provider setup options" width="90%" />
+</p>
 
-Nora monetizes around **speed, support, and deployment scope** — not by hiding the OSS product or inventing unsupported usage claims.
+## Runtime direction
 
-- **Self-hosted OSS** is the proof path.
-- **Paid onboarding & support** is for teams that want help getting the self-hosted path working faster.
-- **Managed Nora / custom deployment** is for teams that want less operational overhead or already need a tailored rollout.
+Nora should be described as:
 
-### Nora is probably not the right fit if
+- **OpenClaw-first today**
+- **runtime-friendly by direction**
+- **self-hosted and commercially usable by anyone under Apache 2.0**
 
-- you want a zero-conversation generic SaaS with no implementation planning; Nora's strongest path today is either self-hosted evaluation or a scoped commercial engagement
-- you do not care about OpenClaw-specific operations
-- you want a non-technical “click once and forget infrastructure” experience
-
-Stating that boundary explicitly makes the self-hosted MVP more believable for the teams that actually do fit.
-
----
-
-## Why Nora?
-
-- **OpenClaw-native** — purpose-built around OpenClaw agent operations
-- **Self-hosted first** — run Nora on your own infrastructure
-- **One control plane** — deploy, inspect, and manage agents from a single surface
-- **Bring your own keys** — save provider credentials once and sync them to agents
-- **Operator visibility** — chat, logs, terminal, channels, integrations, and monitoring
-- **Flexible runtime backends** — Docker today, with Proxmox and Kubernetes paths available
-- **Security-minded defaults** — encrypted secrets, JWT auth, RBAC, rate limiting, per-agent isolation
-
----
-
-## Proof points
-
-Nora currently supports:
-
-- **18 LLM providers**
-- **60+ tools and integrations**
-- **9 communication channel types**
-- **3 provisioning backends** (Docker, Proxmox, Kubernetes)
-
-These are better signals for the current product than inflated usage claims.
-
-## MVP evaluation checklist
-
-A successful Nora evaluation should prove four things quickly:
-
-1. you can create an operator account without onboarding confusion
-2. you can save one LLM provider key in Settings
-3. you can deploy the first OpenClaw agent through the default Docker path
-4. you can validate chat, logs, and terminal from the same control plane
-
-If those four steps work cleanly, Nora has already demonstrated the core self-hosted control-plane value proposition.
-
----
+That framing is more durable than treating Nora as a permanently single-runtime dashboard or centering the repo around sales packaging.
 
 ## Quick Start
 
@@ -232,15 +210,6 @@ The installer will:
 8. take you to the dashboard so you can deploy the first agent
 
 The public install links intentionally use `raw.githubusercontent.com` so the setup path stays aligned with the open-source repo and current trust model.
-
-### If you get stuck or want a faster path
-
-| Situation | Best next step |
-|---|---|
-| You want the cleanest self-serve path | [Install guide](docs/INSTALL.md) |
-| You want help getting Nora live on your own infra | [Support paths](SUPPORT.md) or [GitHub Discussions](https://github.com/solomon2773/nora/discussions) |
-| You want less DIY infrastructure work | [Pricing / commercial paths](https://nora.solomontsao.com/pricing) |
-| You want a hosted evaluation or custom deployment conversation | [Hosted evaluation](https://nora.solomontsao.com/signup) |
 
 ### Manual setup
 
@@ -304,7 +273,7 @@ docker compose up -d
 
 Go to **Settings** and save an API key for a supported provider such as Anthropic, OpenAI, Google, or another available provider.
 
-### 3) Deploy your first OpenClaw agent
+### 3) Deploy your first agent runtime (OpenClaw is the default path today)
 
 1. Go to **Deploy**
 2. enter an agent name
@@ -365,12 +334,12 @@ Track agent health, queue state, logs, metrics, and runtime activity.
   └── /api/*      → backend-api         (Express.js)
                         ├── PostgreSQL 15
                         ├── Redis 7 + BullMQ
-                        └── OpenClaw Gateway proxy / agent runtime workflows
+                        └── OpenClaw Gateway today / broader runtime adapters later
 ```
 
 ### Core components
 
-- `frontend-marketing/` — landing, login, signup, pricing
+- `frontend-marketing/` — landing, login, signup, usage-rights page
 - `frontend-dashboard/` — operator dashboard for agents and settings
 - `backend-api/` — APIs, auth, key management, provisioning, monitoring
 - `admin-dashboard/` — admin/operator surfaces
@@ -389,7 +358,7 @@ Track agent health, queue state, logs, metrics, and runtime activity.
 | Auth | NextAuth.js, JWT, bcryptjs |
 | Database | PostgreSQL 15 |
 | Queue | BullMQ + Redis 7 |
-| Agent Runtime | OpenClaw Gateway |
+| Agent Runtime | OpenClaw Gateway today; broader runtime integrations remain in scope |
 | Encryption | AES-256-GCM |
 | Provisioning | Docker, Proxmox, Kubernetes, NemoClaw |
 

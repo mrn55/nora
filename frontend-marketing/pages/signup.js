@@ -5,7 +5,6 @@ import { signIn } from "next-auth/react";
 import { useToast } from "../components/Toast";
 
 const OAUTH_LOGIN_ENABLED = process.env.NEXT_PUBLIC_OAUTH_LOGIN_ENABLED === "true";
-const IS_SELF_HOSTED = process.env.NEXT_PUBLIC_PLATFORM_MODE === "selfhosted";
 
 export default function Signup() {
   const [email, setEmail] = useState("");
@@ -55,7 +54,7 @@ export default function Signup() {
   const nextSteps = [
     "Create your operator account",
     "Add an LLM provider key in Settings",
-    "Deploy your first OpenClaw agent",
+    "Deploy your first agent runtime",
     "Verify chat, logs, and terminal in one place",
   ];
 
@@ -71,16 +70,15 @@ export default function Signup() {
 
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-semibold mb-6">
               <Shield size={14} />
-              {IS_SELF_HOSTED ? "Self-hosted OpenClaw control plane" : "Hosted evaluation / custom deployment path"}
+              Open-source operator signup
             </div>
 
             <h1 className="text-4xl font-black tracking-tight leading-tight mb-4">
-              {IS_SELF_HOSTED ? "Create the operator account for your Nora workspace" : "Start a Nora evaluation without losing the commercial path"}
+              Create the operator account for your Nora workspace
             </h1>
             <p className="text-slate-400 leading-relaxed text-base">
-              {IS_SELF_HOSTED
-                ? "Nora is built for teams that want a credible, self-hosted way to deploy and operate OpenClaw agents without gluing together provisioning, key sync, and observability by hand."
-                : "Use this flow when you want a faster evaluation start, a managed path, or a custom deployment conversation around Nora instead of a pure DIY rollout. If you already know you want self-hosted help instead, the support intake remains the better path."}
+              Nora is an open-source control plane for agent operations. Apache 2.0 allows self-hosting and commercial use,
+              while OpenClaw is the best-supported runtime today and the long-term direction stays friendly to future runtime integrations.
             </p>
           </div>
 
@@ -109,53 +107,19 @@ export default function Signup() {
                   <span className="text-sm font-bold">Built for operators</span>
                 </div>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Deploy, inspect, and manage OpenClaw agents from one control plane.
+                  Deploy, inspect, and manage agent runtimes from one control plane.
                 </p>
               </div>
               <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-5">
                 <div className="flex items-center gap-2 mb-2 text-amber-300">
                   <Shield size={16} />
-                  <span className="text-sm font-bold">{IS_SELF_HOSTED ? "BYO infra + keys" : "Commercial path stays clear"}</span>
+                  <span className="text-sm font-bold">BYO infra + keys</span>
                 </div>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  {IS_SELF_HOSTED
-                    ? "Keep your runtime, network, and provider credentials under your control."
-                    : "Self-host if you want control, use support for rollout help, or keep this hosted path for managed/custom evaluation."}
+                  Keep your runtime, network, and provider credentials under your control.
                 </p>
               </div>
             </div>
-
-            {!IS_SELF_HOSTED && (
-              <div className="grid gap-4">
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-3xl p-5">
-                  <p className="text-xs font-black uppercase tracking-[0.25em] text-blue-200 mb-3">Need rollout help?</p>
-                  <p className="text-sm text-blue-50/80 leading-relaxed mb-4">
-                    If you already know you want setup guidance, onboarding help, or a faster first-value path on your own infrastructure, start with the support intake instead of guessing.
-                  </p>
-                  <a href="https://github.com/solomon2773/nora/discussions" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-white hover:underline">
-                    Open GitHub Discussions
-                  </a>
-                </div>
-                <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-5">
-                  <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 mb-3">Want packaging context first?</p>
-                  <p className="text-sm text-slate-400 leading-relaxed mb-4">
-                    Review the pricing and commercial paths page to compare self-hosted OSS, paid support, and managed/custom deployment.
-                  </p>
-                  <Link href="/pricing" className="text-sm font-bold text-blue-400 hover:underline">
-                    Review pricing paths
-                  </Link>
-                </div>
-                <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-5">
-                  <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 mb-3">Prefer self-hosting after all?</p>
-                  <p className="text-sm text-slate-400 leading-relaxed mb-4">
-                    Use the GitHub install guide if you want the cleanest OSS evaluation path before opening a support or managed conversation.
-                  </p>
-                  <a href="https://github.com/solomon2773/nora/blob/master/docs/INSTALL.md" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-400 hover:underline">
-                    Open install guide
-                  </a>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -165,21 +129,13 @@ export default function Signup() {
           <div className="flex flex-col gap-2">
             <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-none mb-2">Create Operator Account</h2>
             <p className="text-sm text-slate-400 font-medium">
-              {IS_SELF_HOSTED
-                ? "This creates an operator account for your self-hosted Nora instance."
-                : "This starts the hosted evaluation flow and keeps the managed/custom deployment path open."}
+              This creates an operator account for your Nora instance.
             </p>
           </div>
 
-          {IS_SELF_HOSTED ? (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-sm text-blue-100 leading-relaxed">
-              <span className="font-bold">Self-hosted note:</span> after account creation, the fastest path to value is Settings → add an LLM provider → Deploy your first agent.
-            </div>
-          ) : (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-sm text-blue-100 leading-relaxed">
-              <span className="font-bold">Hosted evaluation note:</span> create the account here, then use the product proof to decide whether to stay self-managed, request rollout support, or scope a custom deployment.
-            </div>
-          )}
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-sm text-blue-100 leading-relaxed">
+            <span className="font-bold">Open-source note:</span> after account creation, the fastest path to value is Settings → add an LLM provider → Deploy your first agent runtime.
+          </div>
 
           {OAUTH_LOGIN_ENABLED && (
             <div className="flex flex-col gap-3">
@@ -227,10 +183,12 @@ export default function Signup() {
                     className="w-full pl-12 pr-6 py-3 md:py-4 bg-white/5 border border-white/10 rounded-2xl text-sm font-bold text-white outline-none transition-all focus:ring-2 focus:ring-blue-500/50"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
                     required
                   />
                 </div>
               </div>
+
               <div className="flex flex-col gap-2 group">
                 <label className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none ml-2 opacity-80">Password</label>
                 <div className="relative">
@@ -240,34 +198,22 @@ export default function Signup() {
                     className="w-full pl-12 pr-6 py-3 md:py-4 bg-white/5 border border-white/10 rounded-2xl text-sm font-bold text-white outline-none transition-all focus:ring-2 focus:ring-blue-500/50"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Create a secure password"
                     required
                   />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 text-sm text-slate-300 space-y-2">
-              {nextSteps.slice(0, 3).map((step) => (
-                <div key={step} className="flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                  <span>{step}</span>
-                </div>
-              ))}
-            </div>
-
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-3 px-8 py-4 md:py-5 bg-blue-600 hover:bg-blue-700 transition-all text-sm font-black text-white rounded-2xl shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-50"
               disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-sm transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
             >
-              {loading ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} className="fill-current" />}
-              Create Operator Account
+              {loading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+              {loading ? "Creating Account..." : "Create Operator Account"}
             </button>
           </form>
-
-          <p className="text-center text-sm text-slate-500">
-            Already have an account? <a href="/login" className="text-blue-400 font-bold hover:underline">Sign In</a>
-          </p>
         </div>
       </div>
     </div>

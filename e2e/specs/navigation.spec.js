@@ -5,7 +5,7 @@ test.describe("Marketing site navigation", () => {
   test("landing page loads with hero section", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /open-source control plane/i })).toBeVisible();
-    await expect(page.getByText("OpenClaw agents", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /agent operations/i })).toBeVisible();
   });
 
   test("features section is present", async ({ page }) => {
@@ -23,7 +23,7 @@ test.describe("Marketing site navigation", () => {
     await expect(page.locator("footer")).toBeVisible();
   });
 
-  test("footer pricing link points to public pricing route", async ({ page }) => {
+  test("footer usage-rights link points to public route", async ({ page }) => {
     await page.goto("/");
     const pricingLink = page.locator('footer a[href="/pricing"]').first();
     await expect(pricingLink).toBeVisible();
@@ -44,7 +44,7 @@ test.describe("Marketing site navigation", () => {
     await expect(page.locator("#features")).toBeInViewport();
   });
 
-  test("homepage exposes commercial paths CTA", async ({ page }) => {
+  test("homepage exposes open-source usage page", async ({ page }) => {
     await page.goto("/");
     const cta = page.locator('a[href="/pricing"]').first();
     await expect(cta).toBeVisible();
@@ -59,25 +59,28 @@ test.describe("Marketing site navigation", () => {
   });
 });
 
-test.describe("Pricing page", () => {
-  test("pricing page loads with commercial-path copy while keeping current domain proof visible", async ({ page }) => {
+test.describe("Open-source usage page", () => {
+  test("usage page loads with open-source rights copy", async ({ page }) => {
     await page.goto("/pricing");
-    await expect(page.getByRole("heading", { name: /open source first\.?\s*commercial help when you need it\.?/i })).toBeVisible();
-    await expect(page.getByText(/repo → support → managed/i)).toBeVisible();
-    await expect(page.getByText(/paid onboarding & support/i)).toBeVisible();
-    await expect(page.getByText(/managed nora \/ custom deployment/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /fully open source/i })).toBeVisible();
+    await expect(page.getByText(/self-host it, extend it, or run it commercially yourself/i)).toBeVisible();
+    await expect(page.getByText(/commercial use is allowed/i)).toBeVisible();
+    await expect(page.getByText(/openclaw is the clearest and strongest supported runtime path/i)).toBeVisible();
     await expect(page.locator('a[href="https://raw.githubusercontent.com/solomon2773/nora/master/setup.sh"]').first()).toBeVisible();
   });
 });
 
-test.describe("Dashboard navigation", () => {
-  test("dashboard redirects without auth", async ({ page }) => {
-    await page.goto("/app/agents");
-    await expect(page).toHaveURL(/\/login/);
-  });
-
+test.describe("Auth entry points", () => {
   test("login page is accessible", async ({ page }) => {
     await page.goto("/login");
     await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByText(/agent operator console/i)).toBeVisible();
+  });
+
+  test("signup page is accessible", async ({ page }) => {
+    await page.goto("/signup");
+    await expect(page).toHaveURL(/\/signup/);
+    await expect(page.getByRole("heading", { name: /create operator account/i })).toBeVisible();
   });
 });
+

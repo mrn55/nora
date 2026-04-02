@@ -93,14 +93,14 @@ export default function Login() {
 
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-semibold mb-6">
               <Shield size={14} />
-              OpenClaw operator console
+              Agent operator console
             </div>
 
             <h1 className="text-4xl font-black tracking-tight leading-tight mb-4">
               Welcome back to your Nora control plane
             </h1>
             <p className="text-slate-400 leading-relaxed text-base">
-              Sign in to deploy agents, sync provider keys, inspect logs, open terminals, and manage OpenClaw operations from one place.
+              Sign in to deploy agents, sync provider keys, inspect logs, open terminals, and manage runtime operations from one place. OpenClaw is the strongest supported path today.
             </p>
           </div>
 
@@ -117,7 +117,7 @@ export default function Login() {
                 </div>
                 <div className="flex items-start gap-3">
                   <CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" />
-                  <span>Deploy your first OpenClaw agent from the Deploy screen.</span>
+                  <span>Deploy your first agent runtime from the Deploy screen. OpenClaw is the clearest example today.</span>
                 </div>
                 <div className="flex items-start gap-3">
                   <CheckCircle2 size={16} className="text-emerald-400 mt-0.5 shrink-0" />

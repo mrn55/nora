@@ -4,7 +4,6 @@ import {
   Zap,
   Shield,
   Globe,
-  ShoppingBag,
   Menu,
   X,
   Cpu,
@@ -12,92 +11,79 @@ import {
   Layers,
   Lock,
   ArrowRight,
+  GitBranch,
+  Boxes,
 } from "lucide-react";
 import { useState } from "react";
 
 const PATHS = [
   {
-    icon: ShoppingBag,
-    title: "Self-hosted open source",
+    icon: Server,
+    title: "Self-host Nora",
     badge: "Apache 2.0",
-    desc: "Run Nora on your own infrastructure and evaluate the OpenClaw control-plane workflow end to end.",
+    desc: "Run Nora on infrastructure you control with the repo, raw install scripts, and Docker Compose path as the trust anchor.",
     bullets: [
-      "Open-source repo + install docs",
+      "Open-source repo + quick start",
       "Raw install scripts + Docker Compose",
-      "Best for teams who want full control and a transparent proof path",
+      "Best path for teams that want transparency and control",
     ],
     href: "https://github.com/solomon2773/nora#quick-start",
-    cta: "Self-host Nora",
-    external: true,
-  },
-  {
-    icon: Shield,
-    title: "Paid onboarding & support",
-    badge: "Commercial path",
-    desc: "Keep your own infrastructure but use Nora as a supported rollout instead of a pure DIY setup.",
-    bullets: [
-      "Hands-on setup and rollout guidance",
-      "Operator onboarding and deployment review",
-      "Best for teams short on implementation time but staying self-hosted",
-    ],
-    href: "https://github.com/solomon2773/nora/discussions",
-    cta: "Get rollout help",
+    cta: "Open quick start",
     external: true,
   },
   {
     icon: Globe,
-    title: "Managed Nora / custom deployment",
-    badge: "Hosted + enterprise motion",
-    desc: "Use the hosted account flow as a starting point if you want less self-managed ops or a tailored deployment plan.",
+    title: "Use Nora commercially",
+    badge: "Commercial use allowed",
+    desc: "Apache 2.0 allows you to run Nora inside your company, for clients, or as part of your own service offering.",
     bullets: [
-      "Hosted operator entry point exists today",
-      "Useful for managed or custom rollout conversations",
-      "Best for teams exploring less hands-on operations",
+      "Commercial use is allowed by the license",
+      "Run Nora for internal teams or external customers",
+      "Keep your own packaging, operations, and relationships",
     ],
-    href: "/signup",
-    cta: "Start managed evaluation",
+    href: "/pricing",
+    cta: "Review usage rights",
     external: false,
   },
-];
-
-const BUYER_MOTIONS = [
   {
-    title: "Need control",
-    desc: "Use the repo and install docs when you want the cleanest self-hosted proof path on your own infrastructure.",
-  },
-  {
-    title: "Need speed",
-    desc: "Use paid onboarding/support when you want help getting Nora live faster without giving up self-hosting.",
-  },
-  {
-    title: "Need less ops work",
-    desc: "Use hosted evaluation when you want to start the managed or custom deployment conversation earlier.",
+    icon: GitBranch,
+    title: "Extend beyond OpenClaw",
+    badge: "OpenClaw-first today",
+    desc: "Nora is strongest with OpenClaw right now, but the product direction should remain friendly to broader runtime integrations over time.",
+    bullets: [
+      "OpenClaw is the best-supported runtime today",
+      "Docs and UX should avoid permanent single-runtime lock-in",
+      "Best for teams that want an extensible control-plane layer",
+    ],
+    href: "https://github.com/solomon2773/nora#runtime-direction",
+    cta: "Read runtime direction",
+    external: true,
   },
 ];
 
 const PROOF_LINKS = [
   {
     eyebrow: "Install proof",
-    title: "The repo still leads the funnel",
-    desc: "Self-hosted evaluation starts from the README quick start and raw install scripts, not a vague marketing promise.",
+    title: "The repo is the trust anchor",
+    desc: "Quick start, raw install scripts, and source code remain the clearest entry point for evaluating Nora.",
     href: "https://github.com/solomon2773/nora#quick-start",
     cta: "Open install docs",
     external: true,
   },
   {
-    eyebrow: "Commercial clarity",
-    title: "Pricing matches the current product reality",
-    desc: "The public pricing page maps repo → support → managed/custom without unsupported public price points.",
+    eyebrow: "Usage rights",
+    title: "Apache 2.0 usage is explicit",
+    desc: "The public usage-rights page explains self-hosting, modification, and commercial use by anyone under Apache 2.0.",
     href: "/pricing",
-    cta: "Review commercial paths",
+    cta: "Review usage rights",
     external: false,
   },
   {
-    eyebrow: "Paid intake",
-    title: "Support and rollout help have a live CTA",
-    desc: "GitHub Discussions is the current intake path for onboarding help, setup review, and paid rollout conversations.",
-    href: "https://github.com/solomon2773/nora/discussions",
-    cta: "Start support discussion",
+    eyebrow: "Runtime direction",
+    title: "OpenClaw-first, not permanently OpenClaw-only",
+    desc: "The current product is strongest with OpenClaw today while future integration with other runtimes remains part of the direction.",
+    href: "https://github.com/solomon2773/nora#runtime-direction",
+    cta: "Read roadmap framing",
     external: true,
   },
 ];
@@ -109,22 +95,22 @@ export default function Home() {
     {
       icon: Server,
       title: "Dedicated Infrastructure",
-      desc: "Every OpenClaw agent runs in its own isolated environment with provisioned compute and storage.",
+      desc: "Each agent workspace runs in an isolated environment with provisioned compute and storage.",
     },
     {
       icon: Zap,
-      title: "One-Click Deploy",
-      desc: "Provision and launch agents from the dashboard without hand-wiring infrastructure every time.",
+      title: "Fast Deploy Flow",
+      desc: "Launch agent runtimes from the dashboard instead of stitching the workflow together by hand.",
     },
     {
       icon: Shield,
       title: "Security First",
-      desc: "JWT + RBAC, encrypted secrets, rate limiting, and isolated agent runtimes built into the control plane.",
+      desc: "JWT + RBAC, encrypted secrets, rate limiting, and isolated runtimes built into the control plane.",
     },
     {
       icon: Cpu,
       title: "18 LLM Providers",
-      desc: "Connect major model providers from one place and sync credentials to the agents that need them.",
+      desc: "Connect major model providers from one place and sync credentials to the runtimes that need them.",
     },
     {
       icon: Layers,
@@ -139,7 +125,7 @@ export default function Home() {
     {
       icon: BarChart3,
       title: "Live Monitoring",
-      desc: "Track activity, sessions, logs, and metrics from one dashboard as agents run.",
+      desc: "Track activity, sessions, logs, and metrics from one dashboard as operators work.",
     },
     {
       icon: Lock,
@@ -151,18 +137,18 @@ export default function Home() {
   const steps = [
     {
       num: "01",
-      title: "Install or open Nora",
-      desc: "Start from the open-source install path or the hosted signup flow depending on how much infrastructure you want to own.",
+      title: "Install Nora",
+      desc: "Start from the open-source quick start and get the control plane running on infrastructure you control.",
     },
     {
       num: "02",
-      title: "Connect one model and one tool",
-      desc: "Add one LLM provider key, then configure the integrations and channels your agent should use.",
+      title: "Connect one model and one runtime",
+      desc: "Add one LLM provider key, then configure the runtime, integrations, and channels you want to prove first.",
     },
     {
       num: "03",
       title: "Deploy and validate value",
-      desc: "Launch an OpenClaw agent, then validate chat, logs, and terminal from the same control plane.",
+      desc: "Launch an agent runtime, then validate chat, logs, and terminal from the same control plane.",
     },
   ];
 
@@ -178,7 +164,7 @@ export default function Home() {
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-400">
             <a href="#paths" className="hover:text-white transition-colors">Paths</a>
             <a href="#features" className="hover:text-white transition-colors">Features</a>
-            <a href="/pricing" className="hover:text-white transition-colors">Pricing</a>
+            <a href="/pricing" className="hover:text-white transition-colors">Usage rights</a>
           </div>
 
           <div className="hidden md:flex items-center gap-4">
@@ -191,7 +177,7 @@ export default function Home() {
               GitHub
             </a>
             <Link href="/pricing" className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-lg shadow-blue-500/20">
-              Commercial paths
+              Open-source usage
             </Link>
           </div>
 
@@ -204,7 +190,7 @@ export default function Home() {
           <div className="md:hidden bg-[#0f172a] border-b border-white/5 px-4 pt-2 pb-6 flex flex-col gap-4 animate-in slide-in-from-top duration-300">
             <a href="#paths" className="text-sm font-medium text-slate-400 py-2" onClick={() => setMobileMenuOpen(false)}>Paths</a>
             <a href="#features" className="text-sm font-medium text-slate-400 py-2" onClick={() => setMobileMenuOpen(false)}>Features</a>
-            <a href="/pricing" className="text-sm font-medium text-slate-400 py-2" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
+            <a href="/pricing" className="text-sm font-medium text-slate-400 py-2" onClick={() => setMobileMenuOpen(false)}>Usage rights</a>
             <hr className="border-white/5" />
             <a
               href="https://github.com/solomon2773/nora"
@@ -215,9 +201,6 @@ export default function Home() {
             >
               GitHub
             </a>
-            <Link href="/pricing" className="bg-blue-600 hover:bg-blue-700 px-4 py-3 rounded-lg text-sm font-semibold text-center" onClick={() => setMobileMenuOpen(false)}>
-              Commercial paths
-            </Link>
           </div>
         )}
       </nav>
@@ -225,22 +208,18 @@ export default function Home() {
       <section className="pt-32 pb-20 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-8 animate-fade-in">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-            </span>
-            Open source core • Commercial rollout paths around it
+            <Boxes size={14} />
+            Fully open source • Self-hostable • Commercial use allowed • OpenClaw-first today
           </div>
 
           <h1 className="text-4xl md:text-7xl font-extrabold tracking-tight mb-6 bg-gradient-to-b from-white to-slate-400 bg-clip-text text-transparent leading-[1.1]">
-            The open-source control plane <br className="hidden md:block" /> for <span className="text-blue-500">OpenClaw agents</span>
+            The open-source control plane <br className="hidden md:block" /> for <span className="text-blue-500">agent operations</span>
           </h1>
 
           <p className="max-w-3xl mx-auto text-base md:text-xl text-slate-400 mb-10 leading-relaxed">
-            Nora turns open-source OpenClaw operations into a usable control plane today, then gives technical teams a
-            clearer path into paid onboarding, managed rollout, or custom deployment when DIY stops being the fastest
-            option. The public funnel is simple: self-host for control, ask for support for speed, or open a hosted
-            path when you want less operational overhead.
+            Nora helps teams deploy, observe, and operate agent runtimes from one dashboard. OpenClaw is the strongest
+            supported path today, but Nora is being shaped to integrate cleanly with more agent runtimes over time.
+            You can self-host it, modify it, and use it commercially under Apache 2.0.
           </p>
 
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-4 px-4 sm:px-0">
@@ -253,124 +232,115 @@ export default function Home() {
               Self-host Nora <Zap size={20} className="fill-current" />
             </a>
             <a
-              href="https://github.com/solomon2773/nora/discussions"
+              href="https://github.com/solomon2773/nora"
               target="_blank"
               rel="noopener noreferrer"
               className="w-full sm:w-auto bg-slate-900 border border-white/10 px-8 py-4 rounded-xl font-bold text-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
             >
-              Get rollout help <ArrowRight size={20} />
+              View the repo <ArrowRight size={18} />
             </a>
-            <Link href="/signup" className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">
-              Start managed evaluation <ArrowRight size={20} />
-            </Link>
-          </div>
-
-          <div className="mt-8 flex flex-col sm:flex-row items-stretch justify-center gap-3 max-w-4xl mx-auto text-left text-sm">
-            {[
-              "App: nora.solomontsao.com",
-              "Install scripts: raw.githubusercontent.com/solomon2773/nora/master",
-              "Support intake: GitHub Discussions",
-              "Hosted eval: nora.solomontsao.com/signup",
-            ].map((item) => (
-              <div key={item} className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-slate-300">
-                {item}
-              </div>
-            ))}
           </div>
         </div>
       </section>
 
-      <section className="border-y border-white/5 bg-white/[0.02]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-          {[
-            { value: "18", label: "LLM providers" },
-            { value: "60+", label: "Integrations" },
-            { value: "9", label: "Communication channels" },
-            { value: "Open source", label: "Apache 2.0 licensed" },
-          ].map((s) => (
-            <div key={s.label}>
-              <p className="text-3xl md:text-4xl font-black text-white">{s.value}</p>
-              <p className="text-sm text-slate-500 mt-1 font-medium">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="py-16 px-4 sm:px-6 border-b border-white/5">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-10">
-            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Proof before pitch</p>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">Make the next step obvious</h2>
-            <p className="text-slate-400 mt-4 max-w-3xl mx-auto">
-              Nora monetizes best when each public touchpoint tells operators exactly where to go next: install, ask for help, or start a hosted/custom evaluation.
-            </p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-5">
-            {PROOF_LINKS.map((item) => (
-              <div key={item.title} className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 flex flex-col">
-                <p className="text-[11px] font-black uppercase tracking-[0.25em] text-blue-300 mb-3">{item.eyebrow}</p>
-                <h3 className="text-xl font-black mb-3">{item.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed mb-6 flex-1">{item.desc}</p>
-                {item.external ? (
-                  <a href={item.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-white hover:text-blue-300 transition-colors">
-                    {item.cta}
-                    <ArrowRight size={16} />
-                  </a>
-                ) : (
-                  <Link href={item.href} className="inline-flex items-center gap-2 text-sm font-bold text-white hover:text-blue-300 transition-colors">
-                    {item.cta}
-                    <ArrowRight size={16} />
-                  </Link>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="paths" className="py-24 px-4 sm:px-6 scroll-mt-20">
+      <section id="paths" className="px-4 sm:px-6 pb-20">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-14">
+          <div className="text-center mb-12">
             <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Choose your path</p>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Open-source first. Commercial when useful.</h2>
-            <p className="text-slate-400 mt-4 max-w-3xl mx-auto">
-              The repo is the entry point. From there, teams can stay fully self-hosted, add paid implementation help,
-              or use Nora to start a managed/custom deployment conversation.
-            </p>
+            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Open source first. Open usage rights.</h2>
           </div>
-          <div className="grid lg:grid-cols-3 gap-6">
-            {PATHS.map((path) => (
-              <div key={path.title} className="rounded-3xl border border-white/10 bg-white/[0.03] p-7 flex flex-col">
-                <div className="w-11 h-11 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-5">
-                  <path.icon size={22} className="text-blue-400" />
+          <div className="grid md:grid-cols-3 gap-6">
+            {PATHS.map((path) => {
+              const Icon = path.icon;
+              return (
+                <div key={path.title} className="bg-white/5 border border-white/10 rounded-3xl p-8 flex flex-col">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-600/20 text-blue-300 flex items-center justify-center mb-4">
+                    <Icon size={22} />
+                  </div>
+                  <div className="text-xs font-black uppercase tracking-widest text-blue-300 mb-2">{path.badge}</div>
+                  <h3 className="text-2xl font-black mb-3">{path.title}</h3>
+                  <p className="text-slate-400 mb-5">{path.desc}</p>
+                  <ul className="space-y-2 text-sm text-slate-300 mb-8 flex-1">
+                    {path.bullets.map((bullet) => (
+                      <li key={bullet} className="flex items-start gap-2"><span className="text-blue-400">•</span><span>{bullet}</span></li>
+                    ))}
+                  </ul>
+                  {path.external ? (
+                    <a href={path.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 font-bold text-white hover:text-blue-300">
+                      {path.cta} <ArrowRight size={16} />
+                    </a>
+                  ) : (
+                    <Link href={path.href} className="inline-flex items-center gap-2 font-bold text-white hover:text-blue-300">
+                      {path.cta} <ArrowRight size={16} />
+                    </Link>
+                  )}
                 </div>
-                <div className="inline-flex w-fit items-center rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-blue-300 mb-4">
-                  {path.badge}
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section id="features" className="px-4 sm:px-6 pb-20">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Why teams use Nora</p>
+            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">One control plane for agent operators</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {features.map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <div key={feature.title} className="bg-white/5 border border-white/10 rounded-3xl p-6">
+                  <div className="w-11 h-11 rounded-2xl bg-white/10 flex items-center justify-center text-blue-300 mb-4">
+                    <Icon size={20} />
+                  </div>
+                  <h3 className="font-black text-lg mb-2">{feature.title}</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">{feature.desc}</p>
                 </div>
-                <h3 className="text-2xl font-black mb-3">{path.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed mb-5">{path.desc}</p>
-                <ul className="space-y-2 text-sm text-slate-300 mb-8 flex-1">
-                  {path.bullets.map((item) => (
-                    <li key={item} className="flex items-start gap-2">
-                      <span className="text-blue-400 mt-0.5">•</span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                {path.external ? (
-                  <a
-                    href={path.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 hover:bg-white/15 px-4 py-3 text-sm font-bold transition-all"
-                  >
-                    {path.cta}
-                    <ArrowRight size={16} />
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" className="px-4 sm:px-6 pb-20">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">How it works</p>
+            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Fastest path to proof</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {steps.map((step) => (
+              <div key={step.num} className="bg-white/5 border border-white/10 rounded-3xl p-8">
+                <div className="text-blue-400 text-4xl font-black mb-4">{step.num}</div>
+                <h3 className="text-xl font-black mb-3">{step.title}</h3>
+                <p className="text-slate-400">{step.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 sm:px-6 pb-24">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Proof & direction</p>
+            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Keep the product honest</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {PROOF_LINKS.map((item) => (
+              <div key={item.title} className="bg-white/5 border border-white/10 rounded-3xl p-8">
+                <p className="text-blue-300 text-xs font-black uppercase tracking-widest mb-3">{item.eyebrow}</p>
+                <h3 className="text-xl font-black mb-3">{item.title}</h3>
+                <p className="text-slate-400 mb-5">{item.desc}</p>
+                {item.external ? (
+                  <a href={item.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 font-bold text-white hover:text-blue-300">
+                    {item.cta} <ArrowRight size={16} />
                   </a>
                 ) : (
-                  <Link href={path.href} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 hover:bg-white/15 px-4 py-3 text-sm font-bold transition-all">
-                    {path.cta}
-                    <ArrowRight size={16} />
+                  <Link href={item.href} className="inline-flex items-center gap-2 font-bold text-white hover:text-blue-300">
+                    {item.cta} <ArrowRight size={16} />
                   </Link>
                 )}
               </div>
@@ -379,196 +349,28 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="py-16 px-4 sm:px-6 bg-white/[0.02] border-y border-white/5">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-10">
-            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Choose by constraint</p>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">What are you trying to avoid?</h2>
-            <p className="text-slate-400 mt-4 max-w-3xl mx-auto">
-              The fastest converting Nora funnel is not more features — it is clearer buyer motion. Pick the path that matches the operational constraint you want to remove first.
-            </p>
+      <footer className="border-t border-white/5 px-4 sm:px-6 py-10">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-8 justify-between">
+          <div>
+            <h3 className="text-lg font-black mb-2">Nora</h3>
+            <p className="text-sm text-slate-500 leading-relaxed max-w-md">The open-source control plane for agent operations. OpenClaw is the strongest path today, with future runtime integration kept in scope.</p>
           </div>
-
-          <div className="grid md:grid-cols-3 gap-5 mb-12">
-            {BUYER_MOTIONS.map((item) => (
-              <div key={item.title} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                <h3 className="text-lg font-bold mb-2">{item.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="text-center mb-10">
-            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Best fit</p>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">Who Nora is for right now</h2>
-            <p className="text-slate-400 mt-4 max-w-3xl mx-auto">
-              Nora is positioned for teams who already believe in OpenClaw and need a credible operator surface — not a generic AI wrapper with vague claims.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-5">
-            {[
-              {
-                title: "Internal AI platform teams",
-                desc: "Run multiple OpenClaw agents with clearer deployment, key management, logs, and operator workflows.",
-              },
-              {
-                title: "Technical product teams",
-                desc: "Add a real control plane around OpenClaw instead of stitching together provisioning and observability by hand.",
-              },
-              {
-                title: "Ops-minded operators",
-                desc: "Self-host from day one and validate first value fast: account, provider key, first agent, then chat/logs/terminal.",
-              },
-            ].map((item) => (
-              <div key={item.title} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                <h3 className="text-lg font-bold mb-2">{item.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="features" className="py-24 px-4 sm:px-6 scroll-mt-20">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Platform</p>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Everything You Need</h2>
-            <p className="text-slate-400 mt-4 max-w-2xl mx-auto">
-              Production-grade orchestration for OpenClaw agents, from deploy to monitoring.
-            </p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {features.map((f) => (
-              <div key={f.title} className="group bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-blue-500/20 rounded-2xl p-6 transition-all duration-300">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center mb-4 group-hover:bg-blue-500/20 transition-colors">
-                  <f.icon size={20} className="text-blue-400" />
-                </div>
-                <h3 className="font-bold text-lg mb-2">{f.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="how-it-works" className="py-24 px-4 sm:px-6 bg-white/[0.02] border-y border-white/5 scroll-mt-20">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">How It Works</p>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">From repo interest to live agent control</h2>
-          </div>
-          <div className="space-y-0">
-            {steps.map((step, i) => (
-              <div key={step.num} className="flex gap-6 md:gap-10 items-start">
-                <div className="flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-sm font-black shrink-0">
-                    {step.num}
-                  </div>
-                  {i < steps.length - 1 && <div className="w-px h-20 bg-white/10 mt-1" />}
-                </div>
-                <div className="pb-12">
-                  <h3 className="text-xl font-bold mb-2">{step.title}</h3>
-                  <p className="text-slate-400 leading-relaxed">{step.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-24 px-4 sm:px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-6">Use the repo as the front door</h2>
-          <p className="text-slate-400 mb-6 text-lg">
-            The cleanest Nora funnel is simple: self-host if you want control, ask for paid help if you want speed, and
-            open a hosted/custom evaluation when you want less hands-on infrastructure work.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-3 mb-10 text-sm">
-            {[
-              "Open-source self-hosted",
-              "Paid onboarding & support",
-              "Managed / custom deployment",
-            ].map((item) => (
-              <div key={item} className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-slate-300">
-                {item}
-              </div>
-            ))}
-          </div>
-          <div className="grid sm:grid-cols-3 gap-4 text-left">
-            <a
-              href="https://github.com/solomon2773/nora#quick-start"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.05] transition-all"
-            >
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-blue-300 mb-3">Self-host</p>
-              <h3 className="text-xl font-black mb-2">Review install docs</h3>
-              <p className="text-sm text-slate-400 leading-relaxed mb-4">Best if you want to prove Nora on your own infrastructure first.</p>
-              <span className="inline-flex items-center gap-2 text-sm font-bold text-white">Open README <ArrowRight size={16} /></span>
-            </a>
-            <a
-              href="https://github.com/solomon2773/nora/discussions"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.05] transition-all"
-            >
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-blue-300 mb-3">Paid support</p>
-              <h3 className="text-xl font-black mb-2">Get rollout help</h3>
-              <p className="text-sm text-slate-400 leading-relaxed mb-4">Best if you want setup help, onboarding support, or a faster path to first value while staying self-hosted.</p>
-              <span className="inline-flex items-center gap-2 text-sm font-bold text-white">Open Discussions <ArrowRight size={16} /></span>
-            </a>
-            <Link href="/signup" className="rounded-3xl border border-blue-500/30 bg-blue-500/10 p-6 hover:bg-blue-500/15 transition-all">
-              <p className="text-xs font-black uppercase tracking-[0.25em] text-blue-200 mb-3">Managed / custom</p>
-              <h3 className="text-xl font-black mb-2">Start managed evaluation</h3>
-              <p className="text-sm text-blue-50/80 leading-relaxed mb-4">Best if you want a lighter-weight evaluation path or a tailored deployment conversation.</p>
-              <span className="inline-flex items-center gap-2 text-sm font-bold text-white">Open signup <ArrowRight size={16} /></span>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <footer className="border-t border-white/5 bg-[#0b1120]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
-          <div className="grid md:grid-cols-4 gap-10">
-            <div className="md:col-span-1">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-sm text-white">N</div>
-                <span className="text-lg font-bold">Nora</span>
-              </div>
-              <p className="text-sm text-slate-500 leading-relaxed">The open-source control plane for OpenClaw agents.</p>
-            </div>
+          <div className="grid grid-cols-2 gap-8 text-sm">
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Product</h4>
-              <ul className="space-y-2 text-sm text-slate-400">
-                <li><a href="#paths" className="hover:text-white transition-colors">Paths</a></li>
-                <li><a href="/pricing" className="hover:text-white transition-colors">Pricing</a></li>
-                <li><a href="/app/agents" className="hover:text-white transition-colors">Dashboard</a></li>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Project</h4>
+              <ul className="space-y-2 text-slate-400">
+                <li><a href="https://github.com/solomon2773/nora" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub</a></li>
+                <li><a href="https://github.com/solomon2773/nora#quick-start" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Quick Start</a></li>
+                <li><a href="/pricing" className="hover:text-white transition-colors">Usage Rights</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Resources</h4>
-              <ul className="space-y-2 text-sm text-slate-400">
-                <li><a href="https://github.com/solomon2773/nora" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">GitHub Repo</a></li>
-                <li><a href="https://github.com/solomon2773/nora#quick-start" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Install Docs</a></li>
-                <li><a href="https://github.com/solomon2773/nora/discussions" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Discussions</a></li>
+              <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Direction</h4>
+              <ul className="space-y-2 text-slate-400">
+                <li><a href="https://github.com/solomon2773/nora#runtime-direction" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Runtime Direction</a></li>
+                <li><a href="https://github.com/solomon2773/nora#screenshots" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Screenshots</a></li>
+                <li><a href="/login" className="hover:text-white transition-colors">Sign In</a></li>
               </ul>
-            </div>
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Commercial</h4>
-              <ul className="space-y-2 text-sm text-slate-400">
-                <li><a href="https://github.com/solomon2773/nora/discussions" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Paid Support</a></li>
-                <li><a href="/pricing" className="hover:text-white transition-colors">Managed Nora</a></li>
-                <li><a href="/signup" className="hover:text-white transition-colors">Hosted Evaluation</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-white/5 mt-10 pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-slate-600">&copy; {new Date().getFullYear()} Nora.</p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>Open source.</span>
-              <span>Commercial rollout paths available.</span>
             </div>
           </div>
         </div>

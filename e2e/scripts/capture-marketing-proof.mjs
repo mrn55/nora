@@ -17,8 +17,13 @@ const shots = [
   },
   {
     path: "/pricing",
-    file: "proof-pricing-commercial-paths.png",
-    readyText: /Open source first\./i,
+    file: "proof-usage-rights-apache.png",
+    readyText: /Fully open source\./i,
+  },
+  {
+    path: "/signup",
+    file: "proof-signup-operator-account.png",
+    readyText: /Create Operator Account/i,
   },
 ];
 

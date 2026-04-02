@@ -1,99 +1,77 @@
 import Link from "next/link";
-import { Check, Zap, Shield, Crown, ArrowRight } from "lucide-react";
+import { Check, Server, Globe, GitBranch, ArrowRight, Scale, Shield, FileText } from "lucide-react";
 
-const OFFERS = [
+const PATHS = [
   {
-    key: "oss",
-    name: "Self-hosted open source",
+    key: "selfhost",
+    name: "Self-host Nora",
     price: "Free",
     period: "Apache 2.0",
-    description: "The repo is the front door: install Nora yourself and validate the OpenClaw control-plane workflow on your own infrastructure.",
-    icon: Zap,
+    description: "Run Nora on infrastructure you control and adapt it to your own workflows.",
+    icon: Server,
     features: [
-      "Open-source repo on GitHub",
-      "Install scripts served from raw.githubusercontent.com",
-      "18 LLM providers",
-      "60+ integrations",
-      "9 communication channels",
-      "Environment-based resource control in self-hosted mode",
+      "Clone, modify, and self-host the full repo",
+      "Install from GitHub + raw setup scripts",
+      "Use the product internally without asking permission",
+      "OpenClaw is the strongest supported runtime today",
     ],
-    cta: "Open install guide",
-    href: "https://github.com/solomon2773/nora/blob/master/docs/INSTALL.md",
+    cta: "Open quick start",
+    href: "https://github.com/solomon2773/nora#quick-start",
     external: true,
-    highlight: false,
   },
   {
-    key: "support",
-    name: "Paid onboarding & support",
-    price: "Paid support",
-    period: "Keep your own infra",
-    description: "For teams that want Nora running faster without turning the rollout into a full DIY project.",
-    icon: Shield,
+    key: "commercial-use",
+    name: "Use it commercially yourself",
+    price: "Allowed",
+    period: "Apache 2.0",
+    description: "You can run Nora as part of a service business, host it for clients, or build on top of it.",
+    icon: Globe,
     features: [
-      "Best for self-hosting teams short on time",
-      "Hands-on setup and rollout guidance",
-      "Operator onboarding and first-value support",
-      "Security and deployment review conversations",
-      "Uses the open-source product as the base",
-      "Start with GitHub Discussions today",
+      "Commercial use is allowed",
+      "Offer hosted services on your own infrastructure",
+      "Serve clients or internal business units",
+      "Keep your own packaging, operations, and customer relationships",
     ],
-    cta: "Get rollout help",
-    href: "https://github.com/solomon2773/nora/discussions",
+    cta: "Read the license",
+    href: "https://github.com/solomon2773/nora/blob/master/LICENSE",
     external: true,
-    highlight: true,
   },
   {
-    key: "managed",
-    name: "Managed Nora / custom deployment",
-    price: "Contact",
-    period: "Hosted or tailored rollout",
-    description: "For teams exploring less self-managed operations, a hosted evaluation path, or a custom Nora deployment around OpenClaw.",
-    icon: Crown,
+    key: "runtime-direction",
+    name: "Extend beyond OpenClaw",
+    price: "Direction",
+    period: "OpenClaw-first today",
+    description: "Nora should stay useful as an agent-operations control plane even as more runtimes are integrated over time.",
+    icon: GitBranch,
     features: [
-      "Hosted signup flow exists at the live app domain",
-      "Useful for managed PaaS or enterprise discovery",
-      "Workspace, RBAC, and billing paths exist in product code",
-      "Custom deployment scoping can start from current product proof",
-      "Best for teams that want less hands-on ops burden",
-      "Use pricing + signup as the current conversion path",
+      "Avoid locking the product story to one runtime forever",
+      "Keep terminology and docs broad enough for future integrations",
+      "Use OpenClaw as the best-supported proof path today",
+      "Design for cleaner runtime adapters over time",
     ],
-    cta: "Start managed evaluation",
-    href: "/signup",
-    external: false,
-    highlight: false,
+    cta: "Read runtime direction",
+    href: "https://github.com/solomon2773/nora#runtime-direction",
+    external: true,
   },
 ];
 
-const SCOPE_DRIVERS = [
-  "Whether you want self-hosted support or a managed/custom path",
-  "Your target environment and hosting constraints",
-  "Evaluation, pilot, or production rollout stage",
-  "Security, SSO, networking, or deployment requirements",
-  "How much rollout help you want beyond product access",
+const RIGHTS = [
+  "Use Nora privately or inside your company",
+  "Modify the source code and redistribute changes under Apache 2.0 terms",
+  "Offer Nora as a hosted or managed service yourself",
+  "Build runtime integrations and workflow extensions around Nora",
 ];
 
-const INTAKE_CHECKLIST = [
-  "Which path you want: support or managed/custom",
-  "What environment you are deploying into",
-  "What first proof milestone you need to reach",
-  "Any known blockers around security, identity, or networking",
-];
-
-const DOMAIN_LINKS = [
+const ENTRY_POINTS = [
+  {
+    label: "Repo",
+    href: "https://github.com/solomon2773/nora",
+    text: "github.com/solomon2773/nora",
+  },
   {
     label: "Live app",
     href: "https://nora.solomontsao.com",
     text: "nora.solomontsao.com",
-  },
-  {
-    label: "Pricing page",
-    href: "https://nora.solomontsao.com/pricing",
-    text: "nora.solomontsao.com/pricing",
-  },
-  {
-    label: "Install guide",
-    href: "https://github.com/solomon2773/nora/blob/master/docs/INSTALL.md",
-    text: "github.com/.../docs/INSTALL.md",
   },
   {
     label: "Bash install",
@@ -107,389 +85,166 @@ const DOMAIN_LINKS = [
   },
 ];
 
-const DECISION_PATHS = [
-  {
-    eyebrow: "Best for control",
-    title: "Self-hosted evaluation",
-    desc: "Use this when you already have operator capacity and want the cleanest proof path on your own infrastructure.",
-    firstStep: "Install guide + raw install scripts",
-    outcome: "Prove account creation, provider key setup, and first agent deployment end to end.",
-    href: "https://github.com/solomon2773/nora/blob/master/docs/INSTALL.md",
-    cta: "Open install guide",
-    external: true,
-  },
-  {
-    eyebrow: "Best monetization bridge",
-    title: "Support-led rollout",
-    desc: "Use this when you want the same OSS product but need rollout help, setup guidance, or a faster operator handoff.",
-    firstStep: "Open a GitHub Discussion with your environment and goals",
-    outcome: "Scope onboarding help, deployment review, and first-value support around the existing product.",
-    href: "https://github.com/solomon2773/nora/discussions",
-    cta: "Get rollout help",
-    external: true,
-  },
-  {
-    eyebrow: "Best for less ops overhead",
-    title: "Hosted evaluation / enterprise path",
-    desc: "Use this when self-hosting is not the preferred first step or you already expect a tailored deployment conversation.",
-    firstStep: "Create an account through the hosted signup flow",
-    outcome: "Start evaluation faster, then scope managed or enterprise requirements from current product proof.",
-    href: "/signup",
-    cta: "Start managed evaluation",
-    external: false,
-  },
-];
-
 const PROOF_RESOURCES = [
   {
-    title: "Install guide",
-    desc: "GitHub-native install and escalation path for self-hosted evaluators.",
-    href: "https://github.com/solomon2773/nora/blob/master/docs/INSTALL.md",
+    title: "Open-source usage guide",
+    desc: "Repo-native explanation of Apache 2.0 rights, self-hosting, and runtime direction framing.",
+    href: "https://github.com/solomon2773/nora/blob/master/docs/OPEN_SOURCE_USAGE.md",
   },
   {
-    title: "Commercial path brief",
-    desc: "In-repo summary of the OSS → support → managed funnel and the guardrails behind it.",
-    href: "https://github.com/solomon2773/nora/blob/master/docs/COMMERCIAL_PATHS.md",
+    title: "Implementation proof",
+    desc: "Code-backed proof that install flows, auth, operator UI, and runtime direction all exist in-repo today.",
+    href: "https://github.com/solomon2773/nora/blob/master/docs/IMPLEMENTATION_PROOF.md",
   },
   {
-    title: "Landing proof screenshot",
-    desc: "Captured proof of the current homepage framing and domain positioning.",
-    href: "https://github.com/solomon2773/nora/blob/master/docs/assets/proof-landing-open-source-funnel.png",
-  },
-  {
-    title: "Pricing proof screenshot",
-    desc: "Captured proof of the current pricing/commercial-path messaging.",
-    href: "https://github.com/solomon2773/nora/blob/master/docs/assets/proof-pricing-commercial-paths.png",
+    title: "README screenshot plan",
+    desc: "Plan for expanding README proof with onboarding and operator screenshots.",
+    href: "https://github.com/solomon2773/nora/blob/master/docs/README_SCREENSHOT_PLAN.md",
   },
 ];
-
-function PlanCard({ offer }) {
-  const Icon = offer.icon;
-  const isHighlight = offer.highlight;
-
-  const classes = `w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-bold text-sm transition-all active:scale-95 ${
-    isHighlight
-      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20"
-      : "bg-white/10 hover:bg-white/15 text-white"
-  }`;
-
-  return (
-    <div
-      className={`relative flex flex-col rounded-3xl p-8 transition-all ${
-        isHighlight
-          ? "bg-gradient-to-b from-blue-600/20 to-blue-900/20 border-2 border-blue-500/50 shadow-2xl shadow-blue-500/10 scale-105"
-          : "bg-white/5 border border-white/10 hover:border-white/20"
-      }`}
-    >
-      {isHighlight && (
-        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-black uppercase tracking-widest px-4 py-1.5 rounded-full">
-          Best monetization bridge from OSS
-        </div>
-      )}
-
-      <div className="flex items-center gap-3 mb-4">
-        <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-            isHighlight ? "bg-blue-600" : "bg-white/10"
-          }`}
-        >
-          <Icon size={20} />
-        </div>
-        <h3 className="text-xl font-black">{offer.name}</h3>
-      </div>
-
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
-        <span className="text-4xl font-black">{offer.price}</span>
-        {offer.period ? <span className="text-sm text-slate-400 font-medium">{offer.period}</span> : null}
-      </div>
-
-      <p className="text-sm text-slate-400 mb-8">{offer.description}</p>
-
-      <ul className="flex flex-col gap-3 mb-8 flex-1">
-        {offer.features.map((f, i) => (
-          <li key={i} className="flex items-center gap-3 text-sm">
-            <Check size={16} className={isHighlight ? "text-blue-300" : "text-green-400"} />
-            <span className="text-slate-300">{f}</span>
-          </li>
-        ))}
-      </ul>
-
-      {offer.external ? (
-        <a href={offer.href} target="_blank" rel="noopener noreferrer" className={classes}>
-          {offer.cta}
-          <ArrowRight size={16} />
-        </a>
-      ) : (
-        <Link href={offer.href} className={classes}>
-          {offer.cta}
-          <ArrowRight size={16} />
-        </Link>
-      )}
-    </div>
-  );
-}
 
 export default function Pricing() {
   return (
     <div className="min-h-screen bg-[#0f172a] text-white font-sans">
       <nav className="flex items-center justify-between px-6 md:px-12 py-6 max-w-7xl mx-auto">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Zap size={18} className="fill-current" />
-          </div>
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">N</div>
           <span className="text-lg font-black tracking-tight">Nora</span>
         </Link>
         <div className="flex items-center gap-4">
           <Link href="/login" className="text-sm text-slate-400 hover:text-white transition-colors font-medium">
             Sign In
           </Link>
-          <Link
-            href="/signup"
+          <a
+            href="https://github.com/solomon2773/nora"
+            target="_blank"
+            rel="noopener noreferrer"
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 transition-colors text-sm font-bold rounded-xl"
           >
-            Hosted evaluation
-          </Link>
+            GitHub
+          </a>
         </div>
       </nav>
 
       <div className="text-center px-6 py-16 md:py-24 max-w-5xl mx-auto">
-        <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-4">Pricing & packaging</p>
+        <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-4">Open-source usage & runtime direction</p>
         <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-tight mb-6">
-          Open source first.
+          Fully open source.
           <br />
-          <span className="text-blue-400">Commercial help when you need it.</span>
+          <span className="text-blue-400">Self-host it, extend it, or run it commercially yourself.</span>
         </h1>
         <p className="text-lg text-slate-400 max-w-3xl mx-auto">
-          Nora&apos;s most credible motion starts with the open-source repo and self-hosted proof of value. From there,
-          the product can convert teams into paid onboarding/support, a hosted evaluation flow, or a custom deployment
-          conversation without relying on unsupported vanity pricing claims.
+          Nora is Apache 2.0 licensed. That means the full repo can stay public, teams can self-host it, and operators can
+          commercially offer Nora-based services on infrastructure they control. OpenClaw is the strongest supported runtime today,
+          but the long-term product direction should remain runtime-friendly.
         </p>
       </div>
 
       <div className="max-w-6xl mx-auto px-6 pb-12 grid md:grid-cols-2 gap-6">
         <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
-          <h2 className="text-lg font-black mb-2">Current product reality</h2>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            Self-hosted Nora is the clearest proof path today. The repo, dashboard, login/signup flow, billing routes,
-            and operator surface already exist, so the best public funnel is to keep the open-source core visible and
-            attach commercial rollout options around it.
-          </p>
-        </div>
-        <div className="bg-blue-500/10 border border-blue-400/20 rounded-3xl p-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-400/10 border border-blue-300/20 text-blue-200 text-[11px] font-black uppercase tracking-widest mb-3">
-            Recommended monetization path
+          <div className="flex items-center gap-3 mb-4">
+            <Scale size={18} className="text-blue-400" />
+            <h2 className="text-xl font-black">What Apache 2.0 means here</h2>
           </div>
-          <h2 className="text-lg font-black mb-2 text-blue-100">Repo → support → managed</h2>
-          <p className="text-sm text-blue-50/80 leading-relaxed">
-            Let the repo and self-hosted install earn trust first. Then use paid onboarding/support for speed or the
-            hosted/custom path when teams want less self-managed infrastructure work.
-          </p>
+          <ul className="space-y-3 text-slate-300 text-sm leading-relaxed">
+            {RIGHTS.map((item) => (
+              <li key={item} className="flex items-start gap-3">
+                <Check size={16} className="text-emerald-400 mt-0.5" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-      </div>
-
-      <div className="max-w-6xl mx-auto px-6 pb-8">
-        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 text-left">
-          <p className="text-blue-300 text-sm font-bold uppercase tracking-widest mb-4">Current public domains and install links</p>
-          <div className="grid md:grid-cols-2 gap-4">
-            {DOMAIN_LINKS.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 hover:bg-white/[0.05] transition-all"
-              >
-                <p className="text-xs uppercase tracking-widest text-slate-500 font-bold mb-1">{item.label}</p>
-                <p className="text-sm text-slate-200 break-all">{item.text}</p>
+        <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Shield size={18} className="text-blue-400" />
+            <h2 className="text-xl font-black">Current public entry points</h2>
+          </div>
+          <div className="space-y-3 text-sm">
+            {ENTRY_POINTS.map((item) => (
+              <a key={item.label} href={item.href} target="_blank" rel="noopener noreferrer" className="block rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 hover:bg-white/[0.06] transition-colors">
+                <div className="text-slate-500 text-xs font-black uppercase tracking-widest mb-1">{item.label}</div>
+                <div className="text-white font-semibold">{item.text}</div>
               </a>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 pb-12">
-        <div className="text-center mb-8">
-          <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Decision clarity</p>
-          <h2 className="text-2xl md:text-4xl font-black tracking-tight">Choose the motion that matches how your team buys</h2>
-          <p className="text-sm md:text-base text-slate-400 max-w-3xl mx-auto mt-4">
-            Nora does not need fake pricing tiers to convert. It needs a clear next action for each evaluator: self-host, ask for rollout help, or open a hosted path.
+      <div className="max-w-6xl mx-auto px-6 pb-12 grid md:grid-cols-2 gap-6">
+        <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <GitBranch size={18} className="text-blue-400" />
+            <h2 className="text-xl font-black">Runtime direction</h2>
+          </div>
+          <div className="space-y-3 text-sm text-slate-300 leading-relaxed">
+            <p><span className="font-bold text-white">Today:</span> OpenClaw is the clearest and strongest supported runtime path in Nora.</p>
+            <p><span className="font-bold text-white">Direction:</span> Nora should stay useful as a broader agent-operations control plane rather than a permanently single-runtime shell.</p>
+            <p><span className="font-bold text-white">Rule:</span> use OpenClaw to prove current product value, but keep docs and UX compatible with future runtime integrations.</p>
+          </div>
+        </div>
+        <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <FileText size={18} className="text-blue-400" />
+            <h2 className="text-xl font-black">Public repo rule</h2>
+          </div>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            The repo should center the product itself: installability, screenshots, operator workflows, and clear Apache 2.0 rights.
+            It should not depend on maintainer-commercial framing as the main reason to trust Nora.
           </p>
         </div>
-        <div className="grid md:grid-cols-3 gap-6">
-          {DECISION_PATHS.map((item) => (
-            <div key={item.title} className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 flex flex-col text-left">
-              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-blue-300 mb-3">{item.eyebrow}</p>
-              <h3 className="text-xl font-black mb-3">{item.title}</h3>
-              <p className="text-sm text-slate-400 leading-relaxed mb-4">{item.desc}</p>
-              <div className="space-y-3 mb-6 flex-1">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-1">First public step</p>
-                  <p className="text-sm text-slate-200">{item.firstStep}</p>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-6 pb-24 grid md:grid-cols-3 gap-6">
+        {PATHS.map((path) => {
+          const Icon = path.icon;
+          return (
+            <div key={path.key} className="relative flex flex-col rounded-3xl p-8 bg-white/5 border border-white/10 hover:border-white/20 transition-all">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/10">
+                  <Icon size={20} />
                 </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-1">Expected outcome</p>
-                  <p className="text-sm text-slate-200">{item.outcome}</p>
-                </div>
+                <h3 className="text-xl font-black">{path.name}</h3>
               </div>
-              {item.external ? (
-                <a href={item.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-white hover:text-blue-300 transition-colors">
-                  {item.cta}
-                  <ArrowRight size={16} />
-                </a>
-              ) : (
-                <Link href={item.href} className="inline-flex items-center gap-2 text-sm font-bold text-white hover:text-blue-300 transition-colors">
-                  {item.cta}
-                  <ArrowRight size={16} />
-                </Link>
-              )}
+
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
+                <span className="text-4xl font-black">{path.price}</span>
+                <span className="text-sm text-slate-400 font-medium">{path.period}</span>
+              </div>
+
+              <p className="text-sm text-slate-400 mb-8">{path.description}</p>
+
+              <ul className="flex flex-col gap-3 mb-8 flex-1">
+                {path.features.map((f) => (
+                  <li key={f} className="flex items-center gap-3 text-sm">
+                    <Check size={16} className="text-green-400" />
+                    <span className="text-slate-300">{f}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <a href={path.href} target={path.external ? "_blank" : undefined} rel={path.external ? "noopener noreferrer" : undefined} className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-bold text-sm transition-all active:scale-95 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20">
+                {path.cta}
+                <ArrowRight size={16} />
+              </a>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 pb-12">
-        <div className="grid lg:grid-cols-[1.15fr_0.85fr] gap-6">
-          <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 md:p-8">
-            <p className="text-blue-300 text-sm font-bold uppercase tracking-widest mb-3">How commercial pricing works today</p>
-            <h2 className="text-2xl md:text-3xl font-black tracking-tight mb-4">Clear scope first. Scoped quote second.</h2>
-            <p className="text-sm md:text-base text-slate-400 leading-relaxed mb-6">
-              Nora does not publish unsupported fixed pricing for support or managed deployment. The public pricing page should help buyers self-select the right path, then give enough context for a scoped conversation.
-            </p>
-            <div className="grid md:grid-cols-2 gap-4">
-              {[
-                {
-                  title: "Paid onboarding & support",
-                  desc: "Best when you are staying self-hosted but want faster setup, rollout help, and first-value support.",
-                },
-                {
-                  title: "Managed Nora / custom deployment",
-                  desc: "Best when you want less operational lift or already expect a tailored deployment conversation.",
-                },
-              ].map((item) => (
-                <div key={item.title} className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-                  <h3 className="font-black mb-2">{item.title}</h3>
-                  <p className="text-sm text-slate-400 leading-relaxed">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-blue-400/20 bg-blue-500/10 p-6 md:p-8">
-            <p className="text-blue-200 text-sm font-bold uppercase tracking-widest mb-3">What changes scope</p>
-            <div className="space-y-3 mb-6">
-              {SCOPE_DRIVERS.map((item) => (
-                <div key={item} className="flex items-start gap-3 text-sm text-blue-50/85">
-                  <Check size={16} className="text-blue-300 shrink-0 mt-0.5" />
-                  <span>{item}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-blue-100/70 leading-relaxed">
-              This keeps the page honest: evaluators see what they can do now, what conversation to start next, and why the public site avoids fake package numbers.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-6xl mx-auto px-6 pb-24 grid md:grid-cols-3 gap-6 md:gap-8 items-start">
-        {OFFERS.map((offer) => (
-          <PlanCard key={offer.key} offer={offer} />
-        ))}
-      </div>
-
-      <div className="max-w-6xl mx-auto px-6 pb-16">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 md:p-8">
-          <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-8 items-start">
-            <div>
-              <p className="text-blue-300 text-sm font-bold uppercase tracking-widest mb-3">Start a useful conversation faster</p>
-              <h2 className="text-2xl md:text-3xl font-black tracking-tight mb-3">What to include in your request</h2>
-              <p className="text-sm text-slate-400 leading-relaxed">
-                Whether you open GitHub Discussions for support or use hosted signup for managed/custom evaluation, a few details make the next response much more useful.
-              </p>
-            </div>
-            <div className="grid md:grid-cols-2 gap-4">
-              {INTAKE_CHECKLIST.map((item) => (
-                <div key={item} className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-sm text-slate-300 leading-relaxed">
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-6xl mx-auto px-6 pb-20">
+      <div className="max-w-6xl mx-auto px-6 pb-24">
         <div className="text-center mb-8">
           <p className="text-blue-400 text-sm font-bold uppercase tracking-widest mb-3">Proof resources</p>
           <h2 className="text-2xl md:text-4xl font-black tracking-tight">Evidence operators can inspect today</h2>
         </div>
         <div className="grid md:grid-cols-3 gap-6">
           {PROOF_RESOURCES.map((item) => (
-            <a
-              key={item.title}
-              href={item.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.05] transition-all"
-            >
+            <a key={item.title} href={item.href} target="_blank" rel="noopener noreferrer" className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.05] transition-all">
               <h3 className="text-lg font-black mb-2">{item.title}</h3>
               <p className="text-sm text-slate-400 leading-relaxed">{item.desc}</p>
             </a>
           ))}
         </div>
-      </div>
-
-      <div className="max-w-3xl mx-auto px-6 pb-24">
-        <h2 className="text-2xl font-black text-center mb-12">Frequently Asked Questions</h2>
-        <div className="flex flex-col gap-6">
-          {[
-            {
-              q: "What is the main conversion path for Nora right now?",
-              a: "Open-source repo first, self-hosted proof second, then paid onboarding/support or a hosted/custom deployment conversation once the team sees real operator value.",
-            },
-            {
-              q: "Where should a self-hosted evaluator start?",
-              a: "Start with the GitHub install guide, then use the raw.githubusercontent.com setup scripts for the cleanest OSS trust path.",
-            },
-            {
-              q: "Where do the install scripts live right now?",
-              a: "The current public install links should point to raw.githubusercontent.com, while the live app and pricing pages run on nora.solomontsao.com.",
-            },
-            {
-              q: "Is self-hosted still the strongest proof path?",
-              a: "Yes. Self-hosted remains the clearest way to prove Nora today because resource limits, infrastructure choices, and rollout timing stay in the operator's control.",
-            },
-            {
-              q: "How should teams start a paid support conversation?",
-              a: "Use GitHub Discussions as the current commercial intake path for setup help, onboarding, and rollout support requests. Include your target environment, rollout stage, and first proof milestone if you can.",
-            },
-            {
-              q: "What about managed Nora or enterprise deployment?",
-              a: "Use the pricing page and hosted signup flow as the current public path, then scope managed or custom deployment requirements from there. This page intentionally avoids unsupported public price points and instead clarifies the scope drivers behind that conversation.",
-            },
-          ].map((item, i) => (
-            <div key={i} className="bg-white/5 border border-white/10 rounded-2xl p-6">
-              <h3 className="font-bold mb-2">{item.q}</h3>
-              <p className="text-sm text-slate-400">{item.a}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="text-center px-6 pb-24 text-sm text-slate-500">
-        Need a self-hosted install path, paid rollout help, or a managed deployment conversation?{" "}
-        <a href="https://github.com/solomon2773/nora/blob/master/docs/INSTALL.md" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-          Open the install guide
-        </a>
-        {" "}, {" "}
-        <a href="https://github.com/solomon2773/nora/discussions" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-          start in GitHub Discussions
-        </a>
-        {" "}for self-hosted support, or{" "}
-        <Link href="/signup" className="text-blue-400 hover:underline">
-          open the hosted evaluation flow
-        </Link>
-        {" "}for managed/custom discovery.
       </div>
     </div>
   );
