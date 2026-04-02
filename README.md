@@ -1,62 +1,83 @@
 <p align="center">
   <h1 align="center">Nora</h1>
-  <p align="center"><strong>The open-source control plane for autonomous AI agents.</strong></p>
-  <p align="center">Deploy agents in 60 seconds. Connect 18 LLMs and 60+ tools. Monitor everything from one dashboard.</p>
+  <p align="center"><strong>The open-source control plane for self-hosted OpenClaw agents.</strong></p>
+  <p align="center">Deploy, observe, and operate OpenClaw agents from one dashboard — without stitching together provisioning scripts, key sync, chat access, and fleet ops by hand.</p>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" />
   <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg" alt="Node" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED.svg" alt="Docker" />
-  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" />
-  <img src="https://img.shields.io/github/stars/solomon2773/nora?style=social" alt="Stars" />
-  <img src="https://img.shields.io/github/contributors/solomon2773/nora" alt="Contributors" />
-  <img src="https://img.shields.io/github/last-commit/solomon2773/nora" alt="Last Commit" />
+  <img src="https://img.shields.io/badge/openclaw-native-yes-6d28d9.svg" alt="OpenClaw Native" />
+  <img src="https://img.shields.io/badge/self--hosted-first-0ea5e9.svg" alt="Self-Hosted First" />
 </p>
-
-<!-- <p align="center">
-  <img src="docs/assets/nora-dashboard.gif" alt="Nora Dashboard" width="720" />
-</p> -->
 
 ---
 
 ## What is Nora?
 
-Nora is an open-source control plane for [OpenClaw](https://github.com/openclaw/openclaw) agents. It handles the full lifecycle — provisioning, deploying, monitoring, and managing autonomous AI agents at scale — so you can focus on what your agents do, not on the infrastructure running them.
+Nora is an open-source control plane built specifically for [OpenClaw](https://github.com/openclaw/openclaw) agents.
 
-Each OpenClaw agent is deployed into its own sandboxed container. Nora connects them to any LLM, wires up your tools and communication channels, and gives you a single dashboard to manage everything.
+It gives technical teams a single place to:
 
-### Why Nora?
+- deploy agents into isolated runtimes
+- manage provider keys and sync them to running agents
+- access chat, logs, and terminal workflows
+- connect channels and integrations
+- monitor agent activity and operator workflows
 
-- **60-second deployment** — name your agent, pick an LLM, click deploy. Done.
-- **Real agent control** — interactive terminal, streaming chat, session management, cron scheduling, and tool inventory per agent.
-- **60+ integrations** — GitHub, Slack, Jira, Notion, Stripe, AWS, and more. Connect from the UI, no code needed.
-- **18 LLM providers** — Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek, OpenRouter, and more. Keys encrypted at rest.
-- **9 communication channels** — Slack, Discord, WhatsApp, Telegram, LINE, Email, Webhook, Teams, SMS.
-- **Pluggable infrastructure** — Docker, Proxmox LXC, Kubernetes, or NemoClaw (NVIDIA Nemotron sandbox).
-- **Self-hosted or PaaS** — run on your own infra or deploy as a SaaS with Stripe billing.
-- **Security first** — AES-256-GCM encryption, Ed25519 device identity, JWT + RBAC, rate limiting.
+The core value proposition is simple: **if you are already serious enough about OpenClaw to care about infrastructure, observability, and repeatable operations, Nora helps you get to a usable control plane faster.**
+
+## Product positioning
+
+### Nora is best for
+
+- **internal AI platform teams** running multiple OpenClaw agents
+- **AI product builders** who need a credible operator UX around OpenClaw
+- **ops-minded founders and technical teams** who want to self-host from day one
+
+### Nora is not trying to be
+
+- a vague “AI workforce” marketing shell
+- a generic low-code automation product
+- an all-things-to-all-buyers enterprise platform on day one
+
+### Current MVP focus
+
+The MVP is **self-hosted first** and optimized around the fastest trustworthy path to value:
+
+1. install Nora
+2. create an operator account
+3. add an LLM provider key
+4. deploy an OpenClaw agent
+5. validate it via chat, logs, and terminal
+
+That positioning is intentionally narrower and more credible than broad hosted-platform claims.
 
 ---
 
-## How It Works
+## Why Nora?
 
-```
-  You                    Nora                         Your Infrastructure
-  ───                    ────                         ────────────────────
+- **OpenClaw-native** — purpose-built around OpenClaw agent operations
+- **Self-hosted first** — run Nora on your own infrastructure
+- **One control plane** — deploy, inspect, and manage agents from a single surface
+- **Bring your own keys** — save provider credentials once and sync them to agents
+- **Operator visibility** — chat, logs, terminal, channels, integrations, and monitoring
+- **Flexible runtime backends** — Docker today, with Proxmox and Kubernetes paths available
+- **Security-minded defaults** — encrypted secrets, JWT auth, RBAC, rate limiting, per-agent isolation
 
-  Click "Deploy"  ──►  Queue job  ──►  Provision container
-                                        ├── Inject LLM keys
-                                        ├── Setup Ed25519 identity
-                                        └── Start OpenClaw Gateway
+---
 
-  Chat / Terminal ──►  WS-RPC Proxy  ──►  Agent Container (:18789)
-  Cron / Tools                             └── OpenClaw Gateway
+## Proof points
 
-  Monitor         ──►  Metrics API  ──►  Token usage, costs, errors
-```
+Nora currently supports:
 
-Nora sits between you and your agent fleet. It provisions containers, injects credentials, proxies all communication through secure WebSocket-RPC, and tracks everything.
+- **18 LLM providers**
+- **60+ tools and integrations**
+- **9 communication channel types**
+- **3 provisioning backends** (Docker, Proxmox, Kubernetes)
+
+These are better signals for the current product than inflated usage claims.
 
 ---
 
@@ -64,38 +85,37 @@ Nora sits between you and your agent fleet. It provisions containers, injects cr
 
 ### Prerequisites
 
-> **Note:** The setup script auto-installs Docker, Docker Compose, and Git if they're missing.
-> Supported: macOS (via Homebrew), Linux (apt/yum/dnf), Windows (via winget/chocolatey).
+> The setup script can install Docker, Docker Compose, and Git if they are missing.
 
 - macOS 12+, Linux (Ubuntu 20.04+, Debian 11+, Fedora 38+), or Windows 10+ with WSL2
-- Admin/sudo access (for Docker installation if not already present)
+- Admin/sudo access for initial setup
 
-### One-line Install (Recommended)
+### Recommended install
 
-**macOS / Linux / WSL2:**
+**macOS / Linux / WSL2**
 
 ```bash
 curl -fsSL https://nora.solomontsao.com/setup.sh | bash
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell)**
 
 ```powershell
 iwr -useb https://nora.solomontsao.com/setup.ps1 | iex
 ```
 
-The interactive installer will:
+The installer will:
 
-1. Clone the repository
-2. Verify Docker, Docker Compose, and openssl are installed
-3. Auto-generate cryptographic secrets (JWT, AES-256-GCM, NextAuth)
-4. Configure platform mode (self-hosted or PaaS) and provisioner backend
-5. Set up your admin account
-6. **Collect an LLM API key** (Anthropic, OpenAI, Google, etc.)
-7. Start all services with `docker compose up`
-8. **Deploy your first agent and inject the LLM key** — ready to chat in 60 seconds
+1. clone the repository
+2. verify Docker, Docker Compose, and OpenSSL
+3. generate platform secrets
+4. configure self-hosted or PaaS mode
+5. create the initial admin account
+6. collect an LLM provider key (optional but recommended)
+7. start the Nora stack
+8. take you to the dashboard so you can deploy the first agent
 
-### Option B: Manual Setup
+### Manual setup
 
 ```bash
 git clone https://github.com/solomon2773/nora.git
@@ -103,13 +123,13 @@ cd nora
 bash setup.sh
 ```
 
-Or configure everything by hand:
+Or configure by hand:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your secrets:
+Then edit `.env` with your secrets:
 
 ```bash
 # Required — generate with: openssl rand -hex 32
@@ -118,7 +138,7 @@ ENCRYPTION_KEY=your-64-char-hex-key
 
 # Default admin account (created on first boot)
 DEFAULT_ADMIN_EMAIL=admin@nora.local
-DEFAULT_ADMIN_PASSWORD=changeme           # change this!
+DEFAULT_ADMIN_PASSWORD=changeme
 
 # Optional — OAuth (leave blank to disable)
 GOOGLE_CLIENT_ID=
@@ -127,91 +147,108 @@ GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 NEXTAUTH_SECRET=your-64-char-hex-key
 
-# Optional — Stripe billing (only for PaaS mode)
+# Optional — Stripe billing (PaaS mode)
 STRIPE_SECRET_KEY=
 STRIPE_PRICE_PRO=
 STRIPE_PRICE_ENTERPRISE=
 ```
 
-Then start:
+Start the stack:
 
 ```bash
 docker compose up -d
 ```
 
-Eight services come up automatically: Nginx, two frontends, backend API, worker, admin panel, PostgreSQL, and Redis. Database schema is applied on first boot.
+---
 
-### Open the dashboard
+## First 15 minutes with Nora
+
+### 1) Open the dashboard
 
 | URL | What |
 |---|---|
-| [localhost:8080](http://localhost:8080) | Landing page |
-| [localhost:8080/login](http://localhost:8080/login) | Login / Sign up |
-| [localhost:8080/app/agents](http://localhost:8080/app/agents) | Agent fleet |
-| [localhost:8080/app/deploy](http://localhost:8080/app/deploy) | Deploy new agent |
+| [localhost:8080](http://localhost:8080) | Marketing / entry page |
+| [localhost:8080/login](http://localhost:8080/login) | Login |
+| [localhost:8080/signup](http://localhost:8080/signup) | Create operator account |
+| [localhost:8080/app/dashboard](http://localhost:8080/app/dashboard) | System overview |
+| [localhost:8080/app/deploy](http://localhost:8080/app/deploy) | Deploy your first agent |
 
-### Deploy your first agent
+### 2) Add an LLM provider
 
-If you used the one-line installer, your first agent is already deployed and ready to chat. Otherwise:
+Go to **Settings** and save an API key for a supported provider such as Anthropic, OpenAI, Google, or another available provider.
 
-1. Log in with your admin account (default: `admin@nora.local` / `admin123`)
-2. Go to [Deploy](http://localhost:8080/app/deploy)
-3. Enter an agent name and click **Deploy**
-4. Go to **Settings** > add your LLM API key (e.g., Google AI, OpenAI, Anthropic)
-5. Click **Sync to Agent**
-6. Open the **Chat** tab and start talking to your agent
+### 3) Deploy your first OpenClaw agent
 
-> **Note:** Change the default admin password after first login. You can also create additional accounts from the signup page.
+1. Go to **Deploy**
+2. enter an agent name
+3. choose a runtime mode
+4. size CPU, RAM, and disk
+5. click **Confirm & Deploy Agent**
+
+### 4) Validate the runtime
+
+After deployment:
+
+1. open the agent detail page
+2. verify the agent is running
+3. sync provider keys if needed
+4. test **Chat**
+5. inspect **Logs**
+6. open **Terminal**
+
+If those steps work cleanly, Nora has already demonstrated its core value.
 
 ---
 
-## What You Can Do
+## What you can do in Nora
 
 ### Deploy & Manage Agents
 
-Create agents with a name, pick a backend (Docker or NemoClaw), and set resource limits. Start, stop, restart, or redeploy from the dashboard.
+Create agents, choose the runtime backend, define resource limits, and manage their lifecycle from the dashboard.
 
 ### Chat with Agents
 
-Streaming chat with real-time token-by-token responses, tool call visualization, thinking traces, and full session history with infinite scroll.
+Use OpenClaw chat workflows directly from the UI with streaming responses and session visibility.
 
-### Interactive Terminal
+### Open Interactive Terminals
 
-Web terminal connected directly to the agent container. Persistent history, keyboard shortcuts, and export for audit.
+Access persistent terminal sessions connected to agent runtimes.
 
-### Connect LLM Providers
+### Manage Provider Keys
 
-18 providers supported. Add your API key from Settings, then sync to any running agent. Per-agent model selection.
+Save provider credentials centrally and sync them to running agents when needed.
 
-**Providers:** Anthropic, OpenAI, Google AI, Groq, Mistral, DeepSeek, OpenRouter, Together AI, Cohere, xAI, Moonshot, Z.AI, Ollama, MiniMax, GitHub Copilot, Hugging Face, Cerebras, NVIDIA
+### Connect Channels & Integrations
 
-### Communication Channels
+Configure communication channels and browse integration options from the same control plane.
 
-Connect agents to Discord, Slack, WhatsApp, Telegram, LINE, Email, Webhook, Teams, or SMS.
+### Monitor Operations
 
-### Integrations
-
-60+ pre-built integrations across 17 categories — developer tools, communication, AI/ML, cloud, data, monitoring, CRM, and more. Connect from the UI.
-
-### Schedule Recurring Tasks
-Use the Cron sub-panel to schedule recurring prompts with standard cron syntax. Agents execute tasks on schedule in new sessions.
+Track agent health, queue state, logs, metrics, and runtime activity.
 
 ---
 
 ## Architecture
 
-```
+```text
   Nginx (:8080)
   ├── /           → frontend-marketing  (Next.js)
   ├── /app/*      → frontend-dashboard  (Next.js)
   ├── /admin/*    → admin-dashboard     (Next.js)
   └── /api/*      → backend-api         (Express.js)
                         ├── PostgreSQL 15
-                        ├── Redis 7 + BullMQ  →  worker-provisioner
-                        │                          └── Docker / Proxmox / K8s / NemoClaw
-                        └── OpenClaw Gateway (WS-RPC :18789 per agent)
+                        ├── Redis 7 + BullMQ
+                        └── OpenClaw Gateway proxy / agent runtime workflows
 ```
 
+### Core components
+
+- `frontend-marketing/` — landing, login, signup, pricing
+- `frontend-dashboard/` — operator dashboard for agents and settings
+- `backend-api/` — APIs, auth, key management, provisioning, monitoring
+- `admin-dashboard/` — admin/operator surfaces
+- `e2e/` — Playwright end-to-end tests
+- `infra/` — backup and TLS helpers
 
 ---
 
@@ -220,40 +257,20 @@ Use the Cron sub-panel to schedule recurring prompts with standard cron syntax. 
 | Layer | Technology |
 |---|---|
 | Reverse Proxy | Nginx |
-| Frontend | Next.js 14, React 18, Tailwind CSS 3.4, Lucide React |
-| Terminal | xterm.js |
+| Frontend | Next.js 14, React 18, Tailwind CSS |
 | Backend | Express.js 4, Node.js 20 |
-| Auth | NextAuth.js (Google/GitHub), bcryptjs, JWT |
+| Auth | NextAuth.js, JWT, bcryptjs |
 | Database | PostgreSQL 15 |
 | Queue | BullMQ + Redis 7 |
-| Agent Gateway | OpenClaw WS-RPC, Ed25519 device identity |
+| Agent Runtime | OpenClaw Gateway |
 | Encryption | AES-256-GCM |
-| Billing | Stripe |
-| Provisioner | dockerode, Proxmox API, Kubernetes API, NemoClaw |
-
----
-
-## Project Structure
-
-```
-├── backend-api/            Express.js API + OpenClaw Gateway proxy
-├── frontend-marketing/     Landing page, login, signup
-├── frontend-dashboard/     Agent management dashboard
-├── admin-dashboard/        Operator admin panel
-├── workers/provisioner/    BullMQ worker (Docker/Proxmox/K8s/NemoClaw)
-├── agent-runtime/          OpenClaw CLI agent runtime (reference)
-├── e2e/                    Playwright E2E tests
-├── infra/                  Backup & TLS configs
-├── docs/                   Additional docs (HTTPS, etc.)
-├── docker-compose.yml      Service orchestration
-└── nginx.conf              Reverse proxy config
-```
+| Provisioning | Docker, Proxmox, Kubernetes, NemoClaw |
 
 ---
 
 ## Configuration
 
-### Environment Variables
+### Environment variables
 
 | Variable | Required | Description |
 |---|---|---|
@@ -271,12 +288,13 @@ Use the Cron sub-panel to schedule recurring prompts with standard cron syntax. 
 ```bash
 # Docker (recommended)
 docker compose up -d
-docker compose logs -f backend-api       # Watch logs
-docker compose up -d --build backend-api  # Rebuild a service
+docker compose logs -f backend-api
+docker compose up -d --build backend-api
 
-# Local (requires PostgreSQL + Redis)
+# Local dev
 cd backend-api && npm install && npm run dev
 cd frontend-dashboard && npm install && npm run dev
+cd frontend-marketing && npm install && npm run dev
 
 # Tests
 cd backend-api && npx jest --no-watchman
@@ -291,46 +309,48 @@ For HTTPS/TLS setup, see [docs/HTTPS_SETUP.md](docs/HTTPS_SETUP.md).
 
 ## Roadmap
 
-### In Progress
+### Current focus
 
-- [ ] Per-agent LLM key sync
-- [ ] Terminal session history persistence
-- [ ] Log export for audit compliance
-- [ ] Mobile-responsive layouts
+- improve activation UX and first-run operator flow
+- tighten self-hosted positioning and documentation
+- improve dashboard proof density and onboarding clarity
+- continue hardening auth, key sync, and operator workflows
 
 ### Planned
 
-- [ ] MCP (Model Context Protocol) tool server support
-- [ ] Agent cloning and templates
-- [ ] Alerting rules (error rate, cost thresholds)
-- [ ] Public REST API with API keys for CI/CD
-- [ ] Multi-tenant teams with RBAC
-- [ ] Agent versioning and rollback
-- [ ] CLI tool (`nora deploy`, `nora sync`)
-
-Have an idea? [Open a discussion](https://github.com/solomon2773/nora/discussions).
+- public REST API and API keys
+- agent templates and cloning
+- richer alerting and cost controls
+- multi-tenant teams with stronger RBAC
+- agent versioning and rollback
+- CLI workflows for deployment and sync
 
 ---
 
 ## Contributing
 
-Nora is in active development. We're looking for developers who want to shape the future of AI agent infrastructure.
+Nora is in active development.
 
-**Areas we need help with:** Frontend (React, UX), Backend (API, workers), Integrations (connectors), Testing (unit, E2E, load), DevOps (K8s, CI/CD).
+Good contribution areas include:
+
+- frontend UX for operator workflows
+- backend provisioning and lifecycle management
+- testing and CI hardening
+- integrations and channel support
+- self-hosted deployment ergonomics
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes
 4. Open a Pull Request
 
-PRs reviewed within 48 hours. Issues tagged `good first issue` for newcomers.
-
 ---
 
 ## Community
 
-- [Discussions](https://github.com/solomon2773/nora/discussions) — ideas, questions, and RFC proposals
-- [Issues](https://github.com/solomon2773/nora/issues) — bug reports and feature requests
+- [Issues](https://github.com/solomon2773/nora/issues)
+- [Discussions](https://github.com/solomon2773/nora/discussions)
+- [OpenClaw](https://github.com/openclaw/openclaw)
 
 ---
 
