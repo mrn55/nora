@@ -1,0 +1,172 @@
+name: Nora Deploy
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to deploy
+        required: false
+        default: master
+      version:
+        description: Override NORA_CURRENT_VERSION for this deploy
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nora-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      DEPLOY_ENV_FILE: ${{ vars.DEPLOY_ENV_FILE || '.env' }}
+      DEPLOY_COMPOSE_FILES: ${{ vars.DEPLOY_COMPOSE_FILES || 'docker-compose.yml' }}
+      NORA_GITHUB_REPO: ${{ vars.NORA_GITHUB_REPO || github.repository }}
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+      INPUT_REF: ${{ github.event.inputs.ref || '' }}
+      INPUT_VERSION: ${{ github.event.inputs.version || '' }}
+    steps:
+      - name: Validate deployment config
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS DEPLOY_PATH; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required deployment setting: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Resolve target ref
+        id: target
+        run: |
+          set -euo pipefail
+          ref="${INPUT_REF:-}"
+          if [ -z "$ref" ] && [ -n "$RELEASE_TAG" ]; then
+            ref="$RELEASE_TAG"
+          fi
+          if [ -z "$ref" ]; then
+            ref="master"
+          fi
+
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Compute deployed version metadata
+        id: release_meta
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          latest_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+
+          version="${INPUT_VERSION:-}"
+          if [ -z "$version" ] && [ -n "$RELEASE_TAG" ]; then
+            version="$RELEASE_TAG"
+          fi
+          if [ -z "$version" ] && [ -n "$latest_tag" ]; then
+            version="$latest_tag"
+          fi
+          if [ -z "$version" ]; then
+            version="$(git rev-parse --short=12 HEAD)"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy on remote host
+        env:
+          TARGET_REF: ${{ steps.target.outputs.ref }}
+          TARGET_VERSION: ${{ steps.release_meta.outputs.version }}
+          TARGET_COMMIT: ${{ steps.release_meta.outputs.commit }}
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/id_ed25519 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' \
+            DEPLOY_REF='$TARGET_REF' \
+            DEPLOY_ENV_FILE='$DEPLOY_ENV_FILE' \
+            DEPLOY_COMPOSE_FILES='$DEPLOY_COMPOSE_FILES' \
+            TARGET_VERSION='$TARGET_VERSION' \
+            TARGET_COMMIT='$TARGET_COMMIT' \
+            NORA_GITHUB_REPO='$NORA_GITHUB_REPO' \
+            bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          cd "$DEPLOY_PATH"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Remote repo has uncommitted changes; refusing to deploy over a dirty worktree." >&2
+            exit 1
+          fi
+
+          git fetch --tags origin
+          git checkout "$DEPLOY_REF"
+
+          if git ls-remote --exit-code --heads origin "$DEPLOY_REF" >/dev/null 2>&1; then
+            git pull --ff-only origin "$DEPLOY_REF"
+          fi
+
+          bash infra/update-release-env.sh \
+            "$DEPLOY_ENV_FILE" \
+            "$TARGET_VERSION" \
+            "$TARGET_COMMIT" \
+            "$NORA_GITHUB_REPO"
+
+          compose_args=()
+          IFS=':' read -r -a compose_files <<< "$DEPLOY_COMPOSE_FILES"
+          for compose_file in "${compose_files[@]}"; do
+            if [ -n "$compose_file" ]; then
+              compose_args+=(-f "$compose_file")
+            fi
+          done
+
+          export NORA_ENV_FILE="$DEPLOY_ENV_FILE"
+          docker compose "${compose_args[@]}" up -d --build
+          docker compose "${compose_args[@]}" ps
+REMOTE
+
+      - name: Deployment summary
+        env:
+          TARGET_REF: ${{ steps.target.outputs.ref }}
+          TARGET_VERSION: ${{ steps.release_meta.outputs.version }}
+          TARGET_COMMIT: ${{ steps.release_meta.outputs.commit }}
+        run: |
+          {
+            echo "### Nora deploy complete"
+            echo ""
+            echo "- Ref: \`$TARGET_REF\`"
+            echo "- Version: \`$TARGET_VERSION\`"
+            echo "- Commit: \`$TARGET_COMMIT\`"
+            echo "- Host: \`$DEPLOY_HOST\`"
+            echo "- Env file: \`$DEPLOY_ENV_FILE\`"
+          } >> "$GITHUB_STEP_SUMMARY"

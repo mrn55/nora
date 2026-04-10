@@ -5,6 +5,30 @@ const JWT_SECRET = process.env.JWT_SECRET || "secret";
 process.env.JWT_SECRET = JWT_SECRET;
 
 const mockDb = { query: jest.fn() };
+const mockGetDeploymentDefaults = jest.fn().mockResolvedValue({
+  vcpu: 1,
+  ram_mb: 1024,
+  disk_gb: 10,
+});
+const RELEASE_ENV_KEYS = [
+  "NORA_CURRENT_VERSION",
+  "NORA_CURRENT_COMMIT",
+  "NORA_BUILD_COMMIT",
+  "GIT_SHA",
+  "NORA_GITHUB_REPO",
+  "NORA_RELEASE_REPO",
+  "NORA_GITHUB_TOKEN",
+  "NORA_RELEASE_CACHE_TTL_MS",
+  "NORA_LATEST_VERSION",
+  "NORA_LATEST_PUBLISHED_AT",
+  "NORA_RELEASE_NOTES_URL",
+  "NORA_LATEST_SEVERITY",
+  "NORA_UPGRADE_REQUIRED",
+  "NORA_AUTO_UPGRADE_ENABLED",
+  "NORA_INSTALL_METHOD",
+  "NORA_MANUAL_UPGRADE_COMMAND",
+  "NORA_MANUAL_UPGRADE_STEPS",
+];
 
 jest.mock("../db", () => mockDb);
 jest.mock("../redisQueue", () => ({ addDeploymentJob: jest.fn(), getDLQJobs: jest.fn(), retryDLQJob: jest.fn() }));
@@ -86,8 +110,119 @@ jest.mock("../metrics", () => ({
   getAgentCost: jest.fn().mockResolvedValue(null),
   recordApiMetric: jest.fn(),
 }));
+jest.mock("../platformSettings", () => ({
+  getDeploymentDefaults: mockGetDeploymentDefaults,
+}));
 
 const app = require("../server");
+
+describe("public platform config", () => {
+  beforeEach(() => {
+    mockGetDeploymentDefaults.mockReset().mockResolvedValue({
+      vcpu: 1,
+      ram_mb: 1024,
+      disk_gb: 10,
+    });
+    RELEASE_ENV_KEYS.forEach((key) => delete process.env[key]);
+    delete global.fetch;
+  });
+
+  afterEach(() => {
+    RELEASE_ENV_KEYS.forEach((key) => delete process.env[key]);
+    delete global.fetch;
+  });
+
+  it("returns deployment defaults in the platform config payload", async () => {
+    const res = await request(app).get("/config/platform");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        mode: "selfhosted",
+        deploymentDefaults: {
+          vcpu: 1,
+          ram_mb: 1024,
+          disk_gb: 10,
+        },
+      })
+    );
+  });
+
+  it("returns release metadata when a newer version is announced", async () => {
+    process.env.NORA_CURRENT_VERSION = "1.2.3";
+    process.env.NORA_CURRENT_COMMIT = "abc123def456";
+    process.env.NORA_LATEST_VERSION = "1.3.0";
+    process.env.NORA_LATEST_PUBLISHED_AT = "2026-04-10T12:00:00.000Z";
+    process.env.NORA_RELEASE_NOTES_URL = "https://nora.test/releases/1.3.0";
+    process.env.NORA_LATEST_SEVERITY = "critical";
+    process.env.NORA_UPGRADE_REQUIRED = "true";
+
+    const res = await request(app).get("/config/platform");
+
+    expect(res.status).toBe(200);
+    expect(res.body.release).toEqual(
+      expect.objectContaining({
+        currentVersion: "1.2.3",
+        currentCommit: "abc123def456",
+        latestVersion: "1.3.0",
+        publishedAt: "2026-04-10T12:00:00.000Z",
+        releaseNotesUrl: "https://nora.test/releases/1.3.0",
+        severity: "critical",
+        updateAvailable: true,
+        upgradeRequired: true,
+        trackingConfigured: true,
+        canAutoUpgrade: false,
+        installMethod: "source",
+        manualUpgrade: expect.objectContaining({
+          command: "git pull --ff-only && docker compose up -d --build",
+          steps: expect.arrayContaining([
+            expect.stringContaining("repo root"),
+          ]),
+        }),
+      })
+    );
+  });
+
+  it("uses the latest GitHub release when explicit latest metadata is not set", async () => {
+    process.env.NORA_CURRENT_VERSION = "1.2.3";
+    process.env.NORA_GITHUB_REPO = "solomon2773/nora";
+    process.env.NORA_RELEASE_CACHE_TTL_MS = "0";
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        tag_name: "v1.3.0",
+        published_at: "2026-04-11T08:30:00.000Z",
+        html_url: "https://github.com/solomon2773/nora/releases/tag/v1.3.0",
+      }),
+    });
+
+    const res = await request(app).get("/config/platform");
+
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://api.github.com/repos/solomon2773/nora/releases/latest",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: "application/vnd.github+json",
+          "User-Agent": "nora-release-checker",
+        }),
+      })
+    );
+    expect(res.body.release).toEqual(
+      expect.objectContaining({
+        currentVersion: "1.2.3",
+        latestVersion: "v1.3.0",
+        publishedAt: "2026-04-11T08:30:00.000Z",
+        releaseNotesUrl:
+          "https://github.com/solomon2773/nora/releases/tag/v1.3.0",
+        latestSource: "github",
+        latestRepo: "solomon2773/nora",
+        updateAvailable: true,
+      })
+    );
+  });
+});
 
 describe("gateway control-plane embed", () => {
   const token = jwt.sign({ id: "user-1", role: "user" }, JWT_SECRET, { expiresIn: "1h" });
@@ -103,7 +238,7 @@ describe("gateway control-plane embed", () => {
     delete process.env.GATEWAY_HOST;
   });
 
-  it("proxies the gateway UI over the control-plane contract port and injects the WS relay", async () => {
+  it("proxies the gateway UI, sets an embed session cookie, and injects the bootstrap script", async () => {
     mockDb.query.mockResolvedValueOnce({
       rows: [{
         host: "10.0.0.10",
@@ -112,34 +247,62 @@ describe("gateway control-plane embed", () => {
         status: "running",
       }],
     });
-    global.fetch.mockResolvedValue({
+    global.fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
       text: async () => "<html><head><title>Gateway</title></head><body>ok</body></html>",
     });
 
     const res = await request(app)
       .get(`/agents/agent-1/gateway/embed?token=${encodeURIComponent(token)}`)
-      .set("Host", "nora.test");
+      .set("Host", "nora.test")
+      .set("Accept", "text/html");
 
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://10.0.0.10:18789/",
+      "http://10.0.0.10:18789",
       expect.objectContaining({
         headers: expect.objectContaining({ Accept: "text/html", "Accept-Encoding": "identity" }),
       })
     );
-    expect(res.text).toContain("ws://nora.test/api/ws/gateway/agent-1?token=");
+    expect(res.text).toContain('<base href="/api/agents/agent-1/gateway/embed/">');
+    expect(res.text).toContain('<script src="/api/agents/agent-1/gateway/embed/bootstrap.js"></script>');
+    expect(res.text).not.toContain("window.__NORA_EMBED_AUTO_LOGIN__ = true");
+    expect(res.headers["set-cookie"]).toEqual(expect.arrayContaining([
+      expect.stringContaining("__nora_gateway_embed_agent-1="),
+    ]));
+    expect(res.headers["content-security-policy"]).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(res.headers["content-security-policy"]).toContain("connect-src 'self' ws: wss:");
+    expect(res.headers["content-security-policy"]).toContain("frame-ancestors 'self'");
+    expect(res.headers["referrer-policy"]).toBe("no-referrer");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["x-frame-options"]).toBe("SAMEORIGIN");
+  });
+
+  it("serves the bootstrap script from an embed session cookie and uses wss behind HTTPS proxies", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        host: "10.0.0.10",
+        gateway_token: "gateway-password",
+        gateway_host_port: null,
+        status: "running",
+      }],
+    });
+
+    const res = await request(app)
+      .get(`/agents/agent-1/gateway/embed/bootstrap.js?token=${encodeURIComponent(token)}`)
+      .set("Host", "nora.test")
+      .set("X-Forwarded-Proto", "https");
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("wss://nora.test/api/ws/gateway/agent-1?token=");
     expect(res.text).toContain('var nextHash = "password=" + encodeURIComponent(P)');
-    expect(res.text).toContain('window.location.hash = nextHash');
     expect(res.text).toContain("window.__NORA_EMBED_AUTO_LOGIN__ = true");
     expect(res.text).toContain("function startAutoLogin()");
     expect(res.text).toContain("form.requestSubmit");
     expect(res.text).toContain("new MutationObserver");
     expect(res.text).not.toContain("localStorage.setItem('oc-gateway-url',R)");
-    expect(res.headers["referrer-policy"]).toBe("no-referrer");
-    expect(res.headers["x-content-type-options"]).toBe("nosniff");
-    expect(res.headers["x-frame-options"]).toBe("SAMEORIGIN");
   });
 
   it("uses the published gateway host port when one is recorded", async () => {
@@ -155,16 +318,18 @@ describe("gateway control-plane embed", () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
       text: async () => "<html><head></head><body>ok</body></html>",
     });
 
     const res = await request(app)
       .get(`/agents/agent-1/gateway/embed?token=${encodeURIComponent(token)}`)
-      .set("Host", "nora.test");
+      .set("Host", "nora.test")
+      .set("Accept", "text/html");
 
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://gateway.internal:19123/",
+      "http://gateway.internal:19123",
       expect.any(Object)
     );
   });
@@ -183,16 +348,47 @@ describe("gateway control-plane embed", () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
       text: async () => "<html><head></head><body>ok</body></html>",
     });
 
     const res = await request(app)
       .get(`/agents/agent-1/gateway/embed?token=${encodeURIComponent(token)}`)
-      .set("Host", "nora.test");
+      .set("Host", "nora.test")
+      .set("Accept", "text/html");
 
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://gateway.service.internal:28789/",
+      "http://gateway.service.internal:28789",
+      expect.any(Object)
+    );
+  });
+
+  it("prefers an explicit gateway host even when the backend exposes the gateway via a published port", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        host: "10.0.0.10",
+        gateway_token: "gateway-password",
+        gateway_host_port: 19123,
+        gateway_host: "nora-kind-control-plane",
+        status: "running",
+      }],
+    });
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+      text: async () => "<html><head></head><body>ok</body></html>",
+    });
+
+    const res = await request(app)
+      .get(`/agents/agent-1/gateway/embed?token=${encodeURIComponent(token)}`)
+      .set("Host", "nora.test")
+      .set("Accept", "text/html");
+
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://nora-kind-control-plane:19123",
       expect.any(Object)
     );
   });
@@ -209,16 +405,18 @@ describe("gateway control-plane embed", () => {
     global.fetch.mockResolvedValue({
       ok: true,
       status: 200,
+      headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
       text: async () => "<html><head></head><body>warning</body></html>",
     });
 
     const res = await request(app)
       .get(`/agents/agent-1/gateway/embed?token=${encodeURIComponent(token)}`)
-      .set("Host", "nora.test");
+      .set("Host", "nora.test")
+      .set("Accept", "text/html");
 
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://host.docker.internal:19123/",
+      "http://host.docker.internal:19123",
       expect.any(Object)
     );
   });
@@ -369,6 +567,94 @@ describe("gateway control-plane embed", () => {
       .set("Host", "nora.test");
 
     expect(res.status).toBe(404);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("proxies embed-relative config and navigation paths via the embed session cookie", async () => {
+    const agentClient = request.agent(app);
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: null,
+          status: "running",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: null,
+          status: "running",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: null,
+          status: "running",
+        }],
+      });
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+        text: async () => "<html><head><title>Gateway</title></head><body>ok</body></html>",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        arrayBuffer: async () => Buffer.from('{"ok":true}'),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+        text: async () => "<html><head><title>Chat</title></head><body>chat</body></html>",
+      });
+
+    const htmlRes = await agentClient
+      .get(`/agents/agent-1/gateway/embed?token=${encodeURIComponent(token)}`)
+      .set("Host", "nora.test");
+
+    expect(htmlRes.status).toBe(200);
+
+    const configRes = await agentClient
+      .get("/agents/agent-1/gateway/embed/__openclaw__/control-ui-config.json")
+      .set("Host", "nora.test");
+
+    expect(configRes.status).toBe(200);
+    expect(configRes.text).toBe('{"ok":true}');
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      "http://10.0.0.10:18789/__openclaw__/control-ui-config.json",
+      expect.any(Object)
+    );
+
+    const chatRes = await agentClient
+      .get("/agents/agent-1/gateway/embed/chat?session=main")
+      .set("Host", "nora.test");
+
+    expect(chatRes.status).toBe(200);
+    expect(chatRes.text).toContain('<script src="/api/agents/agent-1/gateway/embed/bootstrap.js"></script>');
+    expect(chatRes.headers["content-security-policy"]).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      3,
+      "http://10.0.0.10:18789/chat?session=main",
+      expect.any(Object)
+    );
+  });
+
+  it("does not expose internal gateway config paths before authentication", async () => {
+    const res = await request(app)
+      .get("/agents/agent-1/gateway/__openclaw__/control-ui-config.json")
+      .set("Host", "nora.test");
+
+    expect(res.status).toBe(401);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

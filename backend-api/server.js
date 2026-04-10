@@ -10,16 +10,31 @@ const channels = require("./channels");
 const marketplace = require("./marketplace");
 const integrations = require("./integrations");
 const snapshots = require("./snapshots");
+const { getDeploymentDefaults } = require("./platformSettings");
+const { buildReleaseInfo } = require("./releaseInfo");
+const { collectAgentTelemetrySample } = require("./agentTelemetry");
+const {
+  collectBackgroundTelemetry,
+  reconcileBackgroundAgentStatuses,
+} = require("./backgroundTasks");
+const { STARTER_TEMPLATES } = require("./starterTemplates");
 const { getBootstrapAdminSeedConfig } = require("./bootstrapAdmin");
+const { ensureFirstRegisteredUserIsAdmin } = require("./ensureAdminUser");
 const { authenticateToken } = require("./middleware/auth");
 const { correlationId, errorHandler } = require("./middleware/errorHandler");
 const { createGatewayRouter, attachGatewayWS } = require("./gatewayProxy");
-const { isGatewayAvailableStatus, reconcileAgentStatus } = require("./agentStatus");
+const { isGatewayAvailableStatus } = require("./agentStatus");
 const {
   resolveGatewayAddress,
   gatewayUrlForAgent,
   hasGatewayEndpoint,
 } = require("../agent-runtime/lib/agentEndpoints");
+const {
+  getBackendCatalog,
+  getBackendStatus,
+  getDefaultBackend,
+  getEnabledBackends,
+} = require("../agent-runtime/lib/backendCatalog");
 
 // ─── JWT Secret ───────────────────────────────────────────────────
 const IS_TEST_ENV = process.env.NODE_ENV === "test" || !!process.env.JEST_WORKER_ID;
@@ -37,151 +52,78 @@ if (!process.env.JWT_SECRET) {
 
 // ─── App Setup ────────────────────────────────────────────────────
 const app = express();
+const EMBED_SESSION_TTL_MS = 15 * 60 * 1000;
+const EMBED_SESSION_COOKIE_PREFIX = "__nora_gateway_embed_";
+const EMBED_CONTENT_SECURITY_POLICY = [
+  "default-src 'self' data: blob: https:",
+  "base-uri 'self'",
+  "font-src 'self' data: https:",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' data: blob: https:",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://static.cloudflareinsights.com",
+  "style-src 'self' 'unsafe-inline' https:",
+  "connect-src 'self' ws: wss: http: https:",
+  "worker-src 'self' blob:",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
+].join("; ");
 
 app.set("trust proxy", 1);
 app.use(helmet());
 
-const corsOrigins = (process.env.CORS_ORIGINS || process.env.NEXTAUTH_URL || "http://localhost:8080")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
-app.use(cors({ origin: corsOrigins }));
-
-const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000, standardHeaders: true, legacyHeaders: false });
-app.use(globalLimiter);
-
-// Stripe webhook needs raw body — must come before express.json()
-if (billing.BILLING_ENABLED) {
-  app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-    const sig = req.headers["stripe-signature"];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!webhookSecret) return res.status(500).json({ error: "Webhook secret not configured" });
-    try {
-      const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-      const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-      await billing.handleWebhookEvent(event);
-      res.json({ received: true });
-    } catch (e) {
-      console.error("Webhook error:", e.message);
-      res.status(400).json({ error: e.message });
-    }
-  });
+function requestProtocol(req) {
+  const forwarded = req.headers["x-forwarded-proto"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded.length > 0 && forwarded[0].trim()) {
+    return forwarded[0].split(",")[0].trim();
+  }
+  return req.protocol;
 }
 
-app.use(express.json());
-app.use(correlationId);
-app.use(require("./middleware/requestMetrics"));
+function getEmbedSessionCookieName(agentId) {
+  return `${EMBED_SESSION_COOKIE_PREFIX}${agentId}`;
+}
 
-// ─── Public Routes ────────────────────────────────────────────────
+function parseCookieHeader(cookieHeader) {
+  if (!cookieHeader) return {};
+  return cookieHeader
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .reduce((cookies, entry) => {
+      const sep = entry.indexOf("=");
+      if (sep === -1) return cookies;
+      const key = entry.slice(0, sep).trim();
+      const value = entry.slice(sep + 1).trim();
+      try {
+        cookies[key] = decodeURIComponent(value);
+      } catch {
+        cookies[key] = value;
+      }
+      return cookies;
+    }, {});
+}
 
-let _startupComplete = IS_TEST_ENV;
-app.get("/health", (req, res) => {
-  if (!_startupComplete) return res.status(503).json({ status: "starting" });
-  res.json({ status: "ok" });
-});
-
-app.get("/config/platform", (req, res) => {
-  res.json({
-    mode: billing.PLATFORM_MODE,
-    selfhosted: billing.PLATFORM_MODE !== "paas" ? billing.SELFHOSTED_LIMITS : null,
-    billingEnabled: billing.BILLING_ENABLED,
-  });
-});
-
-app.get("/config/nemoclaw", (req, res) => {
-  res.json({
-    enabled: process.env.NEMOCLAW_ENABLED === "true",
-    defaultModel: process.env.NEMOCLAW_DEFAULT_MODEL || "nvidia/nemotron-3-super-120b-a12b",
-    sandboxImage: process.env.NEMOCLAW_SANDBOX_IMAGE || "ghcr.io/nvidia/openshell-community/sandboxes/openclaw",
-    models: [
-      "nvidia/nemotron-3-super-120b-a12b",
-      "nvidia/llama-3.1-nemotron-ultra-253b-v1",
-      "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-      "nvidia/nemotron-3-nano-30b-a3b",
-    ],
-  });
-});
-
-app.get("/marketplace", async (req, res) => {
-  try {
-    res.json(await marketplace.listMarketplace());
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Inbound webhook receiver (public — external services POST here)
-app.post("/webhooks/:channelId", async (req, res) => {
-  try {
-    await channels.handleInboundWebhook(req.params.channelId, req.body, req.headers);
-    res.json({ received: true });
-  } catch (e) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
-app.use("/auth", require("./routes/auth"));
-
-// ─── Gateway UI static assets (before auth wall — JS/CSS/icons contain no user data) ──
-// These are served pre-auth because iframes can't set Authorization headers on sub-resource loads.
-// Only opaque static files (JS bundles, CSS, favicons) are exempted — not HTML or API endpoints.
-const gatewayUIAssetProxy = require("express").Router();
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/assets/*", proxyGatewayAsset);
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/favicon*", proxyGatewayAsset);
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/__openclaw__/*", proxyGatewayAsset);
-
-// ─── Gateway UI Embed (pre-auth — authenticates via ?token= query param) ──────────
-// Serves the gateway control UI HTML for iframe embedding. Authenticates via JWT in
-// the query string (iframes can't set Authorization headers). Injects a WebSocket
-// interceptor so the control UI connects through the backend's relay instead of
-// directly to the container port (avoids cross-origin / allowedOrigins issues).
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed", async (req, res) => {
-  try {
-    const jwt = require("jsonwebtoken");
-    const token = req.query.token;
-    if (!token) return res.status(401).send("token required");
-    let payload;
-    try { payload = jwt.verify(token, process.env.JWT_SECRET); } catch { return res.status(401).send("invalid token"); }
-
-    const agentId = req.params.agentId;
-    const result = await db.query(
-      `SELECT host, gateway_token, gateway_host_port, gateway_host, gateway_port, status
-         FROM agents
-        WHERE id = $1 AND user_id = $2`,
-      [agentId, payload.id]
-    );
-    if (!result.rows[0] || !isGatewayAvailableStatus(result.rows[0].status) || !hasGatewayEndpoint(result.rows[0])) {
-      return res.status(404).send("agent not found or not running");
+function buildGatewayForwardedSearch(req) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(req.query || {})) {
+    if (key === "token" || value == null) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) params.append(key, String(item));
+    } else {
+      params.append(key, String(value));
     }
+  }
+  const str = params.toString();
+  return str ? `?${str}` : "";
+}
 
-    const gatewayAddress = resolveGatewayAddress(result.rows[0]);
-    const gatewayToken = result.rows[0].gateway_token;
-
-    // Fetch the gateway root HTML
-    let resp;
-    try {
-      resp = await fetch(gatewayUrlForAgent(result.rows[0]), {
-        headers: { "Accept": "text/html", "Accept-Encoding": "identity" },
-        signal: AbortSignal.timeout(10000),
-      });
-    } catch (fetchErr) {
-      return res.status(502).send(`gateway unreachable at ${gatewayAddress.host}:${gatewayAddress.port} — ${fetchErr.message}`);
-    }
-    if (!resp.ok) return res.status(502).send(`gateway returned ${resp.status}`);
-    let html = await resp.text();
-
-    // Build the WebSocket relay URL. Must include /api/ prefix because nginx
-    // routes /api/ws/* → backend /ws/* (strips the /api prefix).
-    const wsProto = req.protocol === "https" ? "wss" : "ws";
-    const wsRelayUrl = `${wsProto}://${req.headers.host}/api/ws/gateway/${agentId}?token=${encodeURIComponent(token)}`;
-
-    // Inject a WebSocket interceptor + auto-login helper before </head>.
-    // The interceptor redirects all WS connections to the backend relay (which
-    // sets Origin: http://localhost:18789 server-side, bypassing origin checks).
-    // We also set password hash + auto-submit login so iframe interaction does
-    // not depend on click handling inside the embedded control UI.
-    const injectScript = `<script>
-(function(){
+function buildEmbedBootstrapScript({ agentId, relayToken, requestHost, requestScheme, gatewayToken }) {
+  const wsProto = requestScheme === "https" ? "wss" : "ws";
+  const wsRelayUrl = `${wsProto}://${requestHost}/api/ws/gateway/${agentId}?token=${encodeURIComponent(relayToken)}`;
+  return `(function(){
   var R=${JSON.stringify(wsRelayUrl)};
   var P=${JSON.stringify(gatewayToken)};
   window.__NORA_EMBED_AUTO_LOGIN__ = true;
@@ -255,7 +197,7 @@ gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed", async (req, res) => {
     setPasswordHash();
 
     var attempts = 0;
-    var maxAttempts = 80; // ~16s
+    var maxAttempts = 80;
     var interval = setInterval(function() {
       attempts++;
       if (tryAutoLogin() || attempts >= maxAttempts) {
@@ -277,28 +219,302 @@ gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed", async (req, res) => {
     }
   }
 
-  // Do not persist the JWT-bearing relay URL into browser storage.
-  // The WebSocket constructor override is enough for this embedded session.
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", startAutoLogin, { once: true });
   } else {
     startAutoLogin();
   }
-})();
-</script>`;
-    html = html.replace(/<head[^>]*>/i, (m) => m + injectScript);
+})();`;
+}
 
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
+function injectEmbedBootstrapScript(html, agentId) {
+  const embedBaseHref = `/api/agents/${encodeURIComponent(agentId)}/gateway/embed/`;
+  const bootstrapSrc = `/api/agents/${encodeURIComponent(agentId)}/gateway/embed/bootstrap.js`;
+  return html.replace(
+    /<head[^>]*>/i,
+    (match) => `${match}<base href="${embedBaseHref}"><script src="${bootstrapSrc}"></script>`
+  );
+}
+
+function setEmbedHtmlHeaders(res) {
+  // OpenClaw's control UI ships an inline theme bootstrap and may load
+  // same-origin WebSockets via the injected relay script, so the global
+  // Helmet defaults are too strict for the proxied embed document.
+  res.removeHeader("Content-Security-Policy");
+  res.removeHeader("Content-Security-Policy-Report-Only");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Security-Policy", EMBED_CONTENT_SECURITY_POLICY);
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Vary", "Cookie");
+}
+
+async function lookupEmbedAgent(agentId, userId) {
+  const result = await db.query(
+    `SELECT host, gateway_token, gateway_host_port, gateway_host, gateway_port, status
+       FROM agents
+      WHERE id = $1 AND user_id = $2`,
+    [agentId, userId]
+  );
+  if (!result.rows[0] || !isGatewayAvailableStatus(result.rows[0].status) || !hasGatewayEndpoint(result.rows[0])) {
+    return null;
+  }
+  return result.rows[0];
+}
+
+async function resolveEmbedAccess(req, res, { allowQueryToken = true } = {}) {
+  const jwt = require("jsonwebtoken");
+  const agentId = req.params.agentId;
+  const embedCookieName = getEmbedSessionCookieName(agentId);
+  const cookies = parseCookieHeader(req.headers.cookie || "");
+  const cookieToken = cookies[embedCookieName];
+  const queryToken = allowQueryToken && typeof req.query.token === "string" ? req.query.token : "";
+
+  let userId;
+  let relayToken;
+
+  if (queryToken) {
+    let payload;
+    try {
+      payload = jwt.verify(queryToken, process.env.JWT_SECRET);
+    } catch {
+      res.status(401).send("invalid token");
+      return null;
+    }
+    userId = payload.id;
+  } else if (cookieToken) {
+    let payload;
+    try {
+      payload = jwt.verify(cookieToken, process.env.JWT_SECRET);
+    } catch {
+      res.status(401).send("invalid embed session");
+      return null;
+    }
+    if (payload.scope !== "gateway-embed" || payload.agentId !== agentId) {
+      res.status(401).send("invalid embed session");
+      return null;
+    }
+    userId = payload.id;
+    relayToken = cookieToken;
+  } else {
+    res.status(401).send("embed session required");
+    return null;
+  }
+
+  const agent = await lookupEmbedAgent(agentId, userId);
+  if (!agent) {
+    res.status(404).send("agent not found or not running");
+    return null;
+  }
+
+  if (!relayToken) {
+    relayToken = jwt.sign(
+      { id: userId, agentId, scope: "gateway-embed" },
+      process.env.JWT_SECRET,
+      { expiresIn: Math.floor(EMBED_SESSION_TTL_MS / 1000) }
+    );
+    res.cookie(embedCookieName, relayToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: requestProtocol(req) === "https",
+      maxAge: EMBED_SESSION_TTL_MS,
+      path: "/",
+    });
+  }
+
+  return { agent, agentId, userId, relayToken };
+}
+
+function getEmbeddedGatewayPath(req) {
+  const prefix = `/agents/${req.params.agentId}/gateway/embed`;
+  const suffix = req.path.startsWith(prefix) ? req.path.slice(prefix.length) : "";
+  return suffix.replace(/^\/+/, "");
+}
+
+const corsOrigins = (process.env.CORS_ORIGINS || process.env.NEXTAUTH_URL || "http://localhost:8080")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+app.use(cors({ origin: corsOrigins }));
+
+const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000, standardHeaders: true, legacyHeaders: false });
+app.use(globalLimiter);
+
+// Stripe webhook needs raw body — must come before express.json()
+if (billing.BILLING_ENABLED) {
+  app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) return res.status(500).json({ error: "Webhook secret not configured" });
+    try {
+      const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+      const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      await billing.handleWebhookEvent(event);
+      res.json({ received: true });
+    } catch (e) {
+      console.error("Webhook error:", e.message);
+      res.status(400).json({ error: e.message });
+    }
+  });
+}
+
+app.use(express.json({ limit: "1mb" }));
+app.use(correlationId);
+app.use(require("./middleware/requestMetrics"));
+
+// ─── Public Routes ────────────────────────────────────────────────
+
+let _startupComplete = IS_TEST_ENV;
+app.get("/health", (req, res) => {
+  if (!_startupComplete) return res.status(503).json({ status: "starting" });
+  res.json({ status: "ok" });
+});
+
+app.get("/config/platform", async (_req, res) => {
+  try {
+    res.json({
+      mode: billing.PLATFORM_MODE,
+      selfhosted:
+        billing.PLATFORM_MODE !== "paas" ? billing.SELFHOSTED_LIMITS : null,
+      billingEnabled: billing.BILLING_ENABLED,
+      enabledBackends: getEnabledBackends(),
+      defaultBackend: getDefaultBackend(),
+      deploymentDefaults: await getDeploymentDefaults(),
+      release: await buildReleaseInfo(),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/config/backends", (_req, res) => {
+  res.json({
+    enabledBackends: getEnabledBackends(),
+    defaultBackend: getDefaultBackend(),
+    backends: getBackendCatalog(),
+  });
+});
+
+app.get("/config/nemoclaw", (req, res) => {
+  const nemoclaw = getBackendStatus("nemoclaw");
+  res.json({
+    enabled: nemoclaw.enabled,
+    configured: nemoclaw.configured,
+    available: nemoclaw.available,
+    issue: nemoclaw.issue,
+    defaultModel: nemoclaw.defaultModel,
+    sandboxImage: nemoclaw.sandboxImage,
+    models: nemoclaw.models,
+  });
+});
+
+// Inbound webhook receiver (public — external services POST here)
+app.post("/webhooks/:channelId", async (req, res) => {
+  try {
+    await channels.handleInboundWebhook(req.params.channelId, req.body, req.headers);
+    res.json({ received: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.use("/auth", require("./routes/auth"));
+
+// ─── Gateway UI static assets (before auth wall — JS/CSS/icons contain no user data) ──
+// These are served pre-auth because iframes can't set Authorization headers on sub-resource loads.
+// Only opaque static files (JS bundles, CSS, favicons) are exempted — not HTML or
+// internal gateway API/config endpoints.
+const gatewayUIAssetProxy = require("express").Router();
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/assets/*", proxyGatewayAsset);
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/favicon*", proxyGatewayAsset);
+
+// ─── Gateway UI Embed (pre-auth) ────────────────────────────────────────────────
+// The first HTML request authenticates via ?token= and mints a short-lived
+// HttpOnly embed-session cookie. Subsequent iframe navigations and relative
+// asset/config requests stay within /gateway/embed/* and authenticate via that
+// cookie so the control UI can keep using its own relative paths.
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed/bootstrap.js", async (req, res) => {
+  try {
+    const access = await resolveEmbedAccess(req, res);
+    if (!access) return;
+
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
-    res.send(html);
+    res.setHeader("Vary", "Cookie");
+    res.send(buildEmbedBootstrapScript({
+      agentId: access.agentId,
+      relayToken: access.relayToken,
+      requestHost: req.headers.host,
+      requestScheme: requestProtocol(req),
+      gatewayToken: access.agent.gateway_token,
+    }));
   } catch (err) {
-    console.error("[gateway-embed] error:", err);
-    if (!res.headersSent) res.status(502).send(`embed proxy error: ${err.message}`);
+    console.error("[gateway-embed-bootstrap] error:", err);
+    if (!res.headersSent) res.status(502).send(`embed bootstrap error: ${err.message}`);
   }
 });
+
+async function proxyEmbeddedGateway(req, res) {
+  try {
+    const access = await resolveEmbedAccess(req, res);
+    if (!access) return;
+
+    const gatewayPath = getEmbeddedGatewayPath(req);
+    const targetUrl = `${gatewayUrlForAgent(access.agent, gatewayPath)}${buildGatewayForwardedSearch(req)}`;
+    const headers = {
+      Accept: req.headers.accept || "*/*",
+      "Accept-Encoding": "identity",
+    };
+
+    const method = req.method.toUpperCase();
+    let body;
+    if (method !== "GET" && method !== "HEAD" && req.body != null) {
+      if (Buffer.isBuffer(req.body) || typeof req.body === "string") {
+        body = req.body;
+      } else if (Object.keys(req.body).length > 0) {
+        body = JSON.stringify(req.body);
+        if (req.headers["content-type"]) headers["Content-Type"] = req.headers["content-type"];
+      }
+    }
+
+    const resp = await fetch(targetUrl, {
+      method,
+      headers,
+      body,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const contentType = resp.headers.get("content-type") || "";
+    res.status(resp.status);
+
+    if (/text\/html/i.test(contentType)) {
+      const html = injectEmbedBootstrapScript(await resp.text(), access.agentId);
+      setEmbedHtmlHeaders(res);
+      res.send(html);
+      return;
+    }
+
+    if (contentType) res.setHeader("Content-Type", contentType);
+    const cacheControl = resp.headers.get("cache-control");
+    if (cacheControl) res.setHeader("Cache-Control", cacheControl);
+    else res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("Vary", "Cookie");
+
+    const bodyBuffer = await resp.arrayBuffer();
+    res.send(Buffer.from(bodyBuffer));
+  } catch (err) {
+    console.error("[gateway-embed-proxy] error:", err);
+    if (!res.headersSent) res.status(502).send(`embed proxy error: ${err.message}`);
+  }
+}
+
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed", proxyEmbeddedGateway);
+gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed/*", proxyEmbeddedGateway);
+gatewayUIAssetProxy.post("/agents/:agentId/gateway/embed/*", proxyEmbeddedGateway);
 
 async function proxyGatewayAsset(req, res) {
   try {
@@ -418,9 +634,20 @@ async function migrateDB() {
        ALTER TABLE agents ADD COLUMN sandbox_type VARCHAR(20) DEFAULT 'standard';
      EXCEPTION WHEN duplicate_column THEN NULL;
      END $$`,
-    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN vcpu INTEGER DEFAULT 2; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN ram_mb INTEGER DEFAULT 2048; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN disk_gb INTEGER DEFAULT 20; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN vcpu INTEGER DEFAULT 1; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN ram_mb INTEGER DEFAULT 1024; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN disk_gb INTEGER DEFAULT 10; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `CREATE TABLE IF NOT EXISTS platform_settings (
+       singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton = TRUE),
+       default_vcpu INTEGER NOT NULL DEFAULT 1,
+       default_ram_mb INTEGER NOT NULL DEFAULT 1024,
+       default_disk_gb INTEGER NOT NULL DEFAULT 10,
+       created_at TIMESTAMP DEFAULT NOW(),
+       updated_at TIMESTAMP DEFAULT NOW()
+     )`,
+    `INSERT INTO platform_settings(singleton, default_vcpu, default_ram_mb, default_disk_gb)
+       VALUES(TRUE, 1, 1024, 10)
+       ON CONFLICT (singleton) DO NOTHING`,
     `CREATE TABLE IF NOT EXISTS usage_metrics (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
        agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
@@ -448,12 +675,84 @@ async function migrateDB() {
        pids INTEGER NOT NULL DEFAULT 0,
        recorded_at TIMESTAMPTZ DEFAULT NOW()
      )`,
+    `DO $$ BEGIN ALTER TABLE container_stats ADD COLUMN network_rx_rate_mbps NUMERIC NOT NULL DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE container_stats ADD COLUMN network_tx_rate_mbps NUMERIC NOT NULL DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE container_stats ADD COLUMN disk_read_rate_mbps NUMERIC NOT NULL DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE container_stats ADD COLUMN disk_write_rate_mbps NUMERIC NOT NULL DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `CREATE INDEX IF NOT EXISTS idx_container_stats_agent_time ON container_stats(agent_id, recorded_at DESC)`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN gateway_host_port INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN runtime_host TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN runtime_port INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN gateway_host TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN gateway_port INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN image TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agents ADD COLUMN template_payload JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `UPDATE agents SET template_payload = '{}'::jsonb WHERE template_payload IS NULL`,
+    `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN kind TEXT DEFAULT 'snapshot'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN template_key TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN built_in BOOLEAN DEFAULT false; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN built_in BOOLEAN DEFAULT false; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN downloads INTEGER DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN source_type TEXT DEFAULT 'platform'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN status TEXT DEFAULT 'published'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN visibility TEXT DEFAULT 'public'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN slug TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN current_version INTEGER DEFAULT 1; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN published_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(); EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN reviewed_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN review_notes TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `UPDATE marketplace_listings
+        SET source_type = CASE WHEN COALESCE(built_in, false) THEN 'platform' ELSE 'community' END
+      WHERE source_type IS NULL`,
+    `UPDATE marketplace_listings
+        SET status = CASE WHEN COALESCE(built_in, false) THEN 'published' ELSE 'pending_review' END
+      WHERE status IS NULL`,
+    `UPDATE marketplace_listings SET visibility = 'public' WHERE visibility IS NULL`,
+    `UPDATE marketplace_listings SET price = 'Free' WHERE price IS DISTINCT FROM 'Free'`,
+    `UPDATE marketplace_listings SET downloads = 0 WHERE downloads IS NULL`,
+    `UPDATE marketplace_listings SET current_version = 1 WHERE current_version IS NULL`,
+    `UPDATE marketplace_listings SET updated_at = COALESCE(updated_at, created_at, NOW()) WHERE updated_at IS NULL`,
+    `UPDATE marketplace_listings
+        SET published_at = COALESCE(published_at, created_at, NOW())
+      WHERE status = 'published' AND published_at IS NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_listings_slug_unique ON marketplace_listings(slug) WHERE slug IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_marketplace_listings_owner ON marketplace_listings(owner_user_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_marketplace_listings_source_status ON marketplace_listings(source_type, status, published_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS marketplace_listing_versions (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       listing_id UUID REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+       snapshot_id UUID REFERENCES snapshots(id) ON DELETE CASCADE,
+       version_number INTEGER NOT NULL,
+       clone_mode TEXT DEFAULT 'files_only',
+       created_at TIMESTAMP DEFAULT NOW(),
+       UNIQUE(listing_id, version_number),
+       UNIQUE(listing_id, snapshot_id)
+     )`,
+    `CREATE INDEX IF NOT EXISTS idx_marketplace_listing_versions_listing ON marketplace_listing_versions(listing_id, version_number DESC)`,
+    `CREATE TABLE IF NOT EXISTS marketplace_reports (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       listing_id UUID REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+       reporter_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+       reason TEXT NOT NULL,
+       details TEXT,
+       status TEXT DEFAULT 'open',
+       reviewed_at TIMESTAMP,
+       reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
+    `CREATE INDEX IF NOT EXISTS idx_marketplace_reports_listing_status ON marketplace_reports(listing_id, status, created_at DESC)`,
+    `INSERT INTO marketplace_listing_versions(listing_id, snapshot_id, version_number, clone_mode)
+       SELECT ml.id, ml.snapshot_id, COALESCE(ml.current_version, 1), 'files_only'
+         FROM marketplace_listings ml
+         LEFT JOIN marketplace_listing_versions v
+           ON v.listing_id = ml.id AND v.snapshot_id = ml.snapshot_id
+        WHERE ml.snapshot_id IS NOT NULL
+          AND v.id IS NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_snapshots_template_key ON snapshots(template_key)`,
+    `CREATE INDEX IF NOT EXISTS idx_marketplace_listings_snapshot_id ON marketplace_listings(snapshot_id)`,
   ];
 
   for (const sql of migrations) {
@@ -466,10 +765,80 @@ async function migrateDB() {
   console.log("DB migrations applied");
 }
 
+function stableStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function seedStarterMarketplace() {
+  for (const template of STARTER_TEMPLATES) {
+    const existingListing = await marketplace.getPlatformListingByTemplateKey(
+      template.templateKey
+    );
+
+    let snapshotId = existingListing?.snapshot_id || null;
+    let shouldCreateSnapshot = !snapshotId;
+
+    if (snapshotId) {
+      const currentSnapshot = await snapshots.getSnapshot(snapshotId);
+      const currentConfig =
+        currentSnapshot?.config && typeof currentSnapshot.config === "object"
+          ? currentSnapshot.config
+          : {};
+      shouldCreateSnapshot =
+        !currentSnapshot ||
+        currentSnapshot.name !== template.name ||
+        currentSnapshot.description !== template.description ||
+        stableStringify(currentConfig) !==
+          stableStringify(template.snapshotConfig);
+    }
+
+    if (shouldCreateSnapshot) {
+      const snapshot = await snapshots.createSnapshot(
+        null,
+        template.name,
+        template.description,
+        template.snapshotConfig,
+        {
+          kind: template.snapshotConfig.kind || "starter-template",
+          templateKey: template.templateKey,
+          builtIn: true,
+        }
+      );
+      snapshotId = snapshot.id;
+    }
+
+    await marketplace.upsertListing({
+      listingId: existingListing?.id || null,
+      snapshotId,
+      name: template.name,
+      description: template.description,
+      price: template.price,
+      category: template.category,
+      builtIn: true,
+      sourceType: marketplace.LISTING_SOURCE_PLATFORM,
+      status: marketplace.LISTING_STATUS_PUBLISHED,
+      visibility: marketplace.LISTING_VISIBILITY_PUBLIC,
+      slug: template.templateKey,
+    });
+  }
+
+  console.log(`Marketplace seeded with ${STARTER_TEMPLATES.length} built-in starter templates`);
+}
+
 // ─── Startup ──────────────────────────────────────────────────────
 if (require.main === module) {
   const { attachLogStream } = require("./logStream");
   const { attachExecStream } = require("./execStream");
+  const { attachMetricsStream } = require("./metricsStream");
 
   const PORT = parseInt(process.env.PORT || "4000");
   const server = app.listen(PORT, async () => {
@@ -500,98 +869,39 @@ if (require.main === module) {
       }
     } catch (e) { console.error("Failed to seed admin account:", e.message); }
 
+    try {
+      const promotedUser = await ensureFirstRegisteredUserIsAdmin(db);
+      if (promotedUser) {
+        console.log(`Promoted first registered user to admin: ${promotedUser.email}`);
+      }
+    } catch (e) { console.error("Failed to ensure an admin user exists:", e.message); }
+
     try { await integrations.seedCatalog(); } catch (e) { console.error("Failed to seed integration catalog:", e.message); }
 
-    try {
-      const existing = await marketplace.listMarketplace();
-      if (existing.length === 0) {
-        const s1 = await snapshots.createSnapshot(null, "OpenClaw Researcher", "Specialized in deep web research and data synthesis.", { type: "research" });
-        const s2 = await snapshots.createSnapshot(null, "OpenClaw Auditor", "Real-time auditing and compliance node.", { type: "audit" });
-        const s3 = await snapshots.createSnapshot(null, "OpenClaw Support", "Autonomous customer support agent with tool access.", { type: "support" });
-        await marketplace.publishSnapshot(s1.id, s1.name, s1.description, "$12/mo", "Research");
-        await marketplace.publishSnapshot(s2.id, s2.name, s2.description, "Free", "Finance");
-        await marketplace.publishSnapshot(s3.id, s3.name, s3.description, "$29/mo", "Support");
-        console.log("Marketplace seeded with 3 default listings");
-      }
-    } catch (e) { console.error("Failed to seed marketplace:", e.message); }
+    try { await seedStarterMarketplace(); } catch (e) { console.error("Failed to seed marketplace:", e.message); }
 
     _startupComplete = true;
     console.log("Startup complete — health check now returning ok");
 
-    // ── Background stats collector: sample running containers every 10s ──
-    const STATS_INTERVAL = 10000;
+    // ── Background stats collector: sample supported backends every 5s ──
+    const STATS_INTERVAL = 5000;
     setInterval(async () => {
-      try {
-        const Docker = require("dockerode");
-        const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-        const agents = await db.query(
-          "SELECT id, container_id FROM agents WHERE status IN ('running','warning') AND container_id IS NOT NULL"
-        );
-        for (const agent of agents.rows) {
-          try {
-            const container = docker.getContainer(agent.container_id);
-            const stats = await container.stats({ stream: false });
-            const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - (stats.precpu_stats.cpu_usage?.total_usage || 0);
-            const systemDelta = stats.cpu_stats.system_cpu_usage - (stats.precpu_stats.system_cpu_usage || 0);
-            const cpuCount = stats.cpu_stats.online_cpus || 1;
-            const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * cpuCount * 100 : 0;
-            const memUsage = stats.memory_stats.usage || 0;
-            const memLimit = stats.memory_stats.limit || 0;
-            const memCache = stats.memory_stats.stats?.cache || 0;
-            const memActual = memUsage - memCache;
-            let netRx = 0, netTx = 0;
-            if (stats.networks) { for (const i of Object.values(stats.networks)) { netRx += i.rx_bytes || 0; netTx += i.tx_bytes || 0; } }
-            let diskR = 0, diskW = 0;
-            if (stats.blkio_stats?.io_service_bytes_recursive) {
-              for (const e of stats.blkio_stats.io_service_bytes_recursive) {
-                if (e.op === "read" || e.op === "Read") diskR += e.value || 0;
-                if (e.op === "write" || e.op === "Write") diskW += e.value || 0;
-              }
-            }
-            await db.query(
-              `INSERT INTO container_stats(agent_id, cpu_percent, memory_usage_mb, memory_limit_mb, memory_percent, network_rx_mb, network_tx_mb, disk_read_mb, disk_write_mb, pids)
-               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-              [agent.id, Math.round(cpuPercent*100)/100, Math.round(memActual/1048576), Math.round(memLimit/1048576),
-               memLimit>0?Math.round(memActual/memLimit*10000)/100:0, Math.round(netRx/1048576*100)/100, Math.round(netTx/1048576*100)/100,
-               Math.round(diskR/1048576*100)/100, Math.round(diskW/1048576*100)/100, stats.pids_stats?.current||0]
-            );
-          } catch { /* container may have stopped */ }
-        }
-        // Prune old stats (keep 24h)
-        await db.query("DELETE FROM container_stats WHERE recorded_at < NOW() - INTERVAL '24 hours'").catch(() => {});
-      } catch { /* docker unavailable */ }
+      await collectBackgroundTelemetry({
+        dbClient: db,
+        telemetryCollector: collectAgentTelemetrySample,
+      });
     }, STATS_INTERVAL);
 
     // ── Background status reconciler: sync DB status with real container state every 30s ──
     const RECONCILE_INTERVAL = 30000;
     setInterval(async () => {
-      try {
-        const Docker = require("dockerode");
-        const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-        const agents = await db.query(
-          "SELECT id, container_id, status FROM agents WHERE container_id IS NOT NULL AND status IN ('running','warning','stopped','error')"
-        );
-        for (const agent of agents.rows) {
-          try {
-            const info = await docker.getContainer(agent.container_id).inspect();
-            const reconciledStatus = reconcileAgentStatus(agent.status, Boolean(info.State?.Running));
-            if (reconciledStatus !== agent.status) {
-              await db.query("UPDATE agents SET status = $1 WHERE id = $2", [reconciledStatus, agent.id]);
-            }
-          } catch (e) {
-            // Container removed or unreachable — mark any previously live/degraded agent as stopped.
-            const reconciledStatus = reconcileAgentStatus(agent.status, false);
-            if (reconciledStatus !== agent.status) {
-              await db.query("UPDATE agents SET status = $1 WHERE id = $2", [reconciledStatus, agent.id]);
-            }
-          }
-        }
-      } catch { /* docker unavailable */ }
+      await reconcileBackgroundAgentStatuses({ dbClient: db });
     }, RECONCILE_INTERVAL);
   });
 
   attachLogStream(server);
   attachExecStream(server);
+  attachMetricsStream(server);
   attachGatewayWS(server);
 }
 
