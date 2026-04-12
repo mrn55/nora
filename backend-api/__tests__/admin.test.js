@@ -20,6 +20,22 @@ const mockUpdateDeploymentDefaults = jest.fn().mockResolvedValue({
   ram_mb: 1024,
   disk_gb: 10,
 });
+const mockGetSystemBanner = jest.fn().mockResolvedValue({
+  enabled: false,
+  severity: "warning",
+  title: "",
+  message: "",
+  featureEnabled: false,
+  active: false,
+});
+const mockUpdateSystemBanner = jest.fn().mockResolvedValue({
+  enabled: false,
+  severity: "warning",
+  title: "",
+  message: "",
+  featureEnabled: false,
+  active: false,
+});
 
 jest.mock("../db", () => mockDb);
 jest.mock("../redisQueue", () => ({
@@ -154,7 +170,9 @@ jest.mock("../platformSettings", () => {
   return {
     ...actual,
     getDeploymentDefaults: mockGetDeploymentDefaults,
+    getSystemBanner: mockGetSystemBanner,
     updateDeploymentDefaults: mockUpdateDeploymentDefaults,
+    updateSystemBanner: mockUpdateSystemBanner,
   };
 });
 
@@ -188,6 +206,22 @@ beforeEach(() => {
     vcpu: 1,
     ram_mb: 1024,
     disk_gb: 10,
+  });
+  mockGetSystemBanner.mockReset().mockResolvedValue({
+    enabled: false,
+    severity: "warning",
+    title: "",
+    message: "",
+    featureEnabled: false,
+    active: false,
+  });
+  mockUpdateSystemBanner.mockReset().mockResolvedValue({
+    enabled: false,
+    severity: "warning",
+    title: "",
+    message: "",
+    featureEnabled: false,
+    active: false,
   });
   delete process.env.ENABLED_BACKENDS;
   delete process.env.ENABLED_RUNTIME_FAMILIES;
@@ -258,6 +292,83 @@ describe("admin routes", () => {
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "admin_deployment_defaults_updated",
       expect.stringContaining("2 vCPU / 2048 MB RAM / 20 GB disk"),
+      expect.any(Object)
+    );
+  });
+
+  it("returns the system banner settings for admins", async () => {
+    mockGetSystemBanner.mockResolvedValueOnce({
+      enabled: true,
+      severity: "warning",
+      title: "Testing warning",
+      message: "This control plane resets nightly.",
+      featureEnabled: true,
+      active: true,
+    });
+
+    const res = await withToken(
+      request(app).get("/admin/settings/system-banner"),
+      adminToken
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      enabled: true,
+      severity: "warning",
+      title: "Testing warning",
+      message: "This control plane resets nightly.",
+      featureEnabled: true,
+      active: true,
+    });
+  });
+
+  it("updates the system banner for admins", async () => {
+    const monitoringModule = require("../monitoring");
+    mockGetSystemBanner.mockResolvedValueOnce({
+      enabled: false,
+      severity: "warning",
+      title: "",
+      message: "",
+      featureEnabled: true,
+      active: false,
+    });
+    mockUpdateSystemBanner.mockResolvedValueOnce({
+      enabled: true,
+      severity: "critical",
+      title: "Testing warning",
+      message: "Do not use this environment for production work.",
+      featureEnabled: true,
+      active: true,
+    });
+
+    const res = await withToken(
+      request(app).put("/admin/settings/system-banner").send({
+        enabled: true,
+        severity: "critical",
+        title: "Testing warning",
+        message: "Do not use this environment for production work.",
+      }),
+      adminToken
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      enabled: true,
+      severity: "critical",
+      title: "Testing warning",
+      message: "Do not use this environment for production work.",
+      featureEnabled: true,
+      active: true,
+    });
+    expect(mockUpdateSystemBanner).toHaveBeenCalledWith({
+      enabled: true,
+      severity: "critical",
+      title: "Testing warning",
+      message: "Do not use this environment for production work.",
+    });
+    expect(monitoringModule.logEvent).toHaveBeenCalledWith(
+      "admin_system_banner_updated",
+      expect.stringContaining("system banner"),
       expect.any(Object)
     );
   });

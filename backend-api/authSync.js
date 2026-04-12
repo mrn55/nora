@@ -13,6 +13,9 @@ const { resolveAgentRuntimeFamily } = require("./agentRuntimeFields");
 const providerCatalog = Array.isArray(llmProviders.PROVIDERS)
   ? llmProviders.PROVIDERS
   : (typeof llmProviders.getAvailableProviders === 'function' ? llmProviders.getAvailableProviders() : []);
+const providerCatalogById = new Map(
+  providerCatalog.map((provider) => [provider.id, provider])
+);
 const LLM_ENV_VARS = new Set(providerCatalog.map((provider) => provider.envVar).filter(Boolean));
 
 const PROVIDER_MODEL_DEFAULTS = {
@@ -31,6 +34,109 @@ const PROVIDER_MODEL_DEFAULTS = {
   zai:       'glm-5',
   minimax:   'MiniMax-M2.7',
 };
+
+const HERMES_NATIVE_PROVIDER_MAP = Object.freeze({
+  anthropic: Object.freeze({ provider: "anthropic" }),
+  deepseek: Object.freeze({ provider: "deepseek" }),
+  google: Object.freeze({ provider: "gemini" }),
+  huggingface: Object.freeze({ provider: "huggingface" }),
+  minimax: Object.freeze({ provider: "minimax" }),
+  moonshot: Object.freeze({ provider: "kimi-coding" }),
+  openrouter: Object.freeze({
+    provider: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+  }),
+  xai: Object.freeze({ provider: "xai" }),
+  zai: Object.freeze({ provider: "zai" }),
+});
+
+const HERMES_CUSTOM_PROVIDER_BASE_URLS = Object.freeze({
+  cerebras: "https://api.cerebras.ai/v1",
+  cohere: "https://api.cohere.ai/compatibility/v1",
+  groq: "https://api.groq.com/openai/v1",
+  mistral: "https://api.mistral.ai/v1",
+  nvidia: "https://integrate.api.nvidia.com/v1",
+  openai: "https://api.openai.com/v1",
+  together: "https://api.together.xyz/v1",
+});
+
+function normalizeProviderConfig(config) {
+  if (!config) return {};
+  if (typeof config === "string") {
+    try {
+      const parsed = JSON.parse(config);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof config === "object" && !Array.isArray(config) ? config : {};
+}
+
+function pickProviderBaseUrl(config = {}) {
+  for (const key of ["base_url", "baseUrl", "endpoint", "url"]) {
+    const value = config[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function buildHermesModelConfig(defaultProvider = null) {
+  if (!defaultProvider) return null;
+
+  const providerId = String(defaultProvider.provider || "").trim();
+  if (!providerId) {
+    throw new Error("Default LLM provider is missing a provider id");
+  }
+
+  const savedConfig = normalizeProviderConfig(defaultProvider.config);
+  const savedBaseUrl = pickProviderBaseUrl(savedConfig);
+  const catalogBaseUrl =
+    typeof providerCatalogById.get(providerId)?.endpoint === "string"
+      ? providerCatalogById.get(providerId).endpoint.trim()
+      : "";
+  const modelId =
+    typeof defaultProvider.model === "string" && defaultProvider.model.trim()
+      ? defaultProvider.model.trim()
+      : PROVIDER_MODEL_DEFAULTS[providerId];
+
+  if (!modelId) {
+    throw new Error(
+      `Default provider ${providerId} needs a saved model before Hermes can use it`
+    );
+  }
+
+  const nativeProvider = HERMES_NATIVE_PROVIDER_MAP[providerId];
+  if (nativeProvider) {
+    return {
+      provider: nativeProvider.provider,
+      defaultModel: modelId,
+      baseUrl: nativeProvider.baseUrl || savedBaseUrl || null,
+    };
+  }
+
+  const resolvedBaseUrl =
+    savedBaseUrl ||
+    catalogBaseUrl ||
+    HERMES_CUSTOM_PROVIDER_BASE_URLS[providerId] ||
+    "";
+
+  if (!resolvedBaseUrl) {
+    throw new Error(
+      `Provider ${providerId} needs a base URL before Hermes can use it`
+    );
+  }
+
+  return {
+    provider: "custom",
+    defaultModel: modelId,
+    baseUrl: resolvedBaseUrl,
+  };
+}
 
 /**
  * Build auth-profiles.json content for a specific agent.
@@ -243,11 +349,13 @@ async function writeHermesEnvToContainer(agent, envVars) {
  */
 async function syncAuthToUserAgents(userId, agentId = null) {
   const defaultRow = await db.query(
-    'SELECT provider, model FROM llm_providers WHERE user_id = $1 AND is_default = true LIMIT 1',
+    "SELECT id, provider, model, config FROM llm_providers WHERE user_id = $1 AND is_default = true LIMIT 1",
     [userId]
   );
   const defaultProvider = defaultRow.rows[0] || null;
   const modelCommand = buildDefaultModelCommand(defaultProvider);
+  let hermesModelConfig = null;
+  let hasHermesModelConfig = false;
 
   const agentQuery = agentId
     ? `SELECT id, container_id, backend_type, runtime_family, deploy_target,
@@ -279,6 +387,14 @@ async function syncAuthToUserAgents(userId, agentId = null) {
         evictConnection(agent);
       }
       if (runtimeFamily === "hermes") {
+        if (!hasHermesModelConfig) {
+          hermesModelConfig = buildHermesModelConfig(defaultProvider);
+          hasHermesModelConfig = true;
+        }
+        if (hermesModelConfig) {
+          const { persistHermesModelConfig } = require("./hermesUi");
+          await persistHermesModelConfig(agent, hermesModelConfig);
+        }
         const envVars = await buildHermesManagedEnvForAgent(userId, agent.id);
         await writeHermesEnvToContainer(agent, envVars);
         await containerManager.restart(agent);
@@ -297,7 +413,7 @@ async function syncAuthToUserAgents(userId, agentId = null) {
           );
         }
 
-        console.log(`[authSync] Synced Hermes env to agent ${agent.id} (backend restarted)`);
+        console.log(`[authSync] Synced Hermes env + model config to agent ${agent.id} (backend restarted)`);
         results.push({ agentId: agent.id, status: 'synced' });
         continue;
       }
@@ -338,6 +454,7 @@ module.exports = {
   buildAuthProfilesForAgent,
   buildAuthProfilesWriteCommand,
   buildDefaultModelCommand,
+  buildHermesModelConfig,
   buildHermesEnvWriteCommand,
   buildHermesManagedEnvForAgent,
   runRuntimeCommand,

@@ -49,8 +49,10 @@ const {
 } = require("../agentRuntimeFields");
 const {
   getDeploymentDefaults,
+  getSystemBanner,
   parseRequiredDeploymentDefaults,
   updateDeploymentDefaults,
+  updateSystemBanner,
 } = require("../platformSettings");
 const { resolveAuditSource } = require("../auditSource");
 
@@ -560,6 +562,43 @@ router.put(
     );
 
     res.json(nextDefaults);
+  })
+);
+
+router.get(
+  "/settings/system-banner",
+  asyncHandler(async (_req, res) => {
+    res.json(await getSystemBanner());
+  })
+);
+
+router.put(
+  "/settings/system-banner",
+  asyncHandler(async (req, res) => {
+    const currentBanner = await getSystemBanner();
+    res.locals.auditContext = {
+      settings: {
+        kind: "system_banner",
+      },
+    };
+
+    const nextBanner = await updateSystemBanner(req.body || {});
+
+    await monitoring.logEvent(
+      "admin_system_banner_updated",
+      nextBanner.enabled
+        ? `Admin updated the system banner (${nextBanner.severity})`
+        : "Admin disabled the system banner",
+      adminAuditMetadata(req, {
+        settings: {
+          kind: "system_banner",
+          previous: currentBanner,
+          next: nextBanner,
+        },
+      })
+    );
+
+    res.json(nextBanner);
   })
 );
 

@@ -23,12 +23,27 @@ const DEFAULT_FORM = {
   ram_mb: "1024",
   disk_gb: "10",
 };
+const DEFAULT_BANNER_FORM = {
+  enabled: false,
+  severity: "warning",
+  title: "",
+  message: "",
+};
 
 function buildForm(defaults) {
   return {
     vcpu: String(defaults?.vcpu ?? DEFAULT_FORM.vcpu),
     ram_mb: String(defaults?.ram_mb ?? DEFAULT_FORM.ram_mb),
     disk_gb: String(defaults?.disk_gb ?? DEFAULT_FORM.disk_gb),
+  };
+}
+
+function buildBannerForm(banner) {
+  return {
+    enabled: Boolean(banner?.enabled),
+    severity: banner?.severity === "critical" ? "critical" : "warning",
+    title: banner?.title || "",
+    message: banner?.message || "",
   };
 }
 
@@ -101,20 +116,42 @@ function getReleaseStatus(release) {
   };
 }
 
+function getBannerTone(severity) {
+  if (severity === "critical") {
+    return {
+      panelClassName: "border-red-200 bg-red-50",
+      titleClassName: "text-red-700",
+      bodyClassName: "text-red-700/80",
+      badgeClassName: "bg-red-100 text-red-700",
+    };
+  }
+
+  return {
+    panelClassName: "border-amber-200 bg-amber-50",
+    titleClassName: "text-amber-800",
+    bodyClassName: "text-amber-800/80",
+    badgeClassName: "bg-amber-100 text-amber-800",
+  };
+}
+
 export default function AdminSettingsPage() {
   const toast = useToast();
   const [form, setForm] = useState(DEFAULT_FORM);
   const [defaults, setDefaults] = useState(null);
+  const [systemBanner, setSystemBanner] = useState(null);
+  const [bannerForm, setBannerForm] = useState(DEFAULT_BANNER_FORM);
   const [platformConfig, setPlatformConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [bannerSaving, setBannerSaving] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const [defaultsRes, platformRes] = await Promise.all([
+      const [defaultsRes, platformRes, bannerRes] = await Promise.all([
         fetchWithAuth("/api/admin/settings/deployment-defaults"),
         fetch("/api/config/platform"),
+        fetchWithAuth("/api/admin/settings/system-banner"),
       ]);
 
       const defaultsPayload = await defaultsRes.json().catch(() => ({}));
@@ -127,13 +164,22 @@ export default function AdminSettingsPage() {
       setDefaults(defaultsPayload);
       setForm(buildForm(defaultsPayload));
 
+      const bannerPayload = await bannerRes.json().catch(() => ({}));
+      if (!bannerRes.ok) {
+        throw new Error(bannerPayload.error || "Failed to load system banner");
+      }
+
+      setSystemBanner(bannerPayload);
+      setBannerForm(buildBannerForm(bannerPayload));
+
       if (platformRes.ok) {
         setPlatformConfig(await platformRes.json());
       }
     } catch (error) {
-      console.error("Failed to load admin deployment defaults:", error);
-      toast.error(error.message || "Failed to load deployment defaults");
+      console.error("Failed to load platform settings:", error);
+      toast.error(error.message || "Failed to load platform settings");
       setDefaults(null);
+      setSystemBanner(null);
     } finally {
       setLoading(false);
     }
@@ -145,6 +191,10 @@ export default function AdminSettingsPage() {
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateBannerField(field, value) {
+    setBannerForm((current) => ({ ...current, [field]: value }));
   }
 
   async function handleSave() {
@@ -178,10 +228,45 @@ export default function AdminSettingsPage() {
     }
   }
 
+  async function handleSaveBanner() {
+    setBannerSaving(true);
+    try {
+      const response = await fetchWithAuth("/api/admin/settings/system-banner", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: bannerForm.enabled,
+          severity: bannerForm.severity,
+          title: bannerForm.title,
+          message: bannerForm.message,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to save system banner");
+      }
+
+      setSystemBanner(payload);
+      setBannerForm(buildBannerForm(payload));
+      toast.success("System banner updated");
+    } catch (error) {
+      console.error("Failed to save system banner:", error);
+      toast.error(error.message || "Failed to save system banner");
+    } finally {
+      setBannerSaving(false);
+    }
+  }
+
   const modeLabel =
     platformConfig?.mode === "paas" ? "PaaS plan defaults" : "Self-hosted deploy defaults";
   const release = platformConfig?.release || null;
   const releaseStatus = getReleaseStatus(release);
+  const bannerFeatureEnabled = Boolean(systemBanner?.featureEnabled);
+  const bannerPreviewTone = getBannerTone(bannerForm.severity);
+  const persistedBannerTone = getBannerTone(systemBanner?.severity);
+  const bannerPreviewVisible = Boolean(
+    bannerForm.title.trim() || bannerForm.message.trim()
+  );
 
   async function handleCopyUpgradeCommand() {
     const command = release?.manualUpgrade?.command;
@@ -215,12 +300,12 @@ export default function AdminSettingsPage() {
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
                 <SlidersHorizontal size={24} />
               </span>
-              Deployment defaults
+              Platform Settings
             </h1>
             <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-              Set the default CPU, RAM, and disk used for subsequent new
-              deployments. Existing agents keep their stored specs, and
-              marketplace listing defaults remain separate.
+              Configure the platform release path, the global testing warning
+              banner, and the default CPU, RAM, and disk used for future
+              deployments.
             </p>
           </div>
 
@@ -409,6 +494,242 @@ export default function AdminSettingsPage() {
                     </p>
                   )}
                 </section>
+              </div>
+            </section>
+
+            <section
+              id="system-banner"
+              className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    System Banner
+                  </p>
+                  <h2 className="mt-2 flex items-center gap-3 text-xl font-black tracking-tight text-slate-950">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
+                      <TriangleAlert size={20} />
+                    </span>
+                    Testing warning across all dashboards
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
+                    Publish one top-of-page warning across the operator and admin
+                    surfaces. Use it for staging-only notices, maintenance
+                    warnings, or other global operator guidance.
+                  </p>
+                </div>
+
+                <div
+                  className={`inline-flex items-center gap-2 self-start rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.16em] ${
+                    bannerFeatureEnabled
+                      ? systemBanner?.enabled
+                        ? persistedBannerTone.badgeClassName
+                        : "bg-slate-100 text-slate-700"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  <TriangleAlert size={14} />
+                  {!bannerFeatureEnabled
+                    ? "Env Flag Off"
+                    : systemBanner?.enabled
+                      ? "Configured"
+                      : "Saved As Off"}
+                </div>
+              </div>
+
+              {!bannerFeatureEnabled ? (
+                <div className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 px-5 py-4">
+                  <p className="text-sm font-semibold text-amber-800">
+                    Banner rendering is disabled by instance config.
+                  </p>
+                  <p className="mt-1 text-sm font-medium leading-relaxed text-amber-800/80">
+                    Set <code>NORA_SYSTEM_BANNER_ENABLED=true</code> in{" "}
+                    <code>.env</code> and restart Nora. You can still save the
+                    draft below before you flip the flag.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr,0.95fr]">
+                <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5">
+                  <label className="flex items-start gap-3 rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                    <input
+                      type="checkbox"
+                      checked={bannerForm.enabled}
+                      onChange={(event) =>
+                        updateBannerField("enabled", event.target.checked)
+                      }
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-900">
+                        Show banner on every dashboard page
+                      </span>
+                      <span className="mt-1 block text-sm font-medium leading-relaxed text-slate-500">
+                        When enabled, this banner appears across <code>/app</code>{" "}
+                        and <code>/admin</code>. Operators cannot dismiss it per
+                        session.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <label className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                      <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                        Severity
+                      </span>
+                      <select
+                        value={bannerForm.severity}
+                        onChange={(event) =>
+                          updateBannerField("severity", event.target.value)
+                        }
+                        className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-red-300"
+                      >
+                        <option value="warning">Warning</option>
+                        <option value="critical">Critical</option>
+                      </select>
+                    </label>
+
+                    <div className="rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                        Current rollout
+                      </p>
+                      <p className="mt-3 text-sm font-semibold text-slate-900">
+                        {!bannerFeatureEnabled
+                          ? "Saved draft only"
+                          : systemBanner?.active
+                            ? "Live on all dashboard pages"
+                            : systemBanner?.enabled
+                              ? "Configured but missing content"
+                              : "Hidden until enabled"}
+                      </p>
+                      <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                        Save changes here to update the shared banner payload used
+                        by both dashboards.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="mt-4 block rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Title
+                    </span>
+                    <input
+                      type="text"
+                      maxLength={120}
+                      value={bannerForm.title}
+                      onChange={(event) =>
+                        updateBannerField("title", event.target.value)
+                      }
+                      placeholder="Testing warning"
+                      className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-red-300"
+                    />
+                  </label>
+
+                  <label className="mt-4 block rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Message
+                    </span>
+                    <textarea
+                      rows={4}
+                      maxLength={600}
+                      value={bannerForm.message}
+                      onChange={(event) =>
+                        updateBannerField("message", event.target.value)
+                      }
+                      placeholder="This Nora control plane is a staging environment. Expect resets and avoid production workloads."
+                      className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-relaxed text-slate-900 outline-none focus:border-red-300"
+                    />
+                  </label>
+
+                  <div className="mt-6 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={handleSaveBanner}
+                      disabled={bannerSaving || loading}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition-all hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {bannerSaving ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Save size={16} />
+                      )}
+                      Save banner
+                    </button>
+                    <p className="text-xs font-medium text-slate-500">
+                      Best for maintenance notices, staging disclaimers, and
+                      other system-wide operator warnings.
+                    </p>
+                  </div>
+                </section>
+
+                <aside className="flex flex-col gap-4">
+                  <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Live Preview
+                    </p>
+
+                    {bannerPreviewVisible ? (
+                      <div
+                        className={`mt-4 rounded-[1.5rem] border px-4 py-4 ${bannerPreviewTone.panelClassName}`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span
+                            className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+                              bannerForm.severity === "critical"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            <TriangleAlert size={18} />
+                          </span>
+                          <div>
+                            <p
+                              className={`text-[11px] font-black uppercase tracking-[0.18em] ${bannerPreviewTone.titleClassName}`}
+                            >
+                              {bannerForm.severity === "critical"
+                                ? "System Critical"
+                                : "System Warning"}
+                            </p>
+                            <p className="mt-2 text-base font-black text-slate-950">
+                              {bannerForm.title || "Banner title"}
+                            </p>
+                            <p
+                              className={`mt-2 text-sm font-medium leading-relaxed ${bannerPreviewTone.bodyClassName}`}
+                            >
+                              {bannerForm.message || "Banner message"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[1.5rem] border border-dashed border-slate-300 bg-white px-4 py-6 text-sm font-medium text-slate-500">
+                        Add a title and message to preview the banner before you
+                        save it.
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Saved State
+                    </p>
+                    <div
+                      className={`mt-4 rounded-[1.25rem] border px-4 py-4 ${
+                        systemBanner?.enabled
+                          ? persistedBannerTone.panelClassName
+                          : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">
+                        {systemBanner?.title || "Banner is currently blank"}
+                      </p>
+                      <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+                        {systemBanner?.message ||
+                          "Save a banner here when you need to warn every operator at once."}
+                      </p>
+                    </div>
+                  </section>
+                </aside>
               </div>
             </section>
 

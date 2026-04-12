@@ -28,6 +28,11 @@ const mockReadHermesRuntimeSnapshot = jest.fn().mockResolvedValue({
   },
   platformDetails: {},
   jobsCount: 0,
+  modelConfig: {
+    defaultModel: null,
+    provider: null,
+    baseUrl: null,
+  },
 });
 const mockGetDeploymentDefaults = jest.fn().mockResolvedValue({
   vcpu: 1,
@@ -220,6 +225,11 @@ beforeEach(() => {
     },
     platformDetails: {},
     jobsCount: 0,
+    modelConfig: {
+      defaultModel: null,
+      provider: null,
+      baseUrl: null,
+    },
   });
   mockGetDeploymentDefaults.mockReset().mockResolvedValue({
     vcpu: 1,
@@ -476,6 +486,25 @@ describe("GET /agents/:id/gateway-url", () => {
 
 describe("Hermes WebUI routes", () => {
   it("returns Hermes runtime status and model metadata", async () => {
+    mockReadHermesRuntimeSnapshot.mockResolvedValueOnce({
+      runtimeStatus: {
+        gateway_state: "running",
+        active_agents: 1,
+        updated_at: "2026-04-12T12:00:00.000Z",
+        platforms: {},
+      },
+      directory: {
+        updated_at: "2026-04-12T12:00:00.000Z",
+        platforms: {},
+      },
+      platformDetails: {},
+      jobsCount: 0,
+      modelConfig: {
+        defaultModel: "gpt-5.4",
+        provider: "custom",
+        baseUrl: "https://api.openai.com/v1",
+      },
+    });
     mockDb.query.mockResolvedValueOnce({
       rows: [{
         id: "a-hermes-ui",
@@ -513,7 +542,10 @@ describe("Hermes WebUI routes", () => {
         url: "http://10.0.0.40:8642/v1",
         runtime: { host: "10.0.0.40", port: 8642 },
         health: expect.objectContaining({ ok: true, status: "ok" }),
-        defaultModel: "desk-bot",
+        defaultModel: "gpt-5.4",
+        configuredModel: "gpt-5.4",
+        configuredProvider: "custom",
+        configuredBaseUrl: "https://api.openai.com/v1",
       })
     );
     expect(global.fetch).toHaveBeenNthCalledWith(

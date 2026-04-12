@@ -164,10 +164,11 @@ export default function HermesWebUITab({ agentId, agentStatus }) {
       <div>
         {activeSubTab === "status" && (
           <HermesStatusPanel
+            agentId={agentId}
             runtimeInfo={runtimeInfo}
             loading={loading}
             error={error}
-            onRefresh={() => loadRuntimeInfo()}
+            onRefresh={() => loadRuntimeInfo({ showSpinner: false })}
           />
         )}
         {activeSubTab === "chat" && (
@@ -176,7 +177,7 @@ export default function HermesWebUITab({ agentId, agentStatus }) {
             runtimeInfo={runtimeInfo}
             loadingRuntime={loading}
             runtimeError={error}
-            onRefreshRuntime={() => loadRuntimeInfo()}
+            onRefreshRuntime={() => loadRuntimeInfo({ showSpinner: false })}
           />
         )}
         {activeSubTab === "integrations" && <HermesIntegrationsPanel agentId={agentId} />}

@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   default_vcpu INTEGER NOT NULL DEFAULT 1,
   default_ram_mb INTEGER NOT NULL DEFAULT 1024,
   default_disk_gb INTEGER NOT NULL DEFAULT 10,
+  system_banner_enabled BOOLEAN NOT NULL DEFAULT false,
+  system_banner_severity TEXT NOT NULL DEFAULT 'warning',
+  system_banner_title TEXT NOT NULL DEFAULT '',
+  system_banner_message TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );

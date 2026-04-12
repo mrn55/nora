@@ -35,7 +35,11 @@ export default function HermesChatPanel({
   const messageListRef = useRef(null);
 
   const runtimeReady = Boolean(runtimeInfo?.health?.ok);
-  const defaultModel = runtimeInfo?.defaultModel || runtimeInfo?.models?.[0]?.id || null;
+  const defaultModel =
+    runtimeInfo?.configuredModel ||
+    runtimeInfo?.defaultModel ||
+    runtimeInfo?.models?.[0]?.id ||
+    null;
 
   useEffect(() => {
     if (!messageListRef.current) return;

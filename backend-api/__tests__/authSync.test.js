@@ -59,6 +59,14 @@ function execResult(output = "", exitCode = 0) {
   };
 }
 
+function decodeHermesScript(command) {
+  const match = String(command || "").match(
+    /base64\.b64decode\("([^"]+)"\)\.decode\('utf-8'\)/
+  );
+  if (!match) return "";
+  return Buffer.from(match[1], "base64").toString("utf8");
+}
+
 describe("auth sync", () => {
   let consoleLogSpy;
   let consoleWarnSpy;
@@ -192,13 +200,13 @@ describe("auth sync", () => {
     ]);
   });
 
-  it("rewrites the Hermes env file and waits only for runtime readiness", async () => {
+  it("rewrites the Hermes model config and env file before waiting for runtime readiness", async () => {
     mockGetIntegrationEnvVars.mockResolvedValue({
       GITHUB_TOKEN: "gh-token",
     });
     mockDb.query
       .mockResolvedValueOnce({
-        rows: [{ provider: "openai", model: "gpt-5.4" }],
+        rows: [{ provider: "openai", model: "gpt-5.4", config: {} }],
       })
       .mockResolvedValueOnce({
         rows: [
@@ -217,7 +225,7 @@ describe("auth sync", () => {
         ],
       });
 
-    const execSpy = jest.fn().mockResolvedValue(execResult());
+    const execSpy = jest.fn().mockImplementation(() => Promise.resolve(execResult()));
     mockExec.mockImplementation(execSpy);
 
     const results = await syncAuthToUserAgents("user-1");
@@ -234,10 +242,17 @@ describe("auth sync", () => {
         cmd: expect.arrayContaining(["/bin/sh", "-lc"]),
       })
     );
-    expect(execSpy.mock.calls[0][1].cmd[2]).toContain("/opt/data/.env");
-    expect(execSpy.mock.calls[0][1].cmd[2]).toContain("NORA MANAGED ENV");
-    expect(execSpy.mock.calls[0][1].cmd[2]).not.toContain("then;");
-    expect(execSpy.mock.calls[0][1].cmd[2]).not.toContain("else;");
+    expect(mockExec).toHaveBeenCalledTimes(2);
+
+    const configScript = decodeHermesScript(execSpy.mock.calls[0][1].cmd[2]);
+    expect(configScript).toContain('"provider":"custom"');
+    expect(configScript).toContain('"defaultModel":"gpt-5.4"');
+    expect(configScript).toContain('"baseUrl":"https://api.openai.com/v1"');
+
+    expect(execSpy.mock.calls[1][1].cmd[2]).toContain("/opt/data/.env");
+    expect(execSpy.mock.calls[1][1].cmd[2]).toContain("NORA MANAGED ENV");
+    expect(execSpy.mock.calls[1][1].cmd[2]).not.toContain("then;");
+    expect(execSpy.mock.calls[1][1].cmd[2]).not.toContain("else;");
     expect(mockRestart).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "agent-hermes-1",

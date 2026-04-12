@@ -588,6 +588,9 @@ router.get("/:id/hermes-ui", asyncHandler(async (req, res) => {
   let gateway = null;
   let gatewayError = null;
   let directoryUpdatedAt = null;
+  let configuredModel = null;
+  let configuredProvider = null;
+  let configuredBaseUrl = null;
 
   try {
     const healthResponse = await fetchHermesApi(agent, "/health", {
@@ -629,6 +632,21 @@ router.get("/:id/hermes-ui", asyncHandler(async (req, res) => {
     const snapshot = await readHermesRuntimeSnapshot(agent);
     gateway = buildHermesGatewaySummary(snapshot);
     directoryUpdatedAt = snapshot?.directory?.updated_at || null;
+    configuredModel =
+      typeof snapshot?.modelConfig?.defaultModel === "string" &&
+      snapshot.modelConfig.defaultModel.trim()
+        ? snapshot.modelConfig.defaultModel.trim()
+        : null;
+    configuredProvider =
+      typeof snapshot?.modelConfig?.provider === "string" &&
+      snapshot.modelConfig.provider.trim()
+        ? snapshot.modelConfig.provider.trim()
+        : null;
+    configuredBaseUrl =
+      typeof snapshot?.modelConfig?.baseUrl === "string" &&
+      snapshot.modelConfig.baseUrl.trim()
+        ? snapshot.modelConfig.baseUrl.trim()
+        : null;
   } catch (error) {
     gatewayError = error.message || "Failed to read Hermes gateway state";
   }
@@ -638,7 +656,10 @@ router.get("/:id/hermes-ui", asyncHandler(async (req, res) => {
     runtime: runtimeAddress,
     health,
     models,
-    defaultModel: models[0]?.id || null,
+    defaultModel: configuredModel || models[0]?.id || null,
+    configuredModel,
+    configuredProvider,
+    configuredBaseUrl,
     directoryUpdatedAt,
     ...(gateway ? { gateway } : {}),
     ...(modelsError ? { modelsError } : {}),

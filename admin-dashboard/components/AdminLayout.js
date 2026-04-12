@@ -48,6 +48,7 @@ function formatShortCommit(commit) {
 export default function AdminLayout({ children }) {
   const router = useRouter();
   const [release, setRelease] = useState(null);
+  const [systemBanner, setSystemBanner] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -60,6 +61,7 @@ export default function AdminLayout({ children }) {
         const payload = await response.json().catch(() => ({}));
         if (active) {
           setRelease(payload?.release || null);
+          setSystemBanner(payload?.systemBanner || null);
         }
       } catch {
         // Keep the admin shell usable if release metadata is unavailable.
@@ -83,6 +85,10 @@ export default function AdminLayout({ children }) {
   const showReleaseBanner = Boolean(release?.updateAvailable);
   const bannerIsCritical =
     release?.severity === "critical" || release?.upgradeRequired;
+  const showSystemBanner = Boolean(
+    systemBanner?.active && systemBanner?.title && systemBanner?.message
+  );
+  const systemBannerCritical = systemBanner?.severity === "critical";
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950">
@@ -148,6 +154,52 @@ export default function AdminLayout({ children }) {
 
         <main className="flex-1">
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+            {showSystemBanner ? (
+              <section
+                className={clsx(
+                  "mb-6 overflow-hidden rounded-[2rem] border px-5 py-5 shadow-sm sm:px-6",
+                  systemBannerCritical
+                    ? "border-red-200 bg-red-50"
+                    : "border-amber-200 bg-amber-50"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={clsx(
+                      "mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
+                      systemBannerCritical
+                        ? "bg-red-100 text-red-700"
+                        : "bg-amber-100 text-amber-700"
+                    )}
+                  >
+                    <TriangleAlert size={20} />
+                  </span>
+                  <div className="min-w-0">
+                    <p
+                      className={clsx(
+                        "text-[11px] font-black uppercase tracking-[0.18em]",
+                        systemBannerCritical ? "text-red-600" : "text-amber-700"
+                      )}
+                    >
+                      {systemBannerCritical ? "System Critical" : "System Warning"}
+                    </p>
+                    <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
+                      {systemBanner.title}
+                    </h2>
+                    <p
+                      className={clsx(
+                        "mt-2 max-w-4xl text-sm font-medium leading-relaxed",
+                        systemBannerCritical
+                          ? "text-red-700/80"
+                          : "text-amber-800/90"
+                      )}
+                    >
+                      {systemBanner.message}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            ) : null}
             {showReleaseBanner ? (
               <section
                 className={clsx(

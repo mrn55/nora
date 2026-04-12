@@ -10,6 +10,14 @@ const mockGetDeploymentDefaults = jest.fn().mockResolvedValue({
   ram_mb: 1024,
   disk_gb: 10,
 });
+const mockGetSystemBanner = jest.fn().mockResolvedValue({
+  enabled: false,
+  severity: "warning",
+  title: "",
+  message: "",
+  featureEnabled: false,
+  active: false,
+});
 const RELEASE_ENV_KEYS = [
   "NORA_CURRENT_VERSION",
   "NORA_CURRENT_COMMIT",
@@ -117,6 +125,7 @@ jest.mock("../metrics", () => ({
 }));
 jest.mock("../platformSettings", () => ({
   getDeploymentDefaults: mockGetDeploymentDefaults,
+  getSystemBanner: mockGetSystemBanner,
 }));
 
 const app = require("../server");
@@ -127,6 +136,14 @@ describe("public platform config", () => {
       vcpu: 1,
       ram_mb: 1024,
       disk_gb: 10,
+    });
+    mockGetSystemBanner.mockReset().mockResolvedValue({
+      enabled: false,
+      severity: "warning",
+      title: "",
+      message: "",
+      featureEnabled: false,
+      active: false,
     });
     RELEASE_ENV_KEYS.forEach((key) => delete process.env[key]);
     CATALOG_ENV_KEYS.forEach((key) => delete process.env[key]);
@@ -151,8 +168,39 @@ describe("public platform config", () => {
           ram_mb: 1024,
           disk_gb: 10,
         },
+        systemBanner: {
+          enabled: false,
+          severity: "warning",
+          title: "",
+          message: "",
+          featureEnabled: false,
+          active: false,
+        },
       })
     );
+  });
+
+  it("returns the system banner payload in the platform config", async () => {
+    mockGetSystemBanner.mockResolvedValueOnce({
+      enabled: true,
+      severity: "warning",
+      title: "Testing warning",
+      message: "This Nora instance is for staging workflows only.",
+      featureEnabled: true,
+      active: true,
+    });
+
+    const res = await request(app).get("/config/platform");
+
+    expect(res.status).toBe(200);
+    expect(res.body.systemBanner).toEqual({
+      enabled: true,
+      severity: "warning",
+      title: "Testing warning",
+      message: "This Nora instance is for staging workflows only.",
+      featureEnabled: true,
+      active: true,
+    });
   });
 
   it("returns runtime, deploy-target, sandbox, and legacy backend catalogs", async () => {

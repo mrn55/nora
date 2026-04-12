@@ -10,7 +10,7 @@ const channels = require("./channels");
 const marketplace = require("./marketplace");
 const integrations = require("./integrations");
 const snapshots = require("./snapshots");
-const { getDeploymentDefaults } = require("./platformSettings");
+const { getDeploymentDefaults, getSystemBanner } = require("./platformSettings");
 const { buildReleaseInfo } = require("./releaseInfo");
 const { collectAgentTelemetrySample } = require("./agentTelemetry");
 const {
@@ -406,6 +406,7 @@ app.get("/config/platform", async (_req, res) => {
       sandboxProfiles,
       defaultRuntimeFamily,
       deploymentDefaults: await getDeploymentDefaults(),
+      systemBanner: await getSystemBanner(),
       release: await buildReleaseInfo(),
     });
   } catch (error) {
@@ -757,13 +758,21 @@ async function migrateDB() {
        default_vcpu INTEGER NOT NULL DEFAULT 1,
        default_ram_mb INTEGER NOT NULL DEFAULT 1024,
        default_disk_gb INTEGER NOT NULL DEFAULT 10,
+       system_banner_enabled BOOLEAN NOT NULL DEFAULT false,
+       system_banner_severity TEXT NOT NULL DEFAULT 'warning',
+       system_banner_title TEXT NOT NULL DEFAULT '',
+       system_banner_message TEXT NOT NULL DEFAULT '',
        created_at TIMESTAMP DEFAULT NOW(),
        updated_at TIMESTAMP DEFAULT NOW()
      )`,
     `INSERT INTO platform_settings(singleton, default_vcpu, default_ram_mb, default_disk_gb)
        VALUES(TRUE, 1, 1024, 10)
        ON CONFLICT (singleton) DO NOTHING`,
-    `CREATE TABLE IF NOT EXISTS usage_metrics (
+    `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_enabled BOOLEAN NOT NULL DEFAULT false; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_severity TEXT NOT NULL DEFAULT 'warning'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_title TEXT NOT NULL DEFAULT ''; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_message TEXT NOT NULL DEFAULT ''; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+  `CREATE TABLE IF NOT EXISTS usage_metrics (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
        agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
        user_id UUID REFERENCES users(id) ON DELETE CASCADE,

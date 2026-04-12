@@ -438,6 +438,63 @@ async function runHermesPythonJson(agent, script, { timeout = 30000 } = {}) {
   }
 }
 
+async function persistHermesModelConfig(agent, modelConfig = {}) {
+  const script = `
+import json
+from pathlib import Path
+
+import yaml
+
+from hermes_cli.config import get_config_path, load_config
+
+payload = ${JSON.stringify(modelConfig || {})}
+config = load_config() or {}
+model = dict(config.get("model") or {})
+
+default_model = str(payload.get("defaultModel") or "").strip()
+provider = str(payload.get("provider") or "").strip()
+base_url = str(payload.get("baseUrl") or "").strip()
+
+if default_model:
+    model["default"] = default_model
+else:
+    model.pop("default", None)
+
+if provider:
+    model["provider"] = provider
+else:
+    model.pop("provider", None)
+
+if base_url:
+    model["base_url"] = base_url
+else:
+    model.pop("base_url", None)
+
+if model:
+    config["model"] = model
+else:
+    config.pop("model", None)
+
+config_path = Path(get_config_path())
+config_path.parent.mkdir(parents=True, exist_ok=True)
+
+with config_path.open("w", encoding="utf-8") as handle:
+    yaml.safe_dump(config, handle, sort_keys=False)
+
+print(json.dumps({
+    "ok": True,
+    "configPath": str(config_path),
+    "modelConfig": {
+        "defaultModel": model.get("default"),
+        "provider": model.get("provider"),
+        "baseUrl": model.get("base_url"),
+    },
+}))
+`;
+
+  return runHermesPythonJson(agent, script, { timeout: 30000 });
+}
+
 function serializeHermesChannelCatalog() {
   return HERMES_CHANNEL_TYPES.map((type) => {
     const definition = HERMES_CHANNEL_DEFINITIONS[type];
@@ -589,7 +646,7 @@ import json
 from gateway.channel_directory import load_directory
 from gateway.config import load_gateway_config
 from gateway.status import read_runtime_status
-from hermes_cli.config import get_env_value
+from hermes_cli.config import get_config_path, get_env_value, load_config
 
 definitions = ${JSON.stringify(definitions)}
 config = load_gateway_config()
@@ -620,12 +677,21 @@ try:
 except Exception:
     jobs_count = None
 
+runtime_config = load_config() or {}
+model_config = runtime_config.get("model") or {}
+
 print(json.dumps({
     "runtimeStatus": read_runtime_status() or {},
     "directory": load_directory() or {"updated_at": None, "platforms": {}},
     "platformDetails": platform_details,
     "envValues": env_values,
     "jobsCount": jobs_count,
+    "modelConfig": {
+        "defaultModel": model_config.get("default"),
+        "provider": model_config.get("provider"),
+        "baseUrl": model_config.get("base_url"),
+        "configPath": str(get_config_path()),
+    },
 }))
 `;
 
@@ -869,6 +935,7 @@ module.exports = {
   HERMES_CHANNEL_TYPES,
   definitionForChannelType,
   listHermesChannels,
+  persistHermesModelConfig,
   readHermesRuntimeSnapshot,
   saveHermesChannel,
   deleteHermesChannel,
