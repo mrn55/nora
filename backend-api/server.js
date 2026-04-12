@@ -30,10 +30,18 @@ const {
   hasGatewayEndpoint,
 } = require("../agent-runtime/lib/agentEndpoints");
 const {
+  DEFAULT_RUNTIME_FAMILY,
   getBackendCatalog,
   getBackendStatus,
   getDefaultBackend,
+  getDefaultDeployTarget,
+  getDefaultSandboxProfile,
   getEnabledBackends,
+  getEnabledDeployTargets,
+  getEnabledSandboxProfiles,
+  getExecutionTargetCatalog,
+  getRuntimeCatalog,
+  getSandboxProfileCatalog,
 } = require("../agent-runtime/lib/backendCatalog");
 
 // ─── JWT Secret ───────────────────────────────────────────────────
@@ -374,6 +382,9 @@ app.get("/health", (req, res) => {
 
 app.get("/config/platform", async (_req, res) => {
   try {
+    const runtimeFamilies = getRuntimeCatalog();
+    const executionTargets = getExecutionTargetCatalog();
+    const sandboxProfiles = getSandboxProfileCatalog();
     res.json({
       mode: billing.PLATFORM_MODE,
       selfhosted:
@@ -381,6 +392,14 @@ app.get("/config/platform", async (_req, res) => {
       billingEnabled: billing.BILLING_ENABLED,
       enabledBackends: getEnabledBackends(),
       defaultBackend: getDefaultBackend(),
+      enabledDeployTargets: getEnabledDeployTargets(),
+      defaultDeployTarget: getDefaultDeployTarget(),
+      enabledSandboxProfiles: getEnabledSandboxProfiles(),
+      defaultSandboxProfile: getDefaultSandboxProfile(),
+      runtimeFamilies,
+      executionTargets,
+      sandboxProfiles,
+      defaultRuntimeFamily: runtimeFamilies[0]?.id || DEFAULT_RUNTIME_FAMILY,
       deploymentDefaults: await getDeploymentDefaults(),
       release: await buildReleaseInfo(),
     });
@@ -390,10 +409,23 @@ app.get("/config/platform", async (_req, res) => {
 });
 
 app.get("/config/backends", (_req, res) => {
+  const runtimeFamilies = getRuntimeCatalog();
+  const executionTargets = getExecutionTargetCatalog();
+  const sandboxProfiles = getSandboxProfileCatalog();
   res.json({
+    runtimeFamily: runtimeFamilies[0] || null,
+    runtimeFamilies,
+    defaultRuntimeFamily: runtimeFamilies[0]?.id || DEFAULT_RUNTIME_FAMILY,
+    enabledDeployTargets: getEnabledDeployTargets(),
+    defaultDeployTarget: getDefaultDeployTarget(),
+    enabledSandboxProfiles: getEnabledSandboxProfiles(),
+    defaultSandboxProfile: getDefaultSandboxProfile(),
+    executionTargets,
+    sandboxProfiles,
     enabledBackends: getEnabledBackends(),
     defaultBackend: getDefaultBackend(),
     backends: getBackendCatalog(),
+    legacyBackends: getBackendCatalog(),
   });
 });
 
@@ -634,6 +666,69 @@ async function migrateDB() {
        ALTER TABLE agents ADD COLUMN sandbox_type VARCHAR(20) DEFAULT 'standard';
      EXCEPTION WHEN duplicate_column THEN NULL;
      END $$`,
+    `DO $$ BEGIN
+       ALTER TABLE agents ADD COLUMN runtime_family VARCHAR(20);
+     EXCEPTION WHEN duplicate_column THEN NULL;
+     END $$`,
+    `DO $$ BEGIN
+       ALTER TABLE agents ADD COLUMN deploy_target VARCHAR(20);
+     EXCEPTION WHEN duplicate_column THEN NULL;
+     END $$`,
+    `DO $$ BEGIN
+       ALTER TABLE agents ADD COLUMN sandbox_profile VARCHAR(20);
+     EXCEPTION WHEN duplicate_column THEN NULL;
+     END $$`,
+    `UPDATE agents
+        SET runtime_family = 'openclaw'
+      WHERE runtime_family IS NULL OR BTRIM(runtime_family) = ''`,
+    `UPDATE agents
+        SET deploy_target = CASE
+          WHEN backend_type = 'kubernetes' THEN 'k8s'
+          WHEN backend_type = 'nemoclaw' THEN 'docker'
+          WHEN backend_type IN ('docker', 'k8s', 'proxmox') THEN backend_type
+          ELSE 'docker'
+        END
+      WHERE deploy_target IS NULL OR BTRIM(deploy_target) = ''`,
+    `UPDATE agents
+        SET sandbox_profile = CASE
+          WHEN sandbox_type = 'nemoclaw' THEN 'nemoclaw'
+          WHEN backend_type = 'nemoclaw' THEN 'nemoclaw'
+          ELSE 'standard'
+        END
+      WHERE sandbox_profile IS NULL OR BTRIM(sandbox_profile) = ''`,
+    `ALTER TABLE agents ALTER COLUMN runtime_family SET DEFAULT 'openclaw'`,
+    `ALTER TABLE agents ALTER COLUMN deploy_target SET DEFAULT 'docker'`,
+    `ALTER TABLE agents ALTER COLUMN sandbox_profile SET DEFAULT 'standard'`,
+    `UPDATE agents
+        SET backend_type = CASE
+          WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
+          WHEN deploy_target = 'kubernetes' THEN 'k8s'
+          WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target
+          ELSE 'docker'
+        END
+      WHERE runtime_family IS NOT NULL
+        AND deploy_target IS NOT NULL
+        AND sandbox_profile IS NOT NULL
+        AND backend_type IS DISTINCT FROM CASE
+          WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
+          WHEN deploy_target = 'kubernetes' THEN 'k8s'
+          WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target
+          ELSE 'docker'
+        END`,
+    `UPDATE agents
+        SET sandbox_type = CASE
+          WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
+          ELSE 'standard'
+        END
+      WHERE runtime_family IS NOT NULL
+        AND sandbox_profile IS NOT NULL
+        AND sandbox_type IS DISTINCT FROM CASE
+          WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
+          ELSE 'standard'
+        END`,
+    `ALTER TABLE agents ALTER COLUMN runtime_family SET NOT NULL`,
+    `ALTER TABLE agents ALTER COLUMN deploy_target SET NOT NULL`,
+    `ALTER TABLE agents ALTER COLUMN sandbox_profile SET NOT NULL`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN vcpu INTEGER DEFAULT 1; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN ram_mb INTEGER DEFAULT 1024; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN disk_gb INTEGER DEFAULT 10; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,

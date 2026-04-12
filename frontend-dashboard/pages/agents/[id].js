@@ -6,12 +6,22 @@ import TabBar from "../../components/agents/TabBar";
 import OverviewTab from "../../components/agents/OverviewTab";
 import MetricsTab from "../../components/agents/MetricsTab";
 import LogViewer from "../../components/LogViewer";
+import RuntimePathFields from "../../components/RuntimePathFields";
 import OpenClawTab from "../../components/agents/OpenClawTab";
 import SettingsTab from "../../components/agents/SettingsTab";
 import NemoClawTab from "../../components/agents/NemoClawTab";
 import StatusBadge from "../../components/agents/StatusBadge";
 import { useToast } from "../../components/Toast";
 import { fetchWithAuth } from "../../lib/api";
+import {
+  activeExecutionTargetFromConfig,
+  activeSandboxOptionFromTarget,
+  formatExecutionTargetLabel,
+  formatSandboxProfileLabel,
+  runtimeFamilyFromConfig,
+  resolveAgentExecutionTarget,
+  resolveAgentSandboxProfile,
+} from "../../lib/runtime";
 import {
   Bot, Loader2, ArrowLeft, Terminal, MessagesSquare, ScrollText, Zap, X, Copy, Share2
 } from "lucide-react";
@@ -26,13 +36,20 @@ export default function AgentDetail() {
   const [actionLoading, setActionLoading] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [showRedeployDialog, setShowRedeployDialog] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
   const [duplicateCloneMode, setDuplicateCloneMode] = useState("files_only");
+  const [duplicateExecutionTarget, setDuplicateExecutionTarget] = useState("");
+  const [duplicateSandboxProfile, setDuplicateSandboxProfile] = useState("");
+  const [redeployExecutionTarget, setRedeployExecutionTarget] = useState("");
+  const [redeploySandboxProfile, setRedeploySandboxProfile] = useState("");
   const [publishName, setPublishName] = useState("");
   const [publishDescription, setPublishDescription] = useState("");
   const [publishCategory, setPublishCategory] = useState("General");
   const [publishIssues, setPublishIssues] = useState([]);
+  const [backendConfig, setBackendConfig] = useState(null);
+  const [viewerRole, setViewerRole] = useState("user");
   const toast = useToast();
 
   // Persistent history refs — survive tab switches
@@ -63,6 +80,27 @@ export default function AgentDetail() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([
+      fetchWithAuth("/api/auth/me")
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+      fetch("/api/config/backends")
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+    ]).then(([profile, config]) => {
+      if (cancelled) return;
+      setViewerRole(profile?.role || "user");
+      setBackendConfig(config);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Poll for status updates — faster (5s) for transient states, normal (10s) otherwise
   useEffect(() => {
     if (!id || loading) return;
@@ -92,7 +130,15 @@ export default function AgentDetail() {
   function openDuplicateDialog() {
     setDuplicateCloneMode("files_only");
     setDuplicateName(`${agent?.name || "OpenClaw Agent"} Copy`);
+    setDuplicateExecutionTarget(resolveAgentExecutionTarget(agent));
+    setDuplicateSandboxProfile(resolveAgentSandboxProfile(agent));
     setShowDuplicateDialog(true);
+  }
+
+  function openRedeployDialog() {
+    setRedeployExecutionTarget(resolveAgentExecutionTarget(agent));
+    setRedeploySandboxProfile(resolveAgentSandboxProfile(agent));
+    setShowRedeployDialog(true);
   }
 
   function openPublishDialog() {
@@ -184,6 +230,9 @@ export default function AgentDetail() {
         body: JSON.stringify({
           name: trimmedName,
           clone_mode: duplicateCloneMode,
+          runtime_family: runtimeFamilyFromConfig(backendConfig)?.id || "openclaw",
+          deploy_target: duplicateExecutionTarget,
+          sandbox_profile: duplicateSandboxProfile || "standard",
         }),
       });
 
@@ -204,6 +253,61 @@ export default function AgentDetail() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to duplicate agent");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
+  async function handleRedeploy() {
+    setActionLoading("redeploy");
+    try {
+      const res = await fetchWithAuth(`/api/agents/${id}/redeploy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runtime_family: runtimeFamilyFromConfig(backendConfig)?.id || "openclaw",
+          deploy_target: redeployExecutionTarget,
+          sandbox_profile: redeploySandboxProfile || "standard",
+        }),
+      });
+
+      if (res.ok) {
+        const nextSandboxProfile = redeploySandboxProfile || "standard";
+        const nextExecutionTarget =
+          redeployExecutionTarget || resolveAgentExecutionTarget(agent);
+        setShowRedeployDialog(false);
+        setAgent((current) =>
+          current
+            ? {
+                ...current,
+                status: "queued",
+                runtime_family:
+                  runtimeFamilyFromConfig(backendConfig)?.id ||
+                  current.runtime_family ||
+                  "openclaw",
+                deploy_target: nextExecutionTarget,
+                sandbox_profile: nextSandboxProfile,
+                backend_type:
+                  nextSandboxProfile === "nemoclaw"
+                    ? "nemoclaw"
+                    : nextExecutionTarget,
+                sandbox_type: nextSandboxProfile,
+              }
+            : current
+        );
+        toast.success("Agent re-queued");
+        setTimeout(refreshAgent, 2000);
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      const ref = data.correlationId
+        ? ` (ref: ${data.correlationId.slice(0, 8)})`
+        : "";
+      toast.error((data.error || "Failed to redeploy agent") + ref);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to redeploy agent");
     } finally {
       setActionLoading("");
     }
@@ -298,6 +402,34 @@ export default function AgentDetail() {
     );
   }
 
+  const executionTargetLabel = formatExecutionTargetLabel(
+    resolveAgentExecutionTarget(agent)
+  );
+  const sandboxProfile = resolveAgentSandboxProfile(agent);
+  const sandboxLabel = formatSandboxProfileLabel(sandboxProfile);
+  const duplicateActiveExecutionTarget = activeExecutionTargetFromConfig(
+    backendConfig,
+    duplicateExecutionTarget
+  );
+  const duplicateActiveSandboxOption = activeSandboxOptionFromTarget(
+    duplicateActiveExecutionTarget,
+    duplicateSandboxProfile
+  );
+  const redeployActiveExecutionTarget = activeExecutionTargetFromConfig(
+    backendConfig,
+    redeployExecutionTarget
+  );
+  const redeployActiveSandboxOption = activeSandboxOptionFromTarget(
+    redeployActiveExecutionTarget,
+    redeploySandboxProfile
+  );
+  const canDuplicate = Boolean(
+    backendConfig && duplicateActiveSandboxOption?.available
+  );
+  const canRedeploy = Boolean(
+    backendConfig && redeployActiveSandboxOption?.available
+  );
+
   return (
     <Layout>
       <div className={`w-full max-w-full space-y-4 sm:space-y-6 ${activeTab === "terminal" ? "flex-1 flex flex-col min-h-0" : ""}`}>
@@ -316,11 +448,14 @@ export default function AgentDetail() {
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <StatusBadge status={agent.status} />
                 <span className="text-[10px] text-slate-400 font-mono">{agent.id.slice(0, 8)}</span>
-                {agent.backend_type && agent.backend_type !== "docker" && (
-                  <span className="text-[10px] text-slate-400 font-bold uppercase px-2 py-0.5 bg-slate-100 rounded">
-                    {agent.backend_type}
+                <span className="text-[10px] text-slate-500 font-bold uppercase px-2 py-0.5 bg-slate-100 rounded">
+                  {executionTargetLabel}
+                </span>
+                {sandboxProfile !== "standard" ? (
+                  <span className="text-[10px] text-emerald-700 font-bold uppercase px-2 py-0.5 bg-emerald-50 rounded">
+                    {sandboxLabel}
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
@@ -360,7 +495,11 @@ export default function AgentDetail() {
         </div>
 
         {/* Tab Bar */}
-        <TabBar activeTab={activeTab} onTabChange={setActiveTab} sandboxType={agent.sandbox_type} />
+        <TabBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          sandboxProfile={sandboxProfile}
+        />
 
         {/* Tab Content */}
         <div className={`w-full min-w-0 overflow-x-hidden ${activeTab === "terminal" || activeTab === "logs" ? "flex-1 flex flex-col min-h-0" : "min-h-[200px] sm:min-h-[400px]"}`}>
@@ -373,7 +512,7 @@ export default function AgentDetail() {
               onStart={() => handleAction("start")}
               onStop={() => handleAction("stop")}
               onRestart={() => handleAction("restart")}
-              onRedeploy={() => handleAction("redeploy")}
+              onRedeploy={openRedeployDialog}
             />
           )}
 
@@ -429,7 +568,7 @@ export default function AgentDetail() {
 
           {activeTab === "openclaw" && <OpenClawTab agentId={id} agentStatus={agent.status} />}
 
-          {activeTab === "nemoclaw" && agent.sandbox_type === "nemoclaw" && (
+          {activeTab === "nemoclaw" && sandboxProfile === "nemoclaw" && (
             <NemoClawTab agentId={id} agentStatus={agent.status} />
           )}
 
@@ -454,11 +593,36 @@ export default function AgentDetail() {
         sourceName={agent.name}
         onNameChange={setDuplicateName}
         onCloneModeChange={setDuplicateCloneMode}
+        backendConfig={backendConfig}
+        viewerRole={viewerRole}
+        executionTarget={duplicateExecutionTarget}
+        sandboxProfile={duplicateSandboxProfile}
+        onExecutionTargetChange={setDuplicateExecutionTarget}
+        onSandboxProfileChange={setDuplicateSandboxProfile}
+        canConfirm={canDuplicate}
         onCancel={() => {
           if (actionLoading === "duplicate") return;
           setShowDuplicateDialog(false);
         }}
         onConfirm={handleDuplicate}
+      />
+
+      <RedeployAgentDialog
+        open={showRedeployDialog}
+        loading={actionLoading === "redeploy"}
+        agentName={agent.name}
+        backendConfig={backendConfig}
+        viewerRole={viewerRole}
+        executionTarget={redeployExecutionTarget}
+        sandboxProfile={redeploySandboxProfile}
+        onExecutionTargetChange={setRedeployExecutionTarget}
+        onSandboxProfileChange={setRedeploySandboxProfile}
+        canConfirm={canRedeploy}
+        onCancel={() => {
+          if (actionLoading === "redeploy") return;
+          setShowRedeployDialog(false);
+        }}
+        onConfirm={handleRedeploy}
       />
 
       <PublishMarketplaceDialog
@@ -495,6 +659,13 @@ function DuplicateAgentDialog({
   cloneMode,
   loading,
   sourceName,
+  backendConfig,
+  viewerRole,
+  executionTarget,
+  sandboxProfile,
+  onExecutionTargetChange,
+  onSandboxProfileChange,
+  canConfirm,
   onNameChange,
   onCloneModeChange,
   onCancel,
@@ -544,6 +715,16 @@ function DuplicateAgentDialog({
             </select>
             <p className="text-xs text-slate-500 mt-2">{CLONE_MODE_COPY[cloneMode]}</p>
           </div>
+
+          <RuntimePathFields
+            backendConfig={backendConfig}
+            viewerRole={viewerRole}
+            executionTarget={executionTarget}
+            sandboxProfile={sandboxProfile}
+            onExecutionTargetChange={onExecutionTargetChange}
+            onSandboxProfileChange={onSandboxProfileChange}
+            disabled={loading}
+          />
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-2">
@@ -556,11 +737,78 @@ function DuplicateAgentDialog({
           </button>
           <button
             onClick={onConfirm}
-            disabled={loading || !name.trim()}
+            disabled={loading || !name.trim() || !canConfirm}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-sm font-bold text-white rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 inline-flex items-center gap-2"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
             Duplicate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RedeployAgentDialog({
+  open,
+  loading,
+  agentName,
+  backendConfig,
+  viewerRole,
+  executionTarget,
+  sandboxProfile,
+  onExecutionTargetChange,
+  onSandboxProfileChange,
+  canConfirm,
+  onCancel,
+  onConfirm,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Zap size={18} className="text-blue-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-slate-900">Redeploy Agent</h3>
+            <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+              Re-queue <span className="font-semibold text-slate-700">{agentName}</span> and choose the runtime path it should use next.
+            </p>
+          </div>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 transition-colors" disabled={loading}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <RuntimePathFields
+          backendConfig={backendConfig}
+          viewerRole={viewerRole}
+          executionTarget={executionTarget}
+          sandboxProfile={sandboxProfile}
+          onExecutionTargetChange={onExecutionTargetChange}
+          onSandboxProfileChange={onSandboxProfileChange}
+          disabled={loading}
+        />
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-sm font-bold text-slate-700 rounded-xl transition-all disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading || !canConfirm}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-sm font-bold text-white rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            Re-queue Deploy
           </button>
         </div>
       </div>

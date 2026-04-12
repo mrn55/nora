@@ -2,12 +2,28 @@ import { useEffect, useState } from "react";
 import { Settings, Trash2, Loader2, Save, Copy, Share2 } from "lucide-react";
 import ConfirmDialog from "../ConfirmDialog";
 import { useToast } from "../Toast";
+import {
+  formatExecutionTargetLabel,
+  formatSandboxProfileLabel,
+  resolveAgentExecutionTarget,
+  resolveAgentSandboxProfile,
+} from "../../lib/runtime";
 
 export default function SettingsTab({ agent, onDelete, onRename, onDuplicate, onPublish, actionLoading }) {
   const [envVars, setEnvVars] = useState("");
   const [agentName, setAgentName] = useState(agent.name || "");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const toast = useToast();
+  const runtimeFamilyLabel =
+    String(agent.runtime_family || "openclaw").trim().toLowerCase() === "openclaw"
+      ? "OpenClaw"
+      : agent.runtime_family || "OpenClaw";
+  const executionTargetLabel = formatExecutionTargetLabel(
+    resolveAgentExecutionTarget(agent)
+  );
+  const sandboxLabel = formatSandboxProfileLabel(
+    resolveAgentSandboxProfile(agent)
+  );
 
   useEffect(() => {
     setAgentName(agent.name || "");
@@ -88,8 +104,16 @@ export default function SettingsTab({ agent, onDelete, onRename, onDuplicate, on
           <p className="text-sm text-slate-900">{agent.name}</p>
         </div>
         <div>
-          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Backend Type</label>
-          <p className="text-sm text-slate-900 capitalize bg-slate-50 px-4 py-2 rounded-lg w-fit">{agent.backend_type || "docker"}</p>
+          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Runtime Family</label>
+          <p className="text-sm text-slate-900 bg-slate-50 px-4 py-2 rounded-lg w-fit">{runtimeFamilyLabel}</p>
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Execution Target</label>
+          <p className="text-sm text-slate-900 bg-slate-50 px-4 py-2 rounded-lg w-fit">{executionTargetLabel}</p>
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Sandbox</label>
+          <p className="text-sm text-slate-900 bg-slate-50 px-4 py-2 rounded-lg w-fit">{sandboxLabel}</p>
         </div>
         <div>
           <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Agent ID</label>

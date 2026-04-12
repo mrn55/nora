@@ -1,5 +1,6 @@
 const express = require("express");
 const db = require("../db");
+const { isNemoClawSandbox } = require("../agentRuntimeFields");
 const { runtimeUrlForAgent } = require("../../agent-runtime/lib/agentEndpoints");
 
 const router = express.Router();
@@ -9,7 +10,7 @@ router.get("/:id/nemoclaw/status", async (req, res) => {
     const agentResult = await db.query("SELECT * FROM agents WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
     const agent = agentResult.rows[0];
     if (!agent) return res.status(404).json({ error: "Agent not found" });
-    if (agent.sandbox_type !== "nemoclaw") return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
+    if (!isNemoClawSandbox(agent)) return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
     const runtimeUrl = runtimeUrlForAgent(agent, "/nemoclaw/status");
     if (!runtimeUrl || agent.status !== "running") return res.json({ status: agent.status, sandbox: null });
 
@@ -26,7 +27,7 @@ router.get("/:id/nemoclaw/policy", async (req, res) => {
     const agentResult = await db.query("SELECT * FROM agents WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
     const agent = agentResult.rows[0];
     if (!agent) return res.status(404).json({ error: "Agent not found" });
-    if (agent.sandbox_type !== "nemoclaw") return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
+    if (!isNemoClawSandbox(agent)) return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
     const runtimeUrl = runtimeUrlForAgent(agent, "/nemoclaw/policy");
     if (!runtimeUrl || agent.status !== "running") return res.status(400).json({ error: "Agent is not running" });
 
@@ -43,7 +44,7 @@ router.post("/:id/nemoclaw/policy", async (req, res) => {
     const agentResult = await db.query("SELECT * FROM agents WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
     const agent = agentResult.rows[0];
     if (!agent) return res.status(404).json({ error: "Agent not found" });
-    if (agent.sandbox_type !== "nemoclaw") return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
+    if (!isNemoClawSandbox(agent)) return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
     const runtimeUrl = runtimeUrlForAgent(agent, "/nemoclaw/policy");
     if (!runtimeUrl || agent.status !== "running") return res.status(400).json({ error: "Agent is not running" });
 
@@ -64,7 +65,7 @@ router.get("/:id/nemoclaw/approvals", async (req, res) => {
     const agentResult = await db.query("SELECT * FROM agents WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
     const agent = agentResult.rows[0];
     if (!agent) return res.status(404).json({ error: "Agent not found" });
-    if (agent.sandbox_type !== "nemoclaw") return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
+    if (!isNemoClawSandbox(agent)) return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
     const runtimeUrl = runtimeUrlForAgent(agent, "/nemoclaw/approvals");
     if (!runtimeUrl || agent.status !== "running") return res.json({ approvals: [] });
 
@@ -81,7 +82,7 @@ router.post("/:id/nemoclaw/approvals/:rid", async (req, res) => {
     const agentResult = await db.query("SELECT * FROM agents WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
     const agent = agentResult.rows[0];
     if (!agent) return res.status(404).json({ error: "Agent not found" });
-    if (agent.sandbox_type !== "nemoclaw") return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
+    if (!isNemoClawSandbox(agent)) return res.status(400).json({ error: "Agent is not a NemoClaw sandbox" });
     const runtimeUrl = runtimeUrlForAgent(agent, `/nemoclaw/approvals/${req.params.rid}`);
     if (!runtimeUrl || agent.status !== "running") return res.status(400).json({ error: "Agent is not running" });
 

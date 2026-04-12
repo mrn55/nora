@@ -1,5 +1,8 @@
 const {
+  deployTargetForBackend,
   getDefaultBackend,
+  getDefaultDeployTarget,
+  isKnownSandboxProfile,
   normalizeBackendName,
 } = require("./backendCatalog");
 
@@ -22,15 +25,62 @@ function getNemoClawAgentImage() {
   );
 }
 
+function normalizeRequestedSandboxProfile(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (isKnownSandboxProfile(normalized)) return normalized;
+  return null;
+}
+
+function resolveProvisionerBackend({ backend, deployTarget, sandboxProfile }) {
+  const normalizedBackend = String(backend || "").trim().toLowerCase();
+  if (normalizedBackend) {
+    return normalizeBackendName(normalizedBackend);
+  }
+
+  const normalizedDeployTarget = String(deployTarget || "").trim().toLowerCase();
+  if (normalizedDeployTarget === "nemoclaw") {
+    return "nemoclaw";
+  }
+  if (sandboxProfile === "nemoclaw") {
+    return "nemoclaw";
+  }
+
+  return getDefaultBackend(process.env, { sandbox: sandboxProfile || "standard" });
+}
+
 function getDefaultAgentImage({
   sandbox = "standard",
   backend = getProvisionerBackendName(),
+  sandbox_profile,
+  sandboxProfile,
+  deploy_target,
+  deployTarget,
 } = {}) {
-  if (sandbox === "nemoclaw") {
+  const resolvedSandboxProfile =
+    normalizeRequestedSandboxProfile(
+      sandbox_profile ?? sandboxProfile ?? sandbox
+    ) ||
+    (String(backend || "").trim().toLowerCase() === "nemoclaw"
+      ? "nemoclaw"
+      : "standard");
+
+  if (resolvedSandboxProfile === "nemoclaw") {
     return getNemoClawAgentImage();
   }
 
-  if (normalizeBackendName(backend) === "docker") {
+  const resolvedBackend = resolveProvisionerBackend({
+    backend,
+    deployTarget: deploy_target ?? deployTarget,
+    sandboxProfile: resolvedSandboxProfile,
+  });
+  const resolvedDeployTarget =
+    deploy_target ??
+    deployTarget ??
+    deployTargetForBackend(resolvedBackend) ??
+    getDefaultDeployTarget(process.env, { sandbox: resolvedSandboxProfile });
+
+  if (normalizeBackendName(resolvedDeployTarget) === "docker") {
     return getStandardDockerAgentImage();
   }
 

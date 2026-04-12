@@ -1,5 +1,6 @@
 const db = require("./db");
 const containerManager = require("./containerManager");
+const { buildAgentRuntimeFields, isNemoClawSandbox } = require("./agentRuntimeFields");
 const { runtimeUrlForAgent } = require("../agent-runtime/lib/agentEndpoints");
 const path = require("path");
 const telemetryModulePath = resolveTelemetryModulePath();
@@ -89,8 +90,13 @@ function historyBucketSeconds(fromTime, toTime) {
 }
 
 function normalizeTelemetry(telemetry, agent = {}) {
-  const backendType = telemetry?.backend_type || agent.backend_type || "docker";
+  const runtimeFields = buildAgentRuntimeFields({
+    ...agent,
+    backend_type: telemetry?.backend_type || agent?.backend_type,
+  });
+  const backendType = telemetry?.backend_type || runtimeFields.backend_type;
   return {
+    ...runtimeFields,
     backend_type: backendType,
     capabilities: normalizeCapabilities({
       ...defaultCapabilitiesForBackend(backendType),
@@ -217,14 +223,16 @@ function integerOrZero(value) {
 }
 
 function buildFallbackTelemetry(agent, error = null) {
-  const capabilities = defaultCapabilitiesForBackend(agent?.backend_type || "docker");
+  const runtimeFields = buildAgentRuntimeFields(agent);
+  const capabilities = defaultCapabilitiesForBackend(runtimeFields.backend_type);
   const running = ["running", "warning"].includes(agent?.status || "");
   const telemetry = buildUnavailableTelemetry({
-    backendType: agent?.backend_type || "docker",
+    backendType: runtimeFields.backend_type,
     running,
     capabilities,
   });
 
+  Object.assign(telemetry, runtimeFields);
   if (error) telemetry.error = error;
   return telemetry;
 }
@@ -391,7 +399,7 @@ async function fetchJson(url) {
 }
 
 async function loadNemoSummary(agent) {
-  if (agent?.sandbox_type !== "nemoclaw") {
+  if (!isNemoClawSandbox(agent)) {
     return null;
   }
 
@@ -453,6 +461,9 @@ async function buildAgentStatsResponse(agent, liveTelemetry = null) {
   current = maskUnsupportedMetrics(current, telemetry.capabilities);
 
   const response = {
+    runtime_family: telemetry.runtime_family,
+    deploy_target: telemetry.deploy_target,
+    sandbox_profile: telemetry.sandbox_profile,
     backend_type: telemetry.backend_type,
     capabilities: telemetry.capabilities,
     current,
@@ -483,6 +494,9 @@ async function buildAgentHistoryResponse(agent, fromTime, toTime) {
   }
 
   return {
+    runtime_family: telemetry.runtime_family,
+    deploy_target: telemetry.deploy_target,
+    sandbox_profile: telemetry.sandbox_profile,
     backend_type: telemetry.backend_type,
     capabilities: telemetry.capabilities,
     samples: samples.map((row) => maskUnsupportedMetrics(row, telemetry.capabilities)),

@@ -20,8 +20,16 @@ import {
   X,
 } from "lucide-react";
 import Layout from "../../components/layout/Layout";
+import RuntimePathFields from "../../components/RuntimePathFields";
 import { fetchWithAuth } from "../../lib/api";
 import { useToast } from "../../components/Toast";
+import {
+  activeExecutionTargetFromConfig,
+  activeSandboxOptionFromTarget,
+  resolveAgentExecutionTarget,
+  resolveAgentSandboxProfile,
+  runtimeFamilyFromConfig,
+} from "../../lib/runtime";
 
 const REPORT_REASONS = [
   { value: "spam", label: "Spam or low quality" },
@@ -112,6 +120,8 @@ export default function MarketplaceTemplateDetail() {
   const [installName, setInstallName] = useState("");
   const [installOpen, setInstallOpen] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [installExecutionTarget, setInstallExecutionTarget] = useState("");
+  const [installSandboxProfile, setInstallSandboxProfile] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("spam");
@@ -120,12 +130,27 @@ export default function MarketplaceTemplateDetail() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
   const [editor, setEditor] = useState(buildOwnerEditorState(null));
+  const [backendConfig, setBackendConfig] = useState(null);
 
   useEffect(() => {
-    fetchWithAuth("/api/auth/me")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((payload) => setCurrentUser(payload || null))
-      .catch(() => setCurrentUser(null));
+    let cancelled = false;
+
+    Promise.all([
+      fetchWithAuth("/api/auth/me")
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+      fetch("/api/config/backends")
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+    ]).then(([payload, config]) => {
+      if (cancelled) return;
+      setCurrentUser(payload || null);
+      setBackendConfig(config);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadDetail = useCallback(async () => {
@@ -197,6 +222,9 @@ export default function MarketplaceTemplateDetail() {
         body: JSON.stringify({
           listingId: detail.id,
           name: trimmedName,
+          runtime_family: runtimeFamilyFromConfig(backendConfig)?.id || "openclaw",
+          deploy_target: installExecutionTarget,
+          sandbox_profile: installSandboxProfile || "standard",
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -212,6 +240,20 @@ export default function MarketplaceTemplateDetail() {
     } finally {
       setInstalling(false);
     }
+  }
+
+  function openInstallDialog() {
+    const templateRuntime = {
+      backend_type: detail?.defaults?.backend || null,
+      sandbox_type: detail?.defaults?.sandbox || "standard",
+      deploy_target: detail?.defaults?.deploy_target || null,
+      sandbox_profile: detail?.defaults?.sandbox_profile || null,
+    };
+
+    setInstallName(detail?.name || "");
+    setInstallExecutionTarget(resolveAgentExecutionTarget(templateRuntime));
+    setInstallSandboxProfile(resolveAgentSandboxProfile(templateRuntime));
+    setInstallOpen(true);
   }
 
   async function handleReport() {
@@ -346,6 +388,17 @@ export default function MarketplaceTemplateDetail() {
   const isPreset = detail?.source_type === "platform";
   const statusClass =
     STATUS_STYLES[detail?.status] || "bg-slate-100 text-slate-700 border-slate-200";
+  const installActiveExecutionTarget = activeExecutionTargetFromConfig(
+    backendConfig,
+    installExecutionTarget
+  );
+  const installActiveSandboxOption = activeSandboxOptionFromTarget(
+    installActiveExecutionTarget,
+    installSandboxProfile
+  );
+  const canInstall = Boolean(
+    backendConfig && installActiveSandboxOption?.available
+  );
 
   return (
     <Layout>
@@ -751,7 +804,7 @@ export default function MarketplaceTemplateDetail() {
                       </button>
                     ) : null}
                     <button
-                      onClick={() => setInstallOpen(true)}
+                      onClick={openInstallDialog}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-600"
                     >
                       <Plus size={16} />
@@ -801,6 +854,13 @@ export default function MarketplaceTemplateDetail() {
           item={detail}
           name={installName}
           loading={installing}
+          backendConfig={backendConfig}
+          viewerRole={currentUser?.role || "user"}
+          executionTarget={installExecutionTarget}
+          sandboxProfile={installSandboxProfile}
+          onExecutionTargetChange={setInstallExecutionTarget}
+          onSandboxProfileChange={setInstallSandboxProfile}
+          canConfirm={canInstall}
           onCancel={() => {
             if (installing) return;
             setInstallOpen(false);
@@ -921,6 +981,13 @@ function InstallTemplateDialog({
   item,
   name,
   loading,
+  backendConfig,
+  viewerRole,
+  executionTarget,
+  sandboxProfile,
+  onExecutionTargetChange,
+  onSandboxProfileChange,
+  canConfirm,
   onCancel,
   onConfirm,
   onNameChange,
@@ -965,6 +1032,18 @@ function InstallTemplateDialog({
           />
         </div>
 
+        <div className="mt-5">
+          <RuntimePathFields
+            backendConfig={backendConfig}
+            viewerRole={viewerRole}
+            executionTarget={executionTarget}
+            sandboxProfile={sandboxProfile}
+            onExecutionTargetChange={onExecutionTargetChange}
+            onSandboxProfileChange={onSandboxProfileChange}
+            disabled={loading}
+          />
+        </div>
+
         <div className="mt-6 flex items-center justify-end gap-3">
           <button
             onClick={onCancel}
@@ -975,7 +1054,7 @@ function InstallTemplateDialog({
           </button>
           <button
             onClick={onConfirm}
-            disabled={loading || !name.trim()}
+            disabled={loading || !name.trim() || !canConfirm}
             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}

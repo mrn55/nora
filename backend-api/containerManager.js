@@ -10,6 +10,7 @@
  */
 
 const path = require("path");
+const { resolveAgentBackendType } = require("./agentRuntimeFields");
 
 // Lazy-load backends so missing optional deps (e.g. @kubernetes/client-node)
 // don't crash the API server when only Docker is used.
@@ -65,11 +66,11 @@ function getBackendInstance(type) {
 
 /**
  * Get the provisioner backend for a given agent row.
- * @param {{ backend_type?: string }} agent
+ * @param {{ backend_type?: string, deploy_target?: string, sandbox_profile?: string }} agent
  * @returns {import('../workers/provisioner/backends/interface')}
  */
 function backendFor(agent) {
-  const type = agent.backend_type || "docker";
+  const type = resolveAgentBackendType(agent);
   return getBackendInstance(type);
 }
 
@@ -77,7 +78,7 @@ function backendFor(agent) {
 
 module.exports = {
   /**
-   * @param {{ backend_type: string, container_id: string }} agent
+   * @param {{ backend_type?: string, deploy_target?: string, sandbox_profile?: string, container_id: string }} agent
    */
   async start(agent) {
     return backendFor(agent).start(agent.container_id);

@@ -9,7 +9,8 @@ async function collectBackgroundTelemetry({
 } = {}) {
   try {
     const agents = await dbClient.query(
-      `SELECT id, container_id, backend_type, sandbox_type, status,
+      `SELECT id, container_id, backend_type, sandbox_type,
+              runtime_family, deploy_target, sandbox_profile, status,
               host, runtime_host, runtime_port, gateway_host, gateway_port
          FROM agents
         WHERE status IN ('running','warning')
@@ -40,7 +41,8 @@ async function reconcileBackgroundAgentStatuses({
 } = {}) {
   try {
     const agents = await dbClient.query(
-      `SELECT id, container_id, backend_type, status
+      `SELECT id, container_id, backend_type,
+              runtime_family, deploy_target, sandbox_profile, status
          FROM agents
         WHERE container_id IS NOT NULL
           AND status IN ('running','warning','stopped','error')`

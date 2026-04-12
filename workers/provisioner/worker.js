@@ -10,6 +10,7 @@ const {
   normalizeBackendName,
   sandboxForBackend,
 } = require('../../agent-runtime/lib/backendCatalog');
+const { buildAgentRuntimeFields } = require('../../agent-runtime/lib/agentRuntimeFields');
 const { waitForAgentReadiness } = require('./healthChecks');
 const { buildReadinessWarningDetail, persistReadinessWarning } = require('./readinessWarning');
 
@@ -98,18 +99,27 @@ const worker = new Worker('deployments', async (job) => {
   const disk_gb = specs?.disk_gb || 10;
 
   const agentRowResult = await db.query(
-    "SELECT image, template_payload, sandbox_type, backend_type FROM agents WHERE id = $1",
+    `SELECT image, template_payload, sandbox_type, backend_type, runtime_family,
+            deploy_target, sandbox_profile
+       FROM agents
+      WHERE id = $1`,
     [id]
   );
   const agentRow = agentRowResult.rows[0] || {};
+  const storedRuntimeFields = buildAgentRuntimeFields(agentRow);
   const resolvedBackend = isKnownBackend(backend)
     ? normalizeBackendName(backend)
-    : isKnownBackend(agentRow.backend_type)
-      ? normalizeBackendName(agentRow.backend_type)
+    : isKnownBackend(storedRuntimeFields.backend_type)
+      ? normalizeBackendName(storedRuntimeFields.backend_type)
       : getDefaultBackend(process.env, {
-          sandbox: sandbox || agentRow.sandbox_type || 'standard',
+          sandbox: sandbox || storedRuntimeFields.sandbox_profile || 'standard',
         });
-  const resolvedSandbox = sandboxForBackend(resolvedBackend);
+  const resolvedRuntimeFields = buildAgentRuntimeFields({
+    runtime_family: storedRuntimeFields.runtime_family,
+    backend_type: resolvedBackend,
+    sandbox_type: sandbox || storedRuntimeFields.sandbox_profile,
+  });
+  const resolvedSandbox = resolvedRuntimeFields.sandbox_profile;
   const provisioner = loadBackend(resolvedBackend);
   const resolvedImage = image || agentRow.image || getDefaultAgentImage({
     sandbox: resolvedSandbox,
@@ -473,13 +483,17 @@ const worker = new Worker('deployments', async (job) => {
               runtime_port = $9,
               gateway_host = $10,
               gateway_port = $11,
-              image = COALESCE($12, image)
+              image = COALESCE($12, image),
+              runtime_family = $13,
+              deploy_target = $14,
+              sandbox_profile = $15,
+              sandbox_type = $16
         WHERE id = $1`,
       [
         id,
         containerId,
         host,
-        resolvedBackend,
+        resolvedRuntimeFields.backend_type,
         gatewayToken,
         containerName || null,
         gatewayHostPort ? parseInt(gatewayHostPort, 10) : null,
@@ -488,6 +502,10 @@ const worker = new Worker('deployments', async (job) => {
         gatewayHost || null,
         gatewayPort ? parseInt(gatewayPort, 10) : null,
         resolvedImage || null,
+        resolvedRuntimeFields.runtime_family,
+        resolvedRuntimeFields.deploy_target,
+        resolvedRuntimeFields.sandbox_profile,
+        resolvedRuntimeFields.sandbox_type,
       ]
     );
     await db.query("UPDATE deployments SET status = 'completed' WHERE agent_id = $1", [id]);

@@ -880,6 +880,164 @@ describe("admin routes", () => {
     expect(monitoring.logEvent).toHaveBeenCalled();
   });
 
+  it("requeues admin redeploys from new runtime columns when legacy aliases are missing", async () => {
+    process.env.ENABLED_BACKENDS = "docker,nemoclaw";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "agent-2",
+            user_id: "user-9",
+            name: "Nemo Runtime Agent",
+            status: "stopped",
+            runtime_family: "openclaw",
+            deploy_target: "docker",
+            sandbox_profile: "nemoclaw",
+            vcpu: 2,
+            ram_mb: 2048,
+            disk_gb: 20,
+            container_name: "nemo-agent",
+            image: "nora/nemo:latest",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await withToken(
+      request(app).post("/admin/agents/agent-2/redeploy"),
+      adminToken
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "agent-2",
+        userId: "user-9",
+        backend: "nemoclaw",
+        sandbox: "nemoclaw",
+      })
+    );
+  });
+
+  it("accepts legacy backend overrides on admin redeploy", async () => {
+    process.env.ENABLED_BACKENDS = "docker,nemoclaw";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "agent-3",
+            user_id: "user-3",
+            name: "Standard Runtime Agent",
+            status: "stopped",
+            runtime_family: "openclaw",
+            deploy_target: "docker",
+            sandbox_profile: "standard",
+            vcpu: 2,
+            ram_mb: 2048,
+            disk_gb: 20,
+            container_name: "standard-agent",
+            image: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await withToken(
+      request(app).post("/admin/agents/agent-3/redeploy").send({
+        backend: "nemoclaw",
+      }),
+      adminToken
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("deploy_target = $5"),
+      [
+        "agent-3",
+        "nemoclaw",
+        "nemoclaw",
+        "openclaw",
+        "docker",
+        "nemoclaw",
+        "standard-agent",
+        "ghcr.io/nvidia/openshell-community/sandboxes/openclaw",
+      ]
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "agent-3",
+        userId: "user-3",
+        backend: "nemoclaw",
+        sandbox: "nemoclaw",
+        image: "ghcr.io/nvidia/openshell-community/sandboxes/openclaw",
+      })
+    );
+  });
+
+  it("recomputes the default image when admin redeploy switches execution targets", async () => {
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "agent-4",
+            user_id: "user-4",
+            name: "Docker Runtime Agent",
+            status: "stopped",
+            runtime_family: "openclaw",
+            deploy_target: "docker",
+            sandbox_profile: "standard",
+            vcpu: 2,
+            ram_mb: 2048,
+            disk_gb: 20,
+            container_name: "docker-agent",
+            image: "nora-openclaw-agent:local",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await withToken(
+      request(app).post("/admin/agents/agent-4/redeploy").send({
+        deploy_target: "k8s",
+      }),
+      adminToken
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("image = $8"),
+      [
+        "agent-4",
+        "k8s",
+        "standard",
+        "openclaw",
+        "k8s",
+        "standard",
+        "docker-agent",
+        "node:22-slim",
+      ]
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "agent-4",
+        userId: "user-4",
+        backend: "k8s",
+        sandbox: "standard",
+        image: "node:22-slim",
+      })
+    );
+  });
+
   it("destroys agent containers before deleting the user", async () => {
     const containerManager = require("../containerManager");
     mockDb.query

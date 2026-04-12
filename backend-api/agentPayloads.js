@@ -10,6 +10,7 @@ const {
   normalizeBackendName,
   sandboxForBackend,
 } = require("../agent-runtime/lib/backendCatalog");
+const { buildAgentRuntimeFields } = require("./agentRuntimeFields");
 
 const CLONE_MODES = new Set([
   "files_only",
@@ -391,7 +392,10 @@ function buildContainerName(name) {
 function serializeAgent(agent) {
   if (!agent) return agent;
   const { template_payload, gateway_token, ...rest } = agent;
-  return rest;
+  return {
+    ...rest,
+    ...buildAgentRuntimeFields(rest),
+  };
 }
 
 async function fetchTemplateExportViaRuntime(agent, includeMemory) {

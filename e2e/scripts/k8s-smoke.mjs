@@ -98,7 +98,10 @@ async function main() {
     const deploy = await api("/agents/deploy", {
       method: "POST",
       token,
-      body: { name: `Kind Smoke ${stamp}` },
+      body: {
+        name: `Kind Smoke ${stamp}`,
+        deploy_target: "k8s",
+      },
     });
     agentId = deploy.body.id;
 

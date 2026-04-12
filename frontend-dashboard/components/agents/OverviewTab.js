@@ -6,20 +6,14 @@ import {
 } from "lucide-react";
 import StatusBadge from "./StatusBadge";
 import { fetchWithAuth } from "../../lib/api";
-
-function formatDeployModeLabel(agent) {
-  switch (agent?.backend_type) {
-    case "nemoclaw":
-      return "NemoClaw + OpenClaw";
-    case "k8s":
-    case "kubernetes":
-      return "OpenClaw + Kubernetes";
-    case "proxmox":
-      return "OpenClaw + Proxmox";
-    default:
-      return "OpenClaw + Docker";
-  }
-}
+import {
+  formatExecutionTargetLabel,
+  formatRuntimePathLabel,
+  formatSandboxProfileLabel,
+  isNemoClawSandbox,
+  resolveAgentExecutionTarget,
+  resolveAgentSandboxProfile,
+} from "../../lib/runtime";
 
 function formatGatewayAddress(agent, browserHostname = "") {
   if (agent?.gateway_host && agent?.gateway_port) {
@@ -43,8 +37,14 @@ function formatGatewayAddress(agent, browserHostname = "") {
 export default function OverviewTab({ agent, actionLoading, onStart, onStop, onRestart, onRedeploy, onDuplicate, onPublish }) {
   const [lastError, setLastError] = useState(null);
   const [browserHostname, setBrowserHostname] = useState("");
-  const deployModeLabel = formatDeployModeLabel(agent);
-  const isNemoClawAgent = agent.backend_type === "nemoclaw" || agent.sandbox_type === "nemoclaw";
+  const deployModeLabel = formatRuntimePathLabel(agent);
+  const executionTargetLabel = formatExecutionTargetLabel(
+    resolveAgentExecutionTarget(agent)
+  );
+  const sandboxLabel = formatSandboxProfileLabel(
+    resolveAgentSandboxProfile(agent)
+  );
+  const isNemoClawAgent = isNemoClawSandbox(agent);
   const gatewayAddress = formatGatewayAddress(agent, browserHostname);
 
   // Fetch last error event when agent is in error state
@@ -237,8 +237,16 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
             <div className="mt-1"><StatusBadge status={agent.status} /></div>
           </div>
           <div>
-            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Deploy Mode</label>
+            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Runtime Path</label>
             <p className="text-sm text-slate-900 mt-1">{deployModeLabel}</p>
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Execution Target</label>
+            <p className="text-sm text-slate-900 mt-1">{executionTargetLabel}</p>
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sandbox</label>
+            <p className="text-sm text-slate-900 mt-1">{sandboxLabel}</p>
           </div>
           <div>
             <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Container Name</label>

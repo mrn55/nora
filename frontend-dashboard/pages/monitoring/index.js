@@ -14,6 +14,12 @@ import {
 import { clsx } from "clsx";
 import { useState, useEffect, useCallback } from "react";
 import { fetchWithAuth } from "../../lib/api";
+import {
+  formatExecutionTargetLabel,
+  formatSandboxProfileLabel,
+  resolveAgentExecutionTarget,
+  resolveAgentSandboxProfile,
+} from "../../lib/runtime";
 
 const STATUS_CONFIG = {
   running: {
@@ -268,6 +274,11 @@ export default function Monitoring() {
                   ) : (
                     agents.map((agent) => {
                       const config = STATUS_CONFIG[agent.status] || STATUS_CONFIG.stopped;
+                      const executionTargetLabel = formatExecutionTargetLabel(
+                        resolveAgentExecutionTarget(agent)
+                      );
+                      const sandboxProfile = resolveAgentSandboxProfile(agent);
+                      const sandboxLabel = formatSandboxProfileLabel(sandboxProfile);
                       return (
                         <a
                           key={agent.id}
@@ -297,7 +308,8 @@ export default function Monitoring() {
                                   {agent.name}
                                 </p>
                                 <p className="text-xs text-slate-500 mt-1">
-                                  {agent.node || "Local host"} {agent.sandbox_type ? `· ${agent.sandbox_type}` : ""}
+                                  {agent.node || "Local host"} {`· ${executionTargetLabel}`}
+                                  {sandboxProfile !== "standard" ? ` · ${sandboxLabel}` : ""}
                                 </p>
                               </div>
                               <div className="flex items-center gap-3 flex-shrink-0">

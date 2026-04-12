@@ -24,17 +24,20 @@ const { OPENCLAW_GATEWAY_PORT } = require("../../agent-runtime/lib/contracts");
 const { resolveGatewayAddress } = require("../../agent-runtime/lib/agentEndpoints");
 const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
 const {
+  DEFAULT_RUNTIME_FAMILY,
   getBackendStatus,
-  getDefaultBackend,
-  isKnownBackend,
-  normalizeBackendName,
-  sandboxForBackend,
 } = require("../../agent-runtime/lib/backendCatalog");
 const { asyncHandler } = require("../middleware/errorHandler");
 const {
   buildAgentHistoryResponse,
   buildAgentStatsResponse,
 } = require("../agentTelemetry");
+const {
+  buildAgentRuntimeFields,
+  isSameRuntimePath,
+  resolveAgentBackendType,
+  resolveRequestedRuntimeFields,
+} = require("../agentRuntimeFields");
 const {
   buildAgentContext,
   buildAuditMetadata,
@@ -46,35 +49,47 @@ router.use(createMutationFailureAuditMiddleware("agent"));
 
 function resolveRequestedImage({
   requestedImage,
-  backend = "docker",
+  runtimeFields = null,
   fallbackImage = null,
+  fallbackRuntimeFields = null,
 } = {}) {
-  const normalizedBackend = isKnownBackend(backend)
-    ? normalizeBackendName(backend)
-    : getDefaultBackend(process.env, { sandbox: "standard" });
+  const explicitRequestedImage =
+    typeof requestedImage === "string" ? requestedImage.trim() : "";
+  if (explicitRequestedImage) return explicitRequestedImage;
+
+  if (
+    fallbackImage &&
+    fallbackRuntimeFields &&
+    isSameRuntimePath(runtimeFields, fallbackRuntimeFields)
+  ) {
+    return fallbackImage;
+  }
 
   return (
-    (typeof requestedImage === "string" && requestedImage.trim()) ||
-    fallbackImage ||
     getDefaultAgentImage({
-      sandbox: sandboxForBackend(normalizedBackend),
-      backend: normalizedBackend,
+      backend: runtimeFields?.backend_type,
+      deploy_target: runtimeFields?.deploy_target,
+      sandbox_profile: runtimeFields?.sandbox_profile,
     })
   );
 }
 
-function resolveRequestedBackend({
-  requestedBackend,
-  fallbackBackend = null,
-  fallbackSandbox = "standard",
-} = {}) {
-  if (isKnownBackend(requestedBackend)) {
-    return normalizeBackendName(requestedBackend);
+function normalizeRequestedRuntimeFamily(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  return normalized === DEFAULT_RUNTIME_FAMILY ? DEFAULT_RUNTIME_FAMILY : null;
+}
+
+function assertSupportedRuntimeSelection(runtimeFields) {
+  if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
+
+  if (runtimeFields.deploy_target !== "docker") {
+    const error = new Error(
+      "NemoClaw sandbox is only supported on the Docker execution target."
+    );
+    error.statusCode = 400;
+    throw error;
   }
-  if (isKnownBackend(fallbackBackend)) {
-    return normalizeBackendName(fallbackBackend);
-  }
-  return getDefaultBackend(process.env, { sandbox: fallbackSandbox });
 }
 
 function normalizeGatewayHost(value) {
@@ -132,7 +147,7 @@ function assertBackendAvailable(backend) {
   const status = getBackendStatus(backend);
   if (!status.enabled) {
     const error = new Error(
-      `${status.label} is not enabled. Add "${status.id}" to ENABLED_BACKENDS to use this backend.`
+      `${status.label} is not enabled. Add "${status.id}" to ENABLED_BACKENDS to use this runtime path.`
     );
     error.statusCode = 400;
     throw error;
@@ -238,7 +253,8 @@ function agentAuditMetadata(req, agent, extra = {}) {
 // Get the gateway control UI URL (published host port for direct browser access)
 router.get("/:id/gateway-url", asyncHandler(async (req, res) => {
   const result = await db.query(
-    `SELECT id, host, container_id, backend_type, gateway_token, gateway_host_port,
+    `SELECT id, host, container_id, backend_type, runtime_family, deploy_target,
+            sandbox_profile, gateway_token, gateway_host_port,
             gateway_host, gateway_port, user_id, status
        FROM agents
       WHERE id = $1 AND user_id = $2`,
@@ -257,7 +273,8 @@ router.get("/:id/gateway-url", asyncHandler(async (req, res) => {
   // Prefer the stored published port when present. This keeps browser access on
   // the control-plane host for Docker and local kind NodePort verification.
   let hostPort = agent.gateway_host_port;
-  if (!hostPort && agent.container_id && ["docker", "nemoclaw"].includes(agent.backend_type || "docker")) {
+  const backendType = resolveAgentBackendType(agent);
+  if (!hostPort && agent.container_id && ["docker", "nemoclaw"].includes(backendType)) {
     try {
       const Docker = require("dockerode");
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
@@ -308,19 +325,26 @@ router.post("/deploy", async (req, res) => {
     if (!limits.allowed) return res.status(402).json({ error: limits.error, subscription: limits.subscription });
 
     const sub = limits.subscription;
+    const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
+    if (req.body.runtime_family != null && runtimeFamily == null) {
+      return res.status(400).json({
+        error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+      });
+    }
     const name = sanitizeAgentName(req.body.name, "OpenClaw-Agent");
     if (name.length > 100) return res.status(400).json({ error: "Agent name must be 100 characters or less" });
     const containerNameRaw = (req.body.container_name || "").trim();
     const containerName = containerNameRaw || buildContainerName(name);
-    const requestedSandbox = req.body.sandbox === "nemoclaw" ? "nemoclaw" : "standard";
-    const backend = resolveRequestedBackend({
-      requestedBackend: req.body.backend,
-      fallbackSandbox: requestedSandbox,
+    const runtimeFields = resolveRequestedRuntimeFields({
+      request: {
+        ...req.body,
+        runtime_family: runtimeFamily || DEFAULT_RUNTIME_FAMILY,
+      },
     });
-    const backendStatus = assertBackendAvailable(backend);
-    const sandbox = sandboxForBackend(backend);
-    const node = await scheduler.selectNode({ fallback: backend });
-    const nodeName = node ? node.name : backend;
+    assertSupportedRuntimeSelection(runtimeFields);
+    const backendStatus = assertBackendAvailable(runtimeFields.backend_type);
+    const node = await scheduler.selectNode({ fallback: runtimeFields.deploy_target });
+    const nodeName = node ? node.name : runtimeFields.deploy_target;
 
     const deploymentDefaults = await getDeploymentDefaults();
 
@@ -338,7 +362,7 @@ router.post("/deploy", async (req, res) => {
     }
     const image = resolveRequestedImage({
       requestedImage: req.body.image,
-      backend,
+      runtimeFields,
     });
     const templatePayload = createEmptyTemplatePayload({
       source: "blank-deploy",
@@ -347,20 +371,24 @@ router.post("/deploy", async (req, res) => {
     const result = await db.query(
       `INSERT INTO agents(
          user_id, name, status, node, backend_type, sandbox_type, vcpu, ram_mb, disk_gb,
-         container_name, image, template_payload
-       ) VALUES($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+         container_name, image, template_payload, runtime_family, deploy_target,
+         sandbox_profile
+       ) VALUES($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
       [
         req.user.id,
         name,
         nodeName,
-        backend,
-        sandbox,
+        runtimeFields.backend_type,
+        runtimeFields.sandbox_type,
         specs.vcpu,
         specs.ram_mb,
         specs.disk_gb,
         containerName,
         image,
         JSON.stringify(templatePayload),
+        runtimeFields.runtime_family,
+        runtimeFields.deploy_target,
+        runtimeFields.sandbox_profile,
       ]
     );
     const agent = result.rows[0];
@@ -375,12 +403,12 @@ router.post("/deploy", async (req, res) => {
       name: agent.name,
       userId: req.user.id,
       plan: sub.plan,
-      backend,
-      sandbox,
+      backend: runtimeFields.backend_type,
+      sandbox: runtimeFields.sandbox_profile,
       specs,
       container_name: containerName,
       image,
-      model: sandbox === "nemoclaw" ? req.body.model || null : null,
+      model: runtimeFields.sandbox_profile === "nemoclaw" ? req.body.model || null : null,
     });
 
     const deployType = backendStatus.label;
@@ -389,7 +417,10 @@ router.post("/deploy", async (req, res) => {
       `Agent "${name}" (${deployType}) queued for deployment`,
       agentAuditMetadata(req, agent, {
         deploy: {
-          backend,
+          runtimeFamily: runtimeFields.runtime_family,
+          deployTarget: runtimeFields.deploy_target,
+          sandboxProfile: runtimeFields.sandbox_profile,
+          backend: runtimeFields.backend_type,
           type: deployType,
           specs,
           image,
@@ -446,6 +477,7 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
   );
   const sourceAgent = sourceResult.rows[0];
   if (!sourceAgent) return res.status(404).json({ error: "Agent not found" });
+  const sourceRuntime = buildAgentRuntimeFields(sourceAgent);
   res.locals.auditContext = buildAgentContext(sourceAgent, {
     ownerEmail: req.user.email || null,
   });
@@ -453,6 +485,12 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
   const cloneMode = CLONE_MODES.has(req.body.clone_mode)
     ? req.body.clone_mode
     : "files_only";
+  const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
+  if (req.body.runtime_family != null && runtimeFamily == null) {
+    return res.status(400).json({
+      error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+    });
+  }
   const name = sanitizeAgentName(
     req.body.name,
     `${sourceAgent.name || "OpenClaw-Agent"} Copy`
@@ -461,13 +499,18 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "Agent name must be 100 characters or less" });
   }
 
-  const backend = resolveRequestedBackend({
-    requestedBackend: req.body.backend,
-    fallbackBackend: sourceAgent.backend_type || null,
-    fallbackSandbox: sourceAgent.sandbox_type || "standard",
+  const runtimeFields = resolveRequestedRuntimeFields({
+    request: {
+      ...req.body,
+      runtime_family: runtimeFamily || sourceRuntime.runtime_family,
+    },
+    fallback: sourceRuntime,
   });
-  assertBackendAvailable(backend);
-  const node = await scheduler.selectNode({ fallback: backend });
+  assertSupportedRuntimeSelection(runtimeFields);
+  assertBackendAvailable(runtimeFields.backend_type);
+  const node = await scheduler.selectNode({
+    fallback: runtimeFields.deploy_target,
+  });
   const containerNameRaw = (req.body.container_name || "").trim();
   const containerName = containerNameRaw || buildContainerName(name);
   const specs = {
@@ -475,11 +518,11 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
     ram_mb: sourceAgent.ram_mb || 2048,
     disk_gb: sourceAgent.disk_gb || 20,
   };
-  const sandbox = sandboxForBackend(backend);
   const image = resolveRequestedImage({
     requestedImage: req.body.image,
-    backend,
+    runtimeFields,
     fallbackImage: sourceAgent.image || null,
+    fallbackRuntimeFields: sourceRuntime,
   });
 
   let templatePayload;
@@ -492,20 +535,24 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
   const inserted = await db.query(
     `INSERT INTO agents(
        user_id, name, status, node, backend_type, sandbox_type, vcpu, ram_mb, disk_gb,
-       container_name, image, template_payload
-     ) VALUES($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+       container_name, image, template_payload, runtime_family, deploy_target,
+       sandbox_profile
+     ) VALUES($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
     [
       req.user.id,
       name,
-      node?.name || backend,
-      backend,
-      sandbox,
+      node?.name || runtimeFields.deploy_target,
+      runtimeFields.backend_type,
+      runtimeFields.sandbox_type,
       specs.vcpu,
       specs.ram_mb,
       specs.disk_gb,
       containerName,
       image,
       JSON.stringify(templatePayload),
+      runtimeFields.runtime_family,
+      runtimeFields.deploy_target,
+      runtimeFields.sandbox_profile,
     ]
   );
   const agent = inserted.rows[0];
@@ -520,8 +567,8 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
     name: agent.name,
     userId: req.user.id,
     plan: limits.subscription.plan,
-    backend,
-    sandbox,
+    backend: runtimeFields.backend_type,
+    sandbox: runtimeFields.sandbox_profile,
     specs,
     container_name: containerName,
     image,
@@ -536,6 +583,9 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
       },
       clone: {
         mode: cloneMode,
+        runtimeFamily: runtimeFields.runtime_family,
+        deployTarget: runtimeFields.deploy_target,
+        sandboxProfile: runtimeFields.sandbox_profile,
       },
     })
   );
@@ -702,6 +752,32 @@ router.post("/:id/redeploy", async (req, res) => {
       return res.status(400).json({ error: "Agent must be in warning, error, or stopped state to redeploy" });
     }
 
+    const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
+    if (req.body.runtime_family != null && runtimeFamily == null) {
+      return res.status(400).json({
+        error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+      });
+    }
+
+    const currentRuntimeFields = buildAgentRuntimeFields(agent);
+    const runtimeFields = resolveRequestedRuntimeFields({
+      request: {
+        ...req.body,
+        runtime_family: runtimeFamily || currentRuntimeFields.runtime_family,
+      },
+      fallback: currentRuntimeFields,
+    });
+    assertSupportedRuntimeSelection(runtimeFields);
+    assertBackendAvailable(runtimeFields.backend_type);
+    const containerNameRaw = (req.body.container_name || "").trim();
+    const containerName = containerNameRaw || agent.container_name;
+    const image = resolveRequestedImage({
+      requestedImage: req.body.image,
+      runtimeFields,
+      fallbackImage: agent.image || null,
+      fallbackRuntimeFields: currentRuntimeFields,
+    });
+
     await db.query(
       `UPDATE agents
           SET status = 'queued',
@@ -712,9 +788,25 @@ router.post("/:id/redeploy", async (req, res) => {
               gateway_host = NULL,
               gateway_port = NULL,
               gateway_host_port = NULL,
-              gateway_token = NULL
+              gateway_token = NULL,
+              backend_type = $2,
+              sandbox_type = $3,
+              runtime_family = $4,
+              deploy_target = $5,
+              sandbox_profile = $6,
+              container_name = $7,
+              image = $8
         WHERE id = $1`,
-      [agent.id]
+      [
+        agent.id,
+        runtimeFields.backend_type,
+        runtimeFields.sandbox_type,
+        runtimeFields.runtime_family,
+        runtimeFields.deploy_target,
+        runtimeFields.sandbox_profile,
+        containerName,
+        image,
+      ]
     );
 
     await db.query(
@@ -722,21 +814,15 @@ router.post("/:id/redeploy", async (req, res) => {
       [agent.id]
     );
 
-    const backend = resolveRequestedBackend({
-      fallbackBackend: agent.backend_type || null,
-      fallbackSandbox: agent.sandbox_type || "standard",
-    });
-    assertBackendAvailable(backend);
-
     await addDeploymentJob({
       id: agent.id,
       name: agent.name,
       userId: req.user.id,
-      backend,
-      sandbox: sandboxForBackend(backend),
+      backend: runtimeFields.backend_type,
+      sandbox: runtimeFields.sandbox_profile,
       specs: { vcpu: agent.vcpu || 2, ram_mb: agent.ram_mb || 2048, disk_gb: agent.disk_gb || 20 },
-      container_name: agent.container_name,
-      image: agent.image || null,
+      container_name: containerName,
+      image,
     });
 
     await monitoring.logEvent(
@@ -746,6 +832,9 @@ router.post("/:id/redeploy", async (req, res) => {
         result: {
           previousStatus: agent.status,
           nextStatus: "queued",
+          runtimeFamily: runtimeFields.runtime_family,
+          deployTarget: runtimeFields.deploy_target,
+          sandboxProfile: runtimeFields.sandbox_profile,
         },
       })
     );

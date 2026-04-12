@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { fetchWithAuth } from "../../lib/api";
 import {
+  formatExecutionTargetLabel,
+  formatSandboxProfileLabel,
+  resolveAgentExecutionTarget,
+  resolveAgentSandboxProfile,
+} from "../../lib/runtime";
+import {
   Activity,
   AlertTriangle,
   Brain,
@@ -55,20 +61,6 @@ function formatBytes(mb) {
 function formatRate(rate) {
   if (rate == null) return "—";
   return `${rate.toFixed(2)} MB/s`;
-}
-
-function formatBackendLabel(backendType) {
-  switch (backendType) {
-    case "nemoclaw":
-      return "NemoClaw";
-    case "proxmox":
-      return "Proxmox";
-    case "k8s":
-    case "kubernetes":
-      return "Kubernetes";
-    default:
-      return "Docker";
-  }
 }
 
 function fmtTime(iso, range) {
@@ -192,6 +184,9 @@ export default function MetricsTab({ agentId }) {
   const [stats, setStats] = useState(null);
   const [meta, setMeta] = useState({
     backend_type: null,
+    deploy_target: null,
+    sandbox_profile: null,
+    sandbox_type: null,
     capabilities: EMPTY_CAPABILITIES,
   });
   const [history, setHistory] = useState([]);
@@ -225,6 +220,12 @@ export default function MetricsTab({ agentId }) {
       setError(currentData.error || null);
       setMeta({
         backend_type: currentData.backend_type || historyData.backend_type || null,
+        deploy_target:
+          currentData.deploy_target || historyData.deploy_target || null,
+        sandbox_profile:
+          currentData.sandbox_profile || historyData.sandbox_profile || null,
+        sandbox_type:
+          currentData.sandbox_type || historyData.sandbox_type || null,
         capabilities: currentData.capabilities || historyData.capabilities || EMPTY_CAPABILITIES,
       });
       const nextHistory = normalizeHistory(historyData.samples || [], range);
@@ -278,6 +279,9 @@ export default function MetricsTab({ agentId }) {
             setError(message.payload.error || null);
             setMeta({
               backend_type: message.payload.backend_type || null,
+              deploy_target: message.payload.deploy_target || null,
+              sandbox_profile: message.payload.sandbox_profile || null,
+              sandbox_type: message.payload.sandbox_type || null,
               capabilities: message.payload.capabilities || EMPTY_CAPABILITIES,
             });
             setHistory((previous) =>
@@ -332,7 +336,17 @@ export default function MetricsTab({ agentId }) {
 
   const capabilities = stats?.capabilities || meta.capabilities || EMPTY_CAPABILITIES;
   const current = stats?.current || {};
-  const backendLabel = formatBackendLabel(stats?.backend_type || meta.backend_type);
+  const runtimeMeta = {
+    backend_type: stats?.backend_type || meta.backend_type,
+    deploy_target: stats?.deploy_target || meta.deploy_target,
+    sandbox_profile: stats?.sandbox_profile || meta.sandbox_profile,
+    sandbox_type: stats?.sandbox_type || meta.sandbox_type,
+  };
+  const executionTargetLabel = formatExecutionTargetLabel(
+    resolveAgentExecutionTarget(runtimeMeta)
+  );
+  const sandboxProfile = resolveAgentSandboxProfile(runtimeMeta);
+  const sandboxLabel = formatSandboxProfileLabel(sandboxProfile);
   const liveError = error || stats?.error || null;
   const liveStateLabel = streamState === "connected" ? "Live" : "Offline";
   const liveStateClass =
@@ -381,8 +395,13 @@ export default function MetricsTab({ agentId }) {
             ))}
           </div>
           <span className="px-2.5 py-1 rounded-full border text-[10px] font-bold bg-white text-slate-600 border-slate-200">
-            {backendLabel}
+            {executionTargetLabel}
           </span>
+          {sandboxProfile !== "standard" ? (
+            <span className="px-2.5 py-1 rounded-full border text-[10px] font-bold bg-emerald-50 text-emerald-700 border-emerald-200">
+              {sandboxLabel}
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-3 text-[10px] text-slate-400 flex-wrap">
           <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border font-bold ${liveStateClass}`}>

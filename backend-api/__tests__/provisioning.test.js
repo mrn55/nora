@@ -243,4 +243,62 @@ describe("provisioning runtime/gateway contracts", () => {
       gatewayHostPort: 31879,
     }));
   });
+
+  it("falls back to dynamic node ports when fixed node ports are already allocated", async () => {
+    process.env.K8S_EXPOSURE_MODE = "node-port";
+    process.env.K8S_RUNTIME_NODE_PORT = "30909";
+    process.env.K8S_GATEWAY_NODE_PORT = "31879";
+    process.env.K8S_RUNTIME_HOST = "nora-kind-control-plane";
+    mockCreateNamespacedService
+      .mockRejectedValueOnce({
+        statusCode: 422,
+        body: {
+          reason: "Invalid",
+          message: "Service \"oclaw-agent-654\" is invalid: spec.ports[0].nodePort: provided port is already allocated",
+        },
+      })
+      .mockResolvedValueOnce({
+        body: {
+          spec: {
+            ports: [
+              { name: "gateway", nodePort: 32079 },
+              { name: "runtime", nodePort: 32109 },
+            ],
+          },
+        },
+      });
+
+    const K8sBackend = require("../../workers/provisioner/backends/k8s");
+    const backend = new K8sBackend();
+
+    const result = await backend.create({
+      id: "654",
+      name: "NodePort Fallback QA",
+      vcpu: 2,
+      ram_mb: 2048,
+      env: { OPENAI_API_KEY: "test-key" },
+    });
+
+    expect(mockCreateNamespacedService).toHaveBeenCalledTimes(2);
+
+    const fixedService = mockCreateNamespacedService.mock.calls[0][1];
+    const fallbackService = mockCreateNamespacedService.mock.calls[1][1];
+
+    expect(fixedService.spec.ports).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "gateway", nodePort: 31879 }),
+      expect.objectContaining({ name: "runtime", nodePort: 30909 }),
+    ]));
+    expect(fallbackService.spec.ports).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "gateway", port: OPENCLAW_GATEWAY_PORT, targetPort: OPENCLAW_GATEWAY_PORT }),
+      expect.objectContaining({ name: "runtime", port: AGENT_RUNTIME_PORT, targetPort: AGENT_RUNTIME_PORT }),
+    ]));
+    expect(fallbackService.spec.ports.some((port) => port.nodePort != null)).toBe(false);
+    expect(result).toEqual(expect.objectContaining({
+      host: "oclaw-agent-654.openclaw-agents.svc.cluster.local",
+      runtimeHost: "nora-kind-control-plane",
+      runtimePort: 32109,
+      gatewayHost: "nora-kind-control-plane",
+      gatewayHostPort: 32079,
+    }));
+  });
 });

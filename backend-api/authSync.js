@@ -138,11 +138,13 @@ async function syncAuthToUserAgents(userId, agentId = null) {
   const modelCommand = buildDefaultModelCommand(defaultProvider);
 
   const agentQuery = agentId
-    ? `SELECT id, container_id, backend_type, host, runtime_host, runtime_port,
+    ? `SELECT id, container_id, backend_type, runtime_family, deploy_target,
+              sandbox_profile, host, runtime_host, runtime_port,
               gateway_host_port, gateway_host, gateway_port
          FROM agents
         WHERE id = $1 AND user_id = $2 AND status IN ('running', 'warning') AND container_id IS NOT NULL`
-    : `SELECT id, container_id, backend_type, host, runtime_host, runtime_port,
+    : `SELECT id, container_id, backend_type, runtime_family, deploy_target,
+              sandbox_profile, host, runtime_host, runtime_port,
               gateway_host_port, gateway_host, gateway_port
          FROM agents
         WHERE user_id = $1 AND status IN ('running', 'warning') AND container_id IS NOT NULL`;

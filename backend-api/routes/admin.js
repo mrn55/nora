@@ -21,6 +21,8 @@ const {
   serializeAgent,
   summarizeTemplatePayload,
 } = require("../agentPayloads");
+const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
+const { getBackendStatus } = require("../../agent-runtime/lib/backendCatalog");
 const {
   buildAgentHistoryResponse,
   buildAgentStatsResponse,
@@ -33,6 +35,12 @@ const {
   buildUserContext,
   createMutationFailureAuditMiddleware,
 } = require("../auditLog");
+const {
+  DEFAULT_RUNTIME_FAMILY,
+  buildAgentRuntimeFields,
+  isSameRuntimePath,
+  resolveRequestedRuntimeFields,
+} = require("../agentRuntimeFields");
 const {
   getDeploymentDefaults,
   parseRequiredDeploymentDefaults,
@@ -61,6 +69,62 @@ function createHttpError(message, statusCode = 400) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+}
+
+function normalizeRequestedRuntimeFamily(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  return normalized === DEFAULT_RUNTIME_FAMILY ? DEFAULT_RUNTIME_FAMILY : null;
+}
+
+function assertSupportedRuntimeSelection(runtimeFields) {
+  if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
+  if (runtimeFields.deploy_target === "docker") return;
+
+  throw createHttpError(
+    "NemoClaw sandbox is only supported on the Docker execution target."
+  );
+}
+
+function assertBackendAvailable(backend) {
+  const status = getBackendStatus(backend);
+  if (!status.enabled) {
+    throw createHttpError(
+      `${status.label} is not enabled. Add "${status.id}" to ENABLED_BACKENDS to use this runtime path.`
+    );
+  }
+  if (!status.configured) {
+    throw createHttpError(
+      status.issue || `${status.label} is not configured for this Nora control plane.`
+    );
+  }
+}
+
+function resolveRequestedImage({
+  requestedImage,
+  runtimeFields,
+  fallbackImage = null,
+  fallbackRuntimeFields = null,
+} = {}) {
+  const explicitRequestedImage =
+    typeof requestedImage === "string" ? requestedImage.trim() : "";
+  if (explicitRequestedImage) return explicitRequestedImage;
+
+  if (
+    fallbackImage &&
+    fallbackRuntimeFields &&
+    isSameRuntimePath(runtimeFields, fallbackRuntimeFields)
+  ) {
+    return fallbackImage;
+  }
+
+  return (
+    getDefaultAgentImage({
+      backend: runtimeFields?.backend_type,
+      deploy_target: runtimeFields?.deploy_target,
+      sandbox_profile: runtimeFields?.sandbox_profile,
+    })
+  );
 }
 
 function parsePositiveInteger(value, defaultValue, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
@@ -722,6 +786,32 @@ router.post(
       });
     }
 
+    const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
+    if (req.body.runtime_family != null && runtimeFamily == null) {
+      return res.status(400).json({
+        error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+      });
+    }
+
+    const currentRuntimeFields = buildAgentRuntimeFields(agent);
+    const runtimeFields = resolveRequestedRuntimeFields({
+      request: {
+        ...req.body,
+        runtime_family: runtimeFamily || currentRuntimeFields.runtime_family,
+      },
+      fallback: currentRuntimeFields,
+    });
+    assertSupportedRuntimeSelection(runtimeFields);
+    assertBackendAvailable(runtimeFields.backend_type);
+    const containerNameRaw = (req.body.container_name || "").trim();
+    const containerName = containerNameRaw || agent.container_name;
+    const image = resolveRequestedImage({
+      requestedImage: req.body.image,
+      runtimeFields,
+      fallbackImage: agent.image || null,
+      fallbackRuntimeFields: currentRuntimeFields,
+    });
+
     await db.query(
       `UPDATE agents
           SET status = 'queued',
@@ -732,9 +822,25 @@ router.post(
               gateway_host = NULL,
               gateway_port = NULL,
               gateway_host_port = NULL,
-              gateway_token = NULL
+              gateway_token = NULL,
+              backend_type = $2,
+              sandbox_type = $3,
+              runtime_family = $4,
+              deploy_target = $5,
+              sandbox_profile = $6,
+              container_name = $7,
+              image = $8
         WHERE id = $1`,
-      [agent.id]
+      [
+        agent.id,
+        runtimeFields.backend_type,
+        runtimeFields.sandbox_type,
+        runtimeFields.runtime_family,
+        runtimeFields.deploy_target,
+        runtimeFields.sandbox_profile,
+        containerName,
+        image,
+      ]
     );
 
     await db.query(
@@ -746,15 +852,15 @@ router.post(
       id: agent.id,
       name: agent.name,
       userId: agent.user_id,
-      backend: agent.backend_type || (agent.sandbox_type === "nemoclaw" ? "nemoclaw" : "docker"),
-      sandbox: agent.sandbox_type || "standard",
+      backend: runtimeFields.backend_type,
+      sandbox: runtimeFields.sandbox_profile,
       specs: {
         vcpu: agent.vcpu || 2,
         ram_mb: agent.ram_mb || 2048,
         disk_gb: agent.disk_gb || 20,
       },
-      container_name: agent.container_name,
-      image: agent.image || null,
+      container_name: containerName,
+      image,
     });
 
     await monitoring.logEvent(
@@ -764,6 +870,9 @@ router.post(
         result: {
           previousStatus: agent.status,
           nextStatus: "queued",
+          runtimeFamily: runtimeFields.runtime_family,
+          deployTarget: runtimeFields.deploy_target,
+          sandboxProfile: runtimeFields.sandbox_profile,
         },
       })
     );

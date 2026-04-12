@@ -29,16 +29,43 @@ function slugifyName(value) {
     .slice(0, 48);
 }
 
+function maturityClasses(maturityTier) {
+  switch (maturityTier) {
+    case "blocked":
+      return "bg-red-50 text-red-700 border-red-200";
+    case "experimental":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    case "beta":
+      return "bg-blue-50 text-blue-700 border-blue-200";
+    default:
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  }
+}
+
+function MaturityBadge({ maturityTier = "ga", maturityLabel = "GA" }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-widest ${maturityClasses(
+        maturityTier
+      )}`}
+    >
+      {maturityLabel}
+    </span>
+  );
+}
+
 export default function Deploy() {
   const [name, setName] = useState("");
   const [containerName, setContainerName] = useState("");
   const [loading, setLoading] = useState(false);
   const [sub, setSub] = useState(null);
   const [agentCount, setAgentCount] = useState(0);
-  const [selectedBackend, setSelectedBackend] = useState("");
+  const [selectedExecutionTarget, setSelectedExecutionTarget] = useState("");
+  const [selectedSandboxProfile, setSelectedSandboxProfile] = useState("");
   const [backendConfig, setBackendConfig] = useState(null);
   const [selectedModel, setSelectedModel] = useState("");
   const [platformConfig, setPlatformConfig] = useState(null);
+  const [viewerRole, setViewerRole] = useState("user");
   const [selVcpu, setSelVcpu] = useState(1);
   const [selRam, setSelRam] = useState(1024);
   const [selDisk, setSelDisk] = useState(10);
@@ -55,6 +82,10 @@ export default function Deploy() {
       .then((r) => r.json())
       .then((data) => setAgentCount(Array.isArray(data) ? data.length : 0))
       .catch((err) => console.error(err));
+    fetchWithAuth("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((profile) => setViewerRole(profile?.role || "user"))
+      .catch(() => {});
     fetch("/api/config/backends")
       .then((r) => r.json())
       .then(setBackendConfig)
@@ -64,31 +95,6 @@ export default function Deploy() {
       .then(setPlatformConfig)
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    const backends = backendConfig?.backends || [];
-    if (!backends.length) return;
-
-    const current = backends.find((backend) => backend.id === selectedBackend);
-    const nextBackend =
-      (current && current.enabled ? current : null) ||
-      backends.find((backend) => backend.available && backend.isDefault) ||
-      backends.find((backend) => backend.available) ||
-      backends.find((backend) => backend.enabled) ||
-      null;
-
-    if (nextBackend && nextBackend.id !== selectedBackend) {
-      setSelectedBackend(nextBackend.id);
-    }
-
-    if (
-      nextBackend?.id === "nemoclaw" &&
-      nextBackend.defaultModel &&
-      !selectedModel
-    ) {
-      setSelectedModel(nextBackend.defaultModel);
-    }
-  }, [backendConfig, selectedBackend, selectedModel]);
 
   const deploymentDefaults = platformConfig?.deploymentDefaults || {
     vcpu: 1,
@@ -116,13 +122,41 @@ export default function Deploy() {
   const planLabel = isSelfHosted ? "Self-hosted" : plan.charAt(0).toUpperCase() + plan.slice(1);
   const limit = isSelfHosted ? (platformConfig?.selfhosted?.max_agents || 50) : (sub?.agent_limit || 3);
   const atLimit = agentCount >= limit;
-  const enabledBackends = useMemo(
-    () => (backendConfig?.backends || []).filter((backend) => backend.enabled),
+  const runtimeFamily =
+    backendConfig?.runtimeFamily || backendConfig?.runtimeFamilies?.[0] || null;
+  const isAdmin = viewerRole === "admin";
+  const enabledExecutionTargets = useMemo(
+    () => (backendConfig?.executionTargets || []).filter((target) => target.enabled),
     [backendConfig]
   );
-  const activeBackend = useMemo(
-    () => enabledBackends.find((backend) => backend.id === selectedBackend) || null,
-    [enabledBackends, selectedBackend]
+  const visibleExecutionTargets = useMemo(
+    () =>
+      enabledExecutionTargets.filter(
+        (target) => isAdmin || target.availableForOnboarding
+      ),
+    [enabledExecutionTargets, isAdmin]
+  );
+  const activeExecutionTarget = useMemo(
+    () =>
+      enabledExecutionTargets.find(
+        (target) => target.id === selectedExecutionTarget
+      ) || null,
+    [enabledExecutionTargets, selectedExecutionTarget]
+  );
+  const visibleSandboxOptions = useMemo(() => {
+    const sandboxProfiles = activeExecutionTarget?.sandboxProfiles || [];
+    const enabledProfiles = sandboxProfiles.filter((profile) => profile.enabled);
+
+    return isAdmin
+      ? enabledProfiles
+      : enabledProfiles.filter((profile) => profile.availableForOnboarding);
+  }, [activeExecutionTarget, isAdmin]);
+  const activeSandboxOption = useMemo(
+    () =>
+      (activeExecutionTarget?.sandboxProfiles || []).find(
+        (profile) => profile.id === selectedSandboxProfile
+      ) || null,
+    [activeExecutionTarget, selectedSandboxProfile]
   );
   const ramOptions = useMemo(() => {
     const maxRam = platformConfig?.selfhosted?.max_ram_mb || 32768;
@@ -144,12 +178,81 @@ export default function Deploy() {
       )
     ).sort((left, right) => left - right);
   }, [platformConfig?.selfhosted?.max_disk_gb, selDisk]);
-  const canDeployBackend = Boolean(activeBackend?.available);
-  const isNemoClaw = activeBackend?.id === "nemoclaw";
+  const canDeployExecutionTarget = Boolean(activeSandboxOption?.available);
+  const isNemoClaw = activeSandboxOption?.id === "nemoclaw";
+  const showSandboxSelection = visibleSandboxOptions.length > 1;
   const suggestedContainerName = useMemo(() => {
     const slug = slugifyName(name);
     return slug ? `nora-${slug}` : "nora-my-first-agent";
   }, [name]);
+
+  useEffect(() => {
+    const candidateTargets = isAdmin
+      ? enabledExecutionTargets
+      : visibleExecutionTargets;
+    if (!candidateTargets.length) return;
+
+    const current = candidateTargets.find(
+      (target) => target.id === selectedExecutionTarget
+    );
+    const nextTarget =
+      current ||
+      candidateTargets.find((target) => target.available && target.isDefault) ||
+      candidateTargets.find((target) => target.available) ||
+      candidateTargets[0] ||
+      null;
+
+    if (nextTarget && nextTarget.id !== selectedExecutionTarget) {
+      setSelectedExecutionTarget(nextTarget.id);
+    }
+  }, [
+    enabledExecutionTargets,
+    isAdmin,
+    selectedExecutionTarget,
+    visibleExecutionTargets,
+  ]);
+
+  useEffect(() => {
+    const candidateSandboxProfiles = isAdmin
+      ? (activeExecutionTarget?.sandboxProfiles || []).filter(
+          (profile) => profile.enabled
+        )
+      : visibleSandboxOptions;
+    if (!candidateSandboxProfiles.length) return;
+
+    const current = candidateSandboxProfiles.find(
+      (profile) => profile.id === selectedSandboxProfile
+    );
+    const nextSandboxProfile =
+      current ||
+      candidateSandboxProfiles.find(
+        (profile) => profile.available && profile.isDefault
+      ) ||
+      candidateSandboxProfiles.find((profile) => profile.available) ||
+      candidateSandboxProfiles[0] ||
+      null;
+
+    if (
+      nextSandboxProfile &&
+      nextSandboxProfile.id !== selectedSandboxProfile
+    ) {
+      setSelectedSandboxProfile(nextSandboxProfile.id);
+    }
+
+    if (
+      nextSandboxProfile?.id === "nemoclaw" &&
+      nextSandboxProfile.defaultModel &&
+      !selectedModel
+    ) {
+      setSelectedModel(nextSandboxProfile.defaultModel);
+    }
+  }, [
+    activeExecutionTarget,
+    isAdmin,
+    selectedModel,
+    selectedSandboxProfile,
+    visibleSandboxOptions,
+  ]);
 
   async function deploy() {
     if (atLimit) return;
@@ -160,7 +263,12 @@ export default function Deploy() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          backend: selectedBackend,
+          runtime_family:
+            activeExecutionTarget?.runtimeFamily ||
+            runtimeFamily?.id ||
+            "openclaw",
+          deploy_target: selectedExecutionTarget,
+          sandbox_profile: selectedSandboxProfile || "standard",
           ...(containerName.trim() ? { container_name: containerName.trim() } : {}),
           ...(isNemoClaw && selectedModel ? { model: selectedModel } : {}),
           ...(isSelfHosted ? { vcpu: selVcpu, ram_mb: selRam, disk_gb: selDisk } : {}),
@@ -183,23 +291,25 @@ export default function Deploy() {
 
   const checklist = [
     "Pick a clear operator-friendly agent name.",
-    "Choose the backend that matches your infrastructure.",
+    "Choose the execution target that matches your infrastructure.",
     "Size CPU, RAM, and disk for the workload.",
     "After deploy, add or sync your LLM provider key if needed.",
     "Open chat, logs, and terminal to validate the runtime immediately.",
   ];
 
-  function backendIcon(backendId) {
-    switch (backendId) {
+  function executionTargetIcon(targetId) {
+    switch (targetId) {
       case "k8s":
         return Boxes;
       case "proxmox":
         return Network;
-      case "nemoclaw":
-        return ShieldCheck;
       default:
         return Server;
     }
+  }
+
+  function sandboxIcon(profileId) {
+    return profileId === "nemoclaw" ? ShieldCheck : Shield;
   }
 
   return (
@@ -213,7 +323,7 @@ export default function Deploy() {
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 tracking-tight leading-none">Deploy New Agent</h1>
-                <p className="text-slate-400 font-medium mt-1">Provision a new autonomous OpenClaw agent to your Nora control plane.</p>
+                <p className="text-slate-400 font-medium mt-1">Provision a new OpenClaw runtime path to your Nora control plane.</p>
               </div>
             </div>
 
@@ -267,6 +377,26 @@ export default function Deploy() {
             </div>
 
             <div className="flex flex-col gap-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Runtime Family
+                  </p>
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600">
+                    {runtimeFamily?.contractStatusLabel || "Stable contract"}
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-slate-900 mt-2">
+                  {runtimeFamily?.label || "OpenClaw"}
+                </p>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  {runtimeFamily?.operatorContractSummary ||
+                    "Nora keeps the operator workflow fixed while you choose where the runtime executes and which sandbox profile it uses."}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                  {runtimeFamily?.expansionPolicy}
+                </p>
+              </div>
               <label className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none ml-2">
                 Container Name <span className="text-slate-300 font-medium normal-case tracking-normal">(optional)</span>
               </label>
@@ -279,61 +409,140 @@ export default function Deploy() {
             </div>
 
             <div className="flex flex-col gap-3">
-              <label className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none ml-2">Deploy Backend</label>
-              <div className={`grid grid-cols-1 ${enabledBackends.length > 2 ? "md:grid-cols-2" : "md:grid-cols-2"} gap-3`}>
-                {enabledBackends.map((backend) => {
-                  const Icon = backendIcon(backend.id);
-                  const isSelected = selectedBackend === backend.id;
-                  const isAvailable = backend.available;
+              <label className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none ml-2">Execution Target</label>
+              <div className={`grid grid-cols-1 ${visibleExecutionTargets.length > 2 ? "md:grid-cols-2" : "md:grid-cols-2"} gap-3`}>
+                {visibleExecutionTargets.map((target) => {
+                  const Icon = executionTargetIcon(target.id);
+                  const isSelected = selectedExecutionTarget === target.id;
+                  const isAvailable = target.available;
                   return (
                     <button
-                      key={backend.id}
+                      key={target.id}
                       type="button"
                       onClick={() => {
-                        if (isAvailable) setSelectedBackend(backend.id);
+                        if (isAvailable) setSelectedExecutionTarget(target.id);
                       }}
                       className={`relative p-5 rounded-2xl border-2 text-left transition-all ${
                         !isAvailable
                           ? "border-slate-200 bg-slate-100 opacity-70 cursor-not-allowed"
                           : isSelected
-                            ? backend.id === "nemoclaw"
-                              ? "border-green-500 bg-green-50"
-                              : "border-blue-500 bg-blue-50"
+                            ? "border-blue-500 bg-blue-50"
                             : "border-slate-200 bg-slate-50 hover:border-slate-300"
                       }`}
                       disabled={!isAvailable}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <Icon
-                          size={16}
-                          className={
-                            !isAvailable
-                              ? "text-slate-400"
-                              : backend.id === "nemoclaw"
-                                ? "text-green-600"
-                                : "text-blue-600"
-                          }
+                      <div className="flex items-start justify-between gap-3 mb-1">
+                        <div className="flex items-center gap-2">
+                          <Icon
+                            size={16}
+                            className={!isAvailable ? "text-slate-400" : "text-blue-600"}
+                          />
+                          <span className="text-sm font-bold text-slate-900">
+                            {target.label}
+                          </span>
+                        </div>
+                        <MaturityBadge
+                          maturityTier={target.maturityTier}
+                          maturityLabel={target.maturityLabel}
                         />
-                        <span className="text-sm font-bold text-slate-900">{backend.label}</span>
                       </div>
                       <p className="text-[11px] text-slate-500 leading-relaxed">
-                        {backend.summary}
+                        {target.summary}
                       </p>
-                      {!isAvailable && backend.issue ? (
-                        <p className="text-[10px] text-amber-600 font-medium mt-2">{backend.issue}</p>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        <span className="inline-flex items-center rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-slate-600 border border-slate-200">
+                          {target.runtimeFamilyLabel || "OpenClaw"}
+                        </span>
+                        {target.supportsSandboxSelection ? (
+                          <span className="inline-flex items-center rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-slate-600 border border-slate-200">
+                            Sandbox choice available
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-slate-600 border border-slate-200">
+                            {`Sandbox: ${target.defaultSandboxProfile === "nemoclaw" ? "NemoClaw" : "Standard"}`}
+                          </span>
+                        )}
+                      </div>
+                      {!isAvailable && target.issue ? (
+                        <p className="text-[10px] text-amber-600 font-medium mt-2">{target.issue}</p>
                       ) : null}
                     </button>
                   );
                 })}
               </div>
-              {enabledBackends.length === 0 ? (
+              {visibleExecutionTargets.length === 0 ? (
                 <p className="text-xs text-amber-600 ml-2">
-                  No deploy backends are enabled for this Nora control plane.
+                  {isAdmin
+                    ? "No execution targets are enabled for this Nora control plane."
+                    : "No onboarding-ready execution targets are enabled for this Nora control plane."}
                 </p>
               ) : null}
             </div>
 
-            {isNemoClaw && activeBackend?.models?.length > 0 && (
+            {showSandboxSelection && (
+              <div className="flex flex-col gap-3">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none ml-2">Sandbox</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {visibleSandboxOptions.map((profile) => {
+                    const Icon = sandboxIcon(profile.id);
+                    const isSelected = selectedSandboxProfile === profile.id;
+                    const isAvailable = profile.available;
+
+                    return (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        onClick={() => {
+                          if (isAvailable) setSelectedSandboxProfile(profile.id);
+                        }}
+                        className={`relative p-5 rounded-2xl border-2 text-left transition-all ${
+                          !isAvailable
+                            ? "border-slate-200 bg-slate-100 opacity-70 cursor-not-allowed"
+                            : isSelected
+                              ? profile.id === "nemoclaw"
+                                ? "border-green-500 bg-green-50"
+                                : "border-blue-500 bg-blue-50"
+                              : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                        }`}
+                        disabled={!isAvailable}
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-1">
+                          <div className="flex items-center gap-2">
+                            <Icon
+                              size={16}
+                              className={
+                                !isAvailable
+                                  ? "text-slate-400"
+                                  : profile.id === "nemoclaw"
+                                    ? "text-green-600"
+                                    : "text-blue-600"
+                              }
+                            />
+                            <span className="text-sm font-bold text-slate-900">
+                              {profile.label}
+                            </span>
+                          </div>
+                          <MaturityBadge
+                            maturityTier={profile.maturityTier}
+                            maturityLabel={profile.maturityLabel}
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          {profile.summary}
+                        </p>
+                        {!isAvailable && profile.issue ? (
+                          <p className="text-[10px] text-amber-600 font-medium mt-2">
+                            {profile.issue}
+                          </p>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {isNemoClaw && activeSandboxOption?.models?.length > 0 && (
               <div className="flex flex-col gap-3">
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none ml-2">Nemotron Model</label>
                 <div className="flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-2xl">
@@ -343,7 +552,7 @@ export default function Deploy() {
                     onChange={(e) => setSelectedModel(e.target.value)}
                     className="flex-1 bg-transparent text-sm font-bold text-slate-900 outline-none"
                   >
-                    {activeBackend.models.map((model) => (
+                    {activeSandboxOption.models.map((model) => (
                       <option key={model} value={model}>{model.replace("nvidia/", "")}</option>
                     ))}
                   </select>
@@ -439,11 +648,15 @@ export default function Deploy() {
 
             <button
               onClick={deploy}
-              disabled={loading || atLimit || !name.trim() || !canDeployBackend}
+              disabled={loading || atLimit || !name.trim() || !canDeployExecutionTarget}
               className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 transition-all text-sm font-black text-white px-8 py-5 rounded-2xl shadow-xl shadow-blue-500/30 active:scale-95 disabled:opacity-50 group"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} className="group-hover:scale-125 transition-transform" />}
-              {atLimit ? "Agent Limit Reached" : !canDeployBackend ? "Backend Unavailable" : "Deploy Agent & Open Validation"}
+              {atLimit
+                ? "Agent Limit Reached"
+                : !canDeployExecutionTarget
+                  ? "Selected Runtime Path Unavailable"
+                  : "Deploy Agent & Open Validation"}
             </button>
           </div>
 
@@ -452,11 +665,33 @@ export default function Deploy() {
               {isNemoClaw ? <ShieldCheck size={24} className="text-green-600 flex-shrink-0" /> : <Server size={24} className="text-blue-600 flex-shrink-0" />}
               <div>
                 <p className={`text-xs font-black uppercase tracking-widest mb-2 ${isNemoClaw ? "text-green-700" : "text-blue-700"}`}>
-                  Runtime summary
+                  Runtime Path Summary
                 </p>
                 <p className={`text-sm font-medium leading-relaxed ${isNemoClaw ? "text-green-700" : "text-blue-700"}`}>
-                  {activeBackend?.detail || "Select an enabled backend to see the runtime summary."}
+                  {activeSandboxOption?.detail ||
+                    activeExecutionTarget?.detail ||
+                    "Select an enabled execution target to see the runtime summary."}
                 </p>
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <span className={`text-xs font-bold ${isNemoClaw ? "text-green-700/80" : "text-blue-700/80"}`}>
+                    {(activeExecutionTarget?.runtimeFamilyLabel || runtimeFamily?.label || "OpenClaw") +
+                      " runtime" +
+                      " • " +
+                      (activeExecutionTarget?.label || "Docker") +
+                      " target" +
+                      " • " +
+                      ((activeSandboxOption?.label || "Standard") + " sandbox")}
+                  </span>
+                  <MaturityBadge
+                    maturityTier={activeSandboxOption?.maturityTier || activeExecutionTarget?.maturityTier}
+                    maturityLabel={activeSandboxOption?.maturityLabel || activeExecutionTarget?.maturityLabel}
+                  />
+                </div>
+                {isAdmin && activeExecutionTarget?.maturityTier === "blocked" ? (
+                  <p className="text-[11px] text-red-700 mt-2 leading-relaxed">
+                    Blocked targets stay visible to admins for release awareness, but they remain disabled for onboarding and deployment.
+                  </p>
+                ) : null}
               </div>
             </div>
 

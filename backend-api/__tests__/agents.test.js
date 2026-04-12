@@ -775,6 +775,136 @@ describe("POST /agents/deploy", () => {
     );
   });
 
+  it("accepts runtime-family and deploy-target aliases", async () => {
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-target",
+          name: "TargetAgent",
+          status: "queued",
+          user_id: "user-1",
+          backend_type: "k8s",
+          sandbox_type: "standard",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/deploy").send({
+        name: "TargetAgent",
+        runtime_family: "openclaw",
+        deploy_target: "k8s",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        runtime_family: "openclaw",
+        deploy_target: "k8s",
+        sandbox_profile: "standard",
+        backend_type: "k8s",
+      })
+    );
+    expect(mockDb.query.mock.calls[0][0]).toEqual(
+      expect.stringContaining("runtime_family")
+    );
+    expect(mockDb.query.mock.calls[0][0]).toEqual(
+      expect.stringContaining("deploy_target")
+    );
+    expect(mockDb.query.mock.calls[0][0]).toEqual(
+      expect.stringContaining("sandbox_profile")
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-target",
+        backend: "k8s",
+        sandbox: "standard",
+      })
+    );
+  });
+
+  it("uses deploy-target plus sandbox-profile aliases for NemoClaw deploys", async () => {
+    process.env.ENABLED_BACKENDS = "docker,nemoclaw";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-nemo-target",
+          name: "Nemo Target Agent",
+          status: "queued",
+          user_id: "user-1",
+          backend_type: "nemoclaw",
+          sandbox_type: "nemoclaw",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/deploy").send({
+        name: "Nemo Target Agent",
+        deploy_target: "docker",
+        sandbox_profile: "nemoclaw",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        runtime_family: "openclaw",
+        deploy_target: "docker",
+        sandbox_profile: "nemoclaw",
+        backend_type: "nemoclaw",
+      })
+    );
+    const insertParams = mockDb.query.mock.calls[0][1];
+    expect(insertParams[9]).toBe(
+      "ghcr.io/nvidia/openshell-community/sandboxes/openclaw"
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-nemo-target",
+        backend: "nemoclaw",
+        sandbox: "nemoclaw",
+      })
+    );
+  });
+
+  it("rejects NemoClaw sandbox requests on non-Docker execution targets", async () => {
+    process.env.ENABLED_BACKENDS = "docker,nemoclaw,k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    const res = await auth(
+      request(app).post("/agents/deploy").send({
+        name: "BadSelection",
+        deploy_target: "k8s",
+        sandbox_profile: "nemoclaw",
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/docker execution target/i);
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockAddDeploymentJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported runtime-family aliases", async () => {
+    const res = await auth(
+      request(app).post("/agents/deploy").send({
+        name: "BadRuntime",
+        runtime_family: "custom-runtime",
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/runtime_family/i);
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockAddDeploymentJob).not.toHaveBeenCalled();
+  });
+
   it("sanitizes deploy input and clamps self-hosted resource requests", async () => {
     mockDb.query
       .mockResolvedValueOnce({
@@ -995,6 +1125,71 @@ describe("POST /agents/:id/duplicate", () => {
       specs: { vcpu: 4, ram_mb: 4096, disk_gb: 50 },
     }));
   });
+
+  it("recomputes the default image when duplicating onto a different execution target", async () => {
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-source-k8s",
+          name: "Source Agent",
+          user_id: "user-1",
+          status: "stopped",
+          runtime_family: "openclaw",
+          deploy_target: "docker",
+          sandbox_profile: "standard",
+          vcpu: 2,
+          ram_mb: 2048,
+          disk_gb: 20,
+          image: "nora-openclaw-agent:local",
+          template_payload: JSON.stringify({
+            files: [{ path: "AGENT.md", content: "hello" }],
+            memoryFiles: [],
+            metadata: { source: "template" },
+          }),
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-duplicate-k8s",
+          name: "Source Agent K8s",
+          status: "queued",
+          user_id: "user-1",
+          backend_type: "k8s",
+          sandbox_type: "standard",
+          runtime_family: "openclaw",
+          deploy_target: "k8s",
+          sandbox_profile: "standard",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/a-source-k8s/duplicate").send({
+        name: "Source Agent K8s",
+        clone_mode: "full_clone",
+        deploy_target: "k8s",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const insertParams = mockDb.query.mock.calls[3][1];
+    expect(insertParams[9]).toBe("node:22-slim");
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-duplicate-k8s",
+        backend: "k8s",
+        sandbox: "standard",
+        image: "node:22-slim",
+      })
+    );
+  });
 });
 
 describe("POST /marketplace/install", () => {
@@ -1032,7 +1227,14 @@ describe("POST /marketplace/install", () => {
     });
     mockDb.query
       .mockResolvedValueOnce({
-        rows: [{ id: "a-market", name: "COS Agent", status: "queued", user_id: "user-1" }],
+        rows: [{
+          id: "a-market",
+          name: "COS Agent",
+          status: "queued",
+          user_id: "user-1",
+          backend_type: "docker",
+          sandbox_type: "standard",
+        }],
       })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
@@ -1045,6 +1247,16 @@ describe("POST /marketplace/install", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        runtime_family: "openclaw",
+        deploy_target: "docker",
+        sandbox_profile: "standard",
+      })
+    );
+    expect(mockDb.query.mock.calls[0][0]).toEqual(
+      expect.stringContaining("runtime_family")
+    );
     const insertParams = mockDb.query.mock.calls[0][1];
     expect(insertParams[1]).toBe("COS Agent");
     expect(insertParams[9]).toBe("nora-openclaw-agent:local");
@@ -1070,6 +1282,146 @@ describe("POST /marketplace/install", () => {
       image: "nora-openclaw-agent:local",
       sandbox: "standard",
     }));
+  });
+
+  it("rejects NemoClaw sandbox installs on non-Docker execution targets", async () => {
+    const marketplaceModule = require("../marketplace");
+    const snapshotsModule = require("../snapshots");
+
+    marketplaceModule.getListing.mockResolvedValueOnce({
+      id: "listing-1",
+      snapshot_id: "snap-1",
+      name: "Chief-of-Staff Claw",
+      template_key: "chief-of-staff-claw",
+      status: "published",
+      source_type: "platform",
+    });
+    snapshotsModule.getSnapshot.mockResolvedValueOnce({
+      id: "snap-1",
+      name: "Chief-of-Staff Claw",
+      config: {
+        defaults: {
+          sandbox: "standard",
+        },
+      },
+    });
+
+    const res = await auth(
+      request(app).post("/marketplace/install").send({
+        listingId: "listing-1",
+        name: "COS Agent",
+        deploy_target: "k8s",
+        sandbox_profile: "nemoclaw",
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/docker execution target/i);
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockAddDeploymentJob).not.toHaveBeenCalled();
+  });
+
+  it("recomputes the default image when installing onto a different execution target", async () => {
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    const marketplaceModule = require("../marketplace");
+    const snapshotsModule = require("../snapshots");
+
+    marketplaceModule.getListing.mockResolvedValueOnce({
+      id: "listing-1",
+      snapshot_id: "snap-1",
+      name: "Chief-of-Staff Claw",
+      template_key: "chief-of-staff-claw",
+      status: "published",
+      source_type: "platform",
+    });
+    snapshotsModule.getSnapshot.mockResolvedValueOnce({
+      id: "snap-1",
+      name: "Chief-of-Staff Claw",
+      config: {
+        defaults: {
+          backend: "docker",
+          sandbox: "standard",
+          image: "nora-openclaw-agent:local",
+        },
+        templatePayload: {
+          files: [{ path: "AGENT.md", content: "starter" }],
+        },
+      },
+    });
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-market-k8s",
+          name: "COS Agent K8s",
+          status: "queued",
+          user_id: "user-1",
+          backend_type: "k8s",
+          sandbox_type: "standard",
+          runtime_family: "openclaw",
+          deploy_target: "k8s",
+          sandbox_profile: "standard",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/marketplace/install").send({
+        listingId: "listing-1",
+        name: "COS Agent K8s",
+        deploy_target: "k8s",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const insertParams = mockDb.query.mock.calls[0][1];
+    expect(insertParams[9]).toBe("node:22-slim");
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-market-k8s",
+        backend: "k8s",
+        sandbox: "standard",
+        image: "node:22-slim",
+      })
+    );
+  });
+
+  it("rejects unsupported runtime families for marketplace installs", async () => {
+    const marketplaceModule = require("../marketplace");
+    const snapshotsModule = require("../snapshots");
+
+    marketplaceModule.getListing.mockResolvedValueOnce({
+      id: "listing-1",
+      snapshot_id: "snap-1",
+      name: "Chief-of-Staff Claw",
+      template_key: "chief-of-staff-claw",
+      status: "published",
+      source_type: "platform",
+    });
+    snapshotsModule.getSnapshot.mockResolvedValueOnce({
+      id: "snap-1",
+      name: "Chief-of-Staff Claw",
+      config: {
+        defaults: {
+          sandbox: "standard",
+        },
+      },
+    });
+
+    const res = await auth(
+      request(app).post("/marketplace/install").send({
+        listingId: "listing-1",
+        name: "COS Agent",
+        runtime_family: "future-runtime",
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/runtime_family/i);
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockAddDeploymentJob).not.toHaveBeenCalled();
   });
 });
 
@@ -1575,7 +1927,16 @@ describe("POST /agents/:id/redeploy", () => {
     expect(mockDb.query).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining("runtime_host = NULL"),
-      ["a-warning"]
+      [
+        "a-warning",
+        "docker",
+        "standard",
+        "openclaw",
+        "docker",
+        "standard",
+        "oclaw-agent-warning",
+        "nora-openclaw-agent:local",
+      ]
     );
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(expect.objectContaining({
       id: "a-warning",
@@ -1586,6 +1947,115 @@ describe("POST /agents/:id/redeploy", () => {
       specs: { vcpu: 2, ram_mb: 2048, disk_gb: 20 },
       container_name: "oclaw-agent-warning",
     }));
+  });
+
+  it("accepts deploy-target overrides during redeploy and resets the sandbox when needed", async () => {
+    process.env.ENABLED_BACKENDS = "docker,nemoclaw,k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-nemo-redeploy",
+          name: "Nemo Agent",
+          status: "stopped",
+          runtime_family: "openclaw",
+          deploy_target: "docker",
+          sandbox_profile: "nemoclaw",
+          vcpu: 2,
+          ram_mb: 2048,
+          disk_gb: 20,
+          container_name: "oclaw-agent-nemo",
+          image: null,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/a-nemo-redeploy/redeploy").send({
+        deploy_target: "k8s",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, status: "queued" });
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("deploy_target = $5"),
+      [
+        "a-nemo-redeploy",
+        "k8s",
+        "standard",
+        "openclaw",
+        "k8s",
+        "standard",
+        "oclaw-agent-nemo",
+        "node:22-slim",
+      ]
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-nemo-redeploy",
+        backend: "k8s",
+        sandbox: "standard",
+        image: "node:22-slim",
+      })
+    );
+  });
+
+  it("recomputes the default image when redeploying onto a different execution target", async () => {
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-docker-redeploy",
+          name: "Docker Agent",
+          status: "stopped",
+          runtime_family: "openclaw",
+          deploy_target: "docker",
+          sandbox_profile: "standard",
+          vcpu: 2,
+          ram_mb: 2048,
+          disk_gb: 20,
+          container_name: "oclaw-agent-docker",
+          image: "nora-openclaw-agent:local",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/a-docker-redeploy/redeploy").send({
+        deploy_target: "k8s",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("image = $8"),
+      [
+        "a-docker-redeploy",
+        "k8s",
+        "standard",
+        "openclaw",
+        "k8s",
+        "standard",
+        "oclaw-agent-docker",
+        "node:22-slim",
+      ]
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-docker-redeploy",
+        backend: "k8s",
+        sandbox: "standard",
+        image: "node:22-slim",
+      })
+    );
   });
 
   it("rejects redeploy when the agent is still actively running", async () => {

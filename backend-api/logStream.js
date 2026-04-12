@@ -3,6 +3,7 @@ const { WebSocketServer } = require("ws");
 const jwt = require("jsonwebtoken");
 const db = require("./db");
 const containerManager = require("./containerManager");
+const { resolveAgentBackendType } = require("./agentRuntimeFields");
 
 /**
  * Attach the live-log WebSocket server to an existing HTTP server.
@@ -39,7 +40,10 @@ function attachLogStream(server) {
   wss.on("connection", async (ws, _req, agentId, user) => {
     try {
       const result = await db.query(
-        "SELECT id, name, status, container_id, backend_type, user_id FROM agents WHERE id = $1",
+        `SELECT id, name, status, container_id, backend_type, runtime_family,
+                deploy_target, sandbox_profile, user_id
+           FROM agents
+          WHERE id = $1`,
         [agentId]
       );
       if (!result.rows[0]) {
@@ -56,6 +60,7 @@ function attachLogStream(server) {
         return;
       }
 
+      const backendType = resolveAgentBackendType(agent);
       ws.send(
         JSON.stringify({
           type: "system",
@@ -119,7 +124,7 @@ function attachLogStream(server) {
           JSON.stringify({
             type: "system",
             timestamp: new Date().toISOString(),
-            message: `Streaming logs from ${agent.backend_type || "docker"} container...`,
+            message: `Streaming logs from ${backendType} container...`,
           })
         );
 

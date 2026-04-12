@@ -56,6 +56,26 @@ class K8sBackend extends ProvisionerBackend {
     return ports;
   }
 
+  _servicePortsWithoutNodePorts(ports = []) {
+    return ports.map(({ nodePort, ...port }) => ({ ...port }));
+  }
+
+  _isAlreadyExistsError(error) {
+    return (
+      error?.statusCode === 409 ||
+      error?.body?.reason === "AlreadyExists" ||
+      /already exists/i.test(String(error?.message || error?.body?.message || ""))
+    );
+  }
+
+  _isNodePortConflictError(error) {
+    const message = String(error?.body?.message || error?.message || "");
+    return (
+      (error?.statusCode === 422 || error?.body?.reason === "Invalid") &&
+      /nodeport|provided port is already allocated/i.test(message)
+    );
+  }
+
   async _ensureNamespace() {
     try {
       await this.coreApi.readNamespace(this.namespace);
@@ -205,8 +225,31 @@ class K8sBackend extends ProvisionerBackend {
     let serviceResp = null;
     try {
       serviceResp = await this.coreApi.createNamespacedService(this.namespace, service);
-    } catch {
-      // service may already exist
+    } catch (error) {
+      if (this._isAlreadyExistsError(error)) {
+        serviceResp = await this.coreApi.readNamespacedService(deployName, this.namespace);
+      } else if (
+        this._isNodePortExposure() &&
+        service.spec.ports.some((port) => port.nodePort != null) &&
+        this._isNodePortConflictError(error)
+      ) {
+        console.warn(
+          `[k8s] Fixed NodePort allocation unavailable for ${deployName}; retrying with dynamic NodePorts`
+        );
+        const dynamicService = {
+          ...service,
+          spec: {
+            ...service.spec,
+            ports: this._servicePortsWithoutNodePorts(service.spec.ports),
+          },
+        };
+        serviceResp = await this.coreApi.createNamespacedService(
+          this.namespace,
+          dynamicService
+        );
+      } else {
+        throw error;
+      }
     }
 
     const host = `${deployName}.${this.namespace}.svc.cluster.local`;

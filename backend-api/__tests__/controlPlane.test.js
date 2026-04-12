@@ -29,6 +29,7 @@ const RELEASE_ENV_KEYS = [
   "NORA_MANUAL_UPGRADE_COMMAND",
   "NORA_MANUAL_UPGRADE_STEPS",
 ];
+const CATALOG_ENV_KEYS = ["ENABLED_BACKENDS", "KUBECONFIG"];
 
 jest.mock("../db", () => mockDb);
 jest.mock("../redisQueue", () => ({ addDeploymentJob: jest.fn(), getDLQJobs: jest.fn(), retryDLQJob: jest.fn() }));
@@ -124,11 +125,13 @@ describe("public platform config", () => {
       disk_gb: 10,
     });
     RELEASE_ENV_KEYS.forEach((key) => delete process.env[key]);
+    CATALOG_ENV_KEYS.forEach((key) => delete process.env[key]);
     delete global.fetch;
   });
 
   afterEach(() => {
     RELEASE_ENV_KEYS.forEach((key) => delete process.env[key]);
+    CATALOG_ENV_KEYS.forEach((key) => delete process.env[key]);
     delete global.fetch;
   });
 
@@ -144,6 +147,142 @@ describe("public platform config", () => {
           ram_mb: 1024,
           disk_gb: 10,
         },
+      })
+    );
+  });
+
+  it("returns runtime, deploy-target, sandbox, and legacy backend catalogs", async () => {
+    const res = await request(app).get("/config/backends");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        defaultRuntimeFamily: "openclaw",
+        defaultDeployTarget: "docker",
+        defaultSandboxProfile: "standard",
+        enabledDeployTargets: ["docker"],
+        enabledSandboxProfiles: ["standard"],
+        runtimeFamily: expect.objectContaining({
+          id: "openclaw",
+          label: "OpenClaw",
+          contractStatus: "stable",
+          operatorContract: expect.arrayContaining([
+            "deploy/redeploy",
+            "gateway/chat",
+            "auth/integration sync",
+          ]),
+        }),
+        executionTargets: expect.arrayContaining([
+          expect.objectContaining({
+            id: "docker",
+            label: "Docker",
+            runtimeFamily: "openclaw",
+            maturityTier: "ga",
+            defaultSandboxProfile: "standard",
+            sandboxProfiles: expect.arrayContaining([
+              expect.objectContaining({
+                id: "standard",
+                label: "Standard",
+                legacyBackendId: "docker",
+                enabled: true,
+                maturityTier: "ga",
+              }),
+              expect.objectContaining({
+                id: "nemoclaw",
+                label: "NemoClaw",
+                legacyBackendId: "nemoclaw",
+                enabled: false,
+                maturityTier: "experimental",
+              }),
+            ]),
+          }),
+        ]),
+        sandboxProfiles: expect.arrayContaining([
+          expect.objectContaining({
+            id: "standard",
+            enabled: true,
+            executionTargets: expect.arrayContaining(["docker"]),
+          }),
+          expect.objectContaining({
+            id: "nemoclaw",
+            enabled: false,
+            executionTargets: [],
+          }),
+        ]),
+        backends: expect.arrayContaining([
+          expect.objectContaining({
+            id: "docker",
+            selectionType: "deploy_target",
+            deployTarget: "docker",
+            sandboxProfile: "standard",
+            maturityTier: "ga",
+          }),
+          expect.objectContaining({
+            id: "nemoclaw",
+            selectionType: "sandbox_profile",
+            deployTarget: "docker",
+            sandboxProfile: "nemoclaw",
+            maturityTier: "experimental",
+          }),
+        ]),
+      })
+    );
+    expect(res.body.legacyBackends).toEqual(res.body.backends);
+  });
+
+  it("marks maturity tiers on deploy targets and surfaces Docker sandbox choices separately", async () => {
+    process.env.ENABLED_BACKENDS = "docker,nemoclaw,k8s,proxmox";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    const res = await request(app).get("/config/backends");
+
+    expect(res.status).toBe(200);
+
+    const dockerTarget = res.body.executionTargets.find((target) => target.id === "docker");
+    const k8sTarget = res.body.executionTargets.find((target) => target.id === "k8s");
+    const proxmoxTarget = res.body.executionTargets.find((target) => target.id === "proxmox");
+
+    expect(dockerTarget).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        available: true,
+        maturityTier: "ga",
+        supportsSandboxSelection: true,
+        enabledSandboxProfiles: expect.arrayContaining(["standard", "nemoclaw"]),
+      })
+    );
+    expect(dockerTarget.sandboxProfiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "standard",
+          enabled: true,
+          available: true,
+          maturityTier: "ga",
+        }),
+        expect.objectContaining({
+          id: "nemoclaw",
+          enabled: true,
+          available: true,
+          maturityTier: "experimental",
+        }),
+      ])
+    );
+
+    expect(k8sTarget).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        available: true,
+        maturityTier: "beta",
+        supportsSandboxSelection: false,
+      })
+    );
+
+    expect(proxmoxTarget).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        available: false,
+        maturityTier: "blocked",
+        availableForOnboarding: false,
       })
     );
   });

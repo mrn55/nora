@@ -3,6 +3,7 @@ const { WebSocketServer } = require("ws");
 const jwt = require("jsonwebtoken");
 const db = require("./db");
 const containerManager = require("./containerManager");
+const { resolveAgentBackendType } = require("./agentRuntimeFields");
 
 // Direct Docker access needed for exec sessions (containerManager.exec returns
 // the raw exec object, but we need the Docker container object for full TTY support)
@@ -54,7 +55,10 @@ function attachExecStream(server) {
     try {
       // Verify the agent belongs to this user
       const result = await db.query(
-        "SELECT id, name, status, container_id, backend_type, user_id FROM agents WHERE id = $1",
+        `SELECT id, name, status, container_id, backend_type, runtime_family,
+                deploy_target, sandbox_profile, user_id
+           FROM agents
+          WHERE id = $1`,
         [agentId]
       );
       if (!result.rows[0]) {
@@ -99,7 +103,7 @@ function attachExecStream(server) {
       }
 
       // For Docker-backed backends, use direct dockerode for full TTY exec support
-      const backendType = agent.backend_type || "docker";
+      const backendType = resolveAgentBackendType(agent);
       if (backendType === "docker" || backendType === "nemoclaw") {
         if (!docker) {
           ws.send(JSON.stringify({ type: "error", message: "Docker not available on this host" }));

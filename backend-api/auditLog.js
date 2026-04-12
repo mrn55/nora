@@ -1,4 +1,5 @@
 const monitoring = require("./monitoring");
+const { buildAgentRuntimeFields } = require("./agentRuntimeFields");
 const {
   ensureAuditSourceMetadata,
   readRequestHeader,
@@ -118,11 +119,18 @@ function buildErrorMetadata(error, context = {}) {
 }
 
 function buildAgentContext(agent = {}, overrides = {}) {
+  const runtimeFields = buildAgentRuntimeFields({
+    ...agent,
+    ...overrides,
+  });
   const {
     id,
     name,
     ownerUserId,
     ownerEmail,
+    runtimeFamily,
+    deployTarget,
+    sandboxProfile,
     backendType,
     sandboxType,
     node,
@@ -138,14 +146,26 @@ function buildAgentContext(agent = {}, overrides = {}) {
         ownerUserId !== undefined ? ownerUserId : agent?.user_id || null,
       ownerEmail:
         ownerEmail !== undefined ? ownerEmail : agent?.ownerEmail || null,
+      runtimeFamily:
+        runtimeFamily !== undefined
+          ? runtimeFamily
+          : runtimeFields.runtime_family || null,
+      deployTarget:
+        deployTarget !== undefined
+          ? deployTarget
+          : runtimeFields.deploy_target || null,
+      sandboxProfile:
+        sandboxProfile !== undefined
+          ? sandboxProfile
+          : runtimeFields.sandbox_profile || null,
       backendType:
         backendType !== undefined
           ? backendType
-          : agent?.backend_type || null,
+          : runtimeFields.backend_type || null,
       sandboxType:
         sandboxType !== undefined
           ? sandboxType
-          : agent?.sandbox_type || null,
+          : runtimeFields.sandbox_type || null,
       node: node !== undefined ? node : agent?.node || null,
       containerId:
         containerId !== undefined ? containerId : agent?.container_id || null,

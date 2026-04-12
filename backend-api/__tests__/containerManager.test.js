@@ -62,4 +62,18 @@ describe("containerManager NemoClaw routing", () => {
     expect(logs).toBe("log-stream");
     expect(exec).toEqual({ exec: "exec-instance", stream: "stream-instance" });
   });
+
+  it("routes new-format docker plus nemoclaw sandbox rows to the NemoClaw backend", async () => {
+    const containerManager = require("../containerManager");
+    const agent = {
+      runtime_family: "openclaw",
+      deploy_target: "docker",
+      sandbox_profile: "nemoclaw",
+      container_id: "nemo-456",
+    };
+
+    await containerManager.start(agent);
+
+    expect(mockStart).toHaveBeenCalledWith("nemo-456");
+  });
 });
