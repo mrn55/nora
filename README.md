@@ -25,6 +25,10 @@
 
 ---
 
+| | |
+|---|---|
+| ![OpenClaw UI tab in Nora](.github/readme-assets/proof-operator-openclaw-ui-tab.png) **OpenClaw UI tab** | ![Agent details metrics tab in Nora](.github/readme-assets/proof-operator-openclaw-usage-metrics.png) **Agent details metrics** |
+
 ## Why Nora?
 
 Agent runtimes like OpenClaw are powerful — but deploying them safely at scale is still a DIY problem. Every team ends up building the same infrastructure: key management, isolated environments, fleet monitoring, lifecycle controls, and an admin surface.
