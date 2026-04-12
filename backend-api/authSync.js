@@ -8,6 +8,7 @@ const containerManager = require("./containerManager");
 const llmProviders = require('./llmProviders');
 const { runtimeUrlForAgent } = require("../agent-runtime/lib/agentEndpoints");
 const { waitForAgentReadiness } = require("./healthChecks");
+const { resolveAgentRuntimeFamily } = require("./agentRuntimeFields");
 
 const providerCatalog = Array.isArray(llmProviders.PROVIDERS)
   ? llmProviders.PROVIDERS
@@ -56,6 +57,26 @@ async function buildAuthProfilesForAgent(userId, agentId) {
   }
 }
 
+async function buildHermesManagedEnvForAgent(userId, agentId) {
+  const llmKeys = await llmProviders.getProviderKeys(userId);
+
+  try {
+    const { getIntegrationEnvVars } = require('./integrations');
+    const integrationEnvVars = await getIntegrationEnvVars(agentId);
+    return Object.fromEntries(
+      Object.entries({ ...integrationEnvVars, ...llmKeys }).filter(
+        ([key, value]) => key && value != null && String(value) !== ""
+      )
+    );
+  } catch {
+    return Object.fromEntries(
+      Object.entries(llmKeys).filter(
+        ([key, value]) => key && value != null && String(value) !== ""
+      )
+    );
+  }
+}
+
 function buildAuthProfilesWriteCommand(authProfiles) {
   const authJsonB64 = Buffer.from(JSON.stringify(authProfiles)).toString('base64');
   return (
@@ -83,6 +104,40 @@ function buildDefaultModelCommand(defaultProvider = null) {
       .map((arg) => JSON.stringify(String(arg)))
       .join(" ")}`
   );
+}
+
+function escapeDotenvValue(value) {
+  return `"${String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/"/g, '\\"')}"`;
+}
+
+function buildHermesEnvWriteCommand(envVars = {}) {
+  const managedBlock = Object.entries(envVars)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${escapeDotenvValue(value)}`)
+    .join("\n");
+  const blockB64 = Buffer.from(managedBlock).toString("base64");
+
+  return [
+    "set -eu",
+    'start_marker="# >>> NORA MANAGED ENV >>>"',
+    'end_marker="# <<< NORA MANAGED ENV <<<"',
+    'tmp_file="$(mktemp)"',
+    "if [ -f /opt/data/.env ]; then",
+    "  awk -v start=\"$start_marker\" -v end=\"$end_marker\" 'BEGIN{skip=0} $0==start {skip=1; next} $0==end {skip=0; next} !skip {print}' /opt/data/.env > \"$tmp_file\"",
+    "else",
+    "  : > \"$tmp_file\"",
+    "fi",
+    "if [ -s \"$tmp_file\" ]; then printf '\\n' >> \"$tmp_file\"; fi",
+    "printf '%s\\n' \"$start_marker\" >> \"$tmp_file\"",
+    `printf '%s' '${blockB64}' | base64 -d >> "$tmp_file"`,
+    "printf '\\n' >> \"$tmp_file\"",
+    "printf '%s\\n' \"$end_marker\" >> \"$tmp_file\"",
+    "mv \"$tmp_file\" /opt/data/.env",
+  ].join("\n");
 }
 
 async function runRuntimeCommand(agent, command, { timeout = 30000 } = {}) {
@@ -118,8 +173,65 @@ async function runRuntimeCommand(agent, command, { timeout = 30000 } = {}) {
   return payload;
 }
 
+async function runContainerCommand(agent, command, { timeout = 30000 } = {}) {
+  const execResult = await containerManager.exec(agent, {
+    cmd: ["/bin/sh", "-lc", command],
+    tty: true,
+    env: [],
+  });
+  if (!execResult?.exec || !execResult?.stream) {
+    throw new Error("Container exec unavailable");
+  }
+
+  const output = await new Promise((resolve, reject) => {
+    const chunks = [];
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        execResult.stream.destroy();
+      } catch {
+        // Ignore stream teardown failures.
+      }
+      reject(new Error(`Container command timed out after ${timeout}ms`));
+    }, timeout);
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    };
+
+    execResult.stream.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    execResult.stream.on("end", finish);
+    execResult.stream.on("close", finish);
+    execResult.stream.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+
+  const inspectResult = await execResult.exec.inspect();
+  const exitCode = inspectResult?.ExitCode ?? 0;
+  if (exitCode !== 0) {
+    throw new Error(output.trim() || `Container command exited with code ${exitCode}`);
+  }
+
+  return { exitCode, output };
+}
+
 async function writeAuthToContainer(agent, authProfiles) {
   return runRuntimeCommand(agent, buildAuthProfilesWriteCommand(authProfiles));
+}
+
+async function writeHermesEnvToContainer(agent, envVars) {
+  return runContainerCommand(agent, buildHermesEnvWriteCommand(envVars));
 }
 
 /**
@@ -160,11 +272,36 @@ async function syncAuthToUserAgents(userId, agentId = null) {
   const results = [];
   for (const agent of agents.rows) {
     try {
+      const runtimeFamily = resolveAgentRuntimeFamily(agent);
       // Evict the cached WS connection before restarting so the proxy
       // creates a fresh one on the next request instead of hitting the circuit breaker
       if (evictConnection) {
         evictConnection(agent);
       }
+      if (runtimeFamily === "hermes") {
+        const envVars = await buildHermesManagedEnvForAgent(userId, agent.id);
+        await writeHermesEnvToContainer(agent, envVars);
+        await containerManager.restart(agent);
+        const readiness = await waitForAgentReadiness({
+          host: agent.host,
+          runtimeHost: agent.runtime_host,
+          runtimePort: agent.runtime_port,
+          gatewayHostPort: agent.gateway_host_port,
+          gatewayHost: agent.gateway_host,
+          gatewayPort: agent.gateway_port,
+          checkGateway: false,
+        });
+        if (!readiness.ok) {
+          throw new Error(
+            `Agent runtime did not recover after env sync restart (${readiness.runtime?.error || "unreachable"})`
+          );
+        }
+
+        console.log(`[authSync] Synced Hermes env to agent ${agent.id} (backend restarted)`);
+        results.push({ agentId: agent.id, status: 'synced' });
+        continue;
+      }
+
       const authProfiles = await buildAuthProfilesForAgent(userId, agent.id);
       await writeAuthToContainer(agent, authProfiles);
       await containerManager.restart(agent);
@@ -201,6 +338,10 @@ module.exports = {
   buildAuthProfilesForAgent,
   buildAuthProfilesWriteCommand,
   buildDefaultModelCommand,
+  buildHermesEnvWriteCommand,
+  buildHermesManagedEnvForAgent,
   runRuntimeCommand,
+  runContainerCommand,
   writeAuthToContainer,
+  writeHermesEnvToContainer,
 };

@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("./db");
 const integrations = require("./integrations");
+const { resolveAgentRuntimeFamily } = require("./agentRuntimeFields");
 
 const metrics = require("./metrics");
 const { OPENCLAW_GATEWAY_PORT } = require("../agent-runtime/lib/contracts");
@@ -318,7 +319,7 @@ async function resolveAgent(agentId, userId) {
   const result = await db.query(
     `SELECT id, name, status, container_id, host, backend_type, gateway_token,
             gateway_host_port, gateway_host, gateway_port, runtime_host,
-            runtime_port, user_id
+            runtime_port, runtime_family, user_id
        FROM agents WHERE id = $1`,
     [agentId]
   );
@@ -379,6 +380,11 @@ function createGatewayRouter() {
     try {
       const agent = await resolveAgent(req.params.agentId, req.user.id);
       if (!agent) return res.status(404).json({ error: "Agent not found" });
+      if (resolveAgentRuntimeFamily(agent) !== "openclaw") {
+        return res.status(409).json({
+          error: "This runtime family does not expose an OpenClaw gateway",
+        });
+      }
       if (agent.status !== "running" && agent.status !== "warning") {
         return res.status(409).json({ error: `Agent is ${agent.status}, not running` });
       }

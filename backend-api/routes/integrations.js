@@ -6,6 +6,7 @@ const { syncAuthToUserAgents } = require("../authSync");
 const { requireOwnedAgent } = require("../middleware/ownership");
 const { AGENT_RUNTIME_PORT } = require("../../agent-runtime/lib/contracts");
 const { runtimeUrlForAgent } = require("../../agent-runtime/lib/agentEndpoints");
+const { resolveAgentRuntimeFamily } = require("../agentRuntimeFields");
 
 const router = express.Router();
 
@@ -14,7 +15,8 @@ router.use("/agents/:id/integrations", requireOwnedAgent("id"));
 async function getAgentIntegrationRuntimeTarget(agentId) {
   const agentResult = await db.query(
     `SELECT id, host, runtime_host, runtime_port, status, gateway_token,
-            gateway_host_port, gateway_host, gateway_port
+            gateway_host_port, gateway_host, gateway_port, backend_type,
+            runtime_family, deploy_target, sandbox_profile
        FROM agents WHERE id = $1`,
     [agentId]
   );
@@ -23,8 +25,9 @@ async function getAgentIntegrationRuntimeTarget(agentId) {
 
 async function syncIntegrationsToAgent(agentId) {
   const agent = await getAgentIntegrationRuntimeTarget(agentId);
+  if (!agent || resolveAgentRuntimeFamily(agent) === "hermes") return;
   const runtimeUrl = runtimeUrlForAgent(agent, "/integrations/sync");
-  if (!agent || !runtimeUrl) return;
+  if (!runtimeUrl) return;
 
   // 1. Push integration metadata (non-sensitive) to the agent runtime.
   try {
@@ -58,6 +61,12 @@ async function invokeAgentIntegrationTool(agentId, payload = {}) {
   if (!agent) {
     const error = new Error("Agent not found");
     error.statusCode = 404;
+    throw error;
+  }
+
+  if (resolveAgentRuntimeFamily(agent) === "hermes") {
+    const error = new Error("Integration tool invocation is not available for Hermes runtimes");
+    error.statusCode = 409;
     throw error;
   }
 

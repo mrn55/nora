@@ -157,6 +157,7 @@ describe("gateway proxy control-plane routes", () => {
   afterEach(() => {
     evictConnection("10.0.0.10");
     evictConnection("10.0.0.20");
+    evictConnection("10.0.0.30");
   });
 
   it("sends non-streaming chat through the gateway and records usage metrics", async () => {
@@ -201,6 +202,30 @@ describe("gateway proxy control-plane routes", () => {
     expect(res.body).toEqual(
       expect.objectContaining({
         error: "Gateway unreachable",
+      })
+    );
+  });
+
+  it("returns 409 for Hermes runtimes", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "agent-hermes-1",
+        user_id: "user-1",
+        status: "running",
+        host: "10.0.0.30",
+        backend_type: "hermes",
+        runtime_family: "hermes",
+        gateway_token: null,
+        gateway_host_port: null,
+      }],
+    });
+
+    const res = await request(app).get("/agents/agent-hermes-1/gateway/status");
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: "This runtime family does not expose an OpenClaw gateway",
       })
     );
   });

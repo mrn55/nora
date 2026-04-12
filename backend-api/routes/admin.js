@@ -18,11 +18,17 @@ const { reconcileAgentStatus } = require("../agentStatus");
 const {
   extractTemplateDefaultsFromSnapshot,
   extractTemplatePayloadFromSnapshot,
+  resolveContainerName,
   serializeAgent,
   summarizeTemplatePayload,
 } = require("../agentPayloads");
 const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
-const { getBackendStatus } = require("../../agent-runtime/lib/backendCatalog");
+const {
+  KNOWN_RUNTIME_FAMILIES,
+  getBackendStatus,
+  isKnownRuntimeFamily,
+  normalizeRuntimeFamilyName,
+} = require("../../agent-runtime/lib/backendCatalog");
 const {
   buildAgentHistoryResponse,
   buildAgentStatsResponse,
@@ -36,7 +42,6 @@ const {
   createMutationFailureAuditMiddleware,
 } = require("../auditLog");
 const {
-  DEFAULT_RUNTIME_FAMILY,
   buildAgentRuntimeFields,
   isSameRuntimePath,
   resolveRequestedRuntimeFields,
@@ -72,12 +77,24 @@ function createHttpError(message, statusCode = 400) {
 }
 
 function normalizeRequestedRuntimeFamily(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return null;
-  return normalized === DEFAULT_RUNTIME_FAMILY ? DEFAULT_RUNTIME_FAMILY : null;
+  if (!isKnownRuntimeFamily(value)) return null;
+  return normalizeRuntimeFamilyName(value);
 }
 
 function assertSupportedRuntimeSelection(runtimeFields) {
+  if (runtimeFields?.runtime_family === "hermes") {
+    if (runtimeFields.deploy_target !== "docker") {
+      throw createHttpError(
+        "Hermes runtime is only supported on the Docker execution target."
+      );
+    }
+    if (runtimeFields.sandbox_profile !== "standard") {
+      throw createHttpError(
+        "Hermes runtime currently supports only the Standard sandbox profile."
+      );
+    }
+    return;
+  }
   if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
   if (runtimeFields.deploy_target === "docker") return;
 
@@ -789,7 +806,7 @@ router.post(
     const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
     if (req.body.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
-        error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+        error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
       });
     }
 
@@ -803,8 +820,12 @@ router.post(
     });
     assertSupportedRuntimeSelection(runtimeFields);
     assertBackendAvailable(runtimeFields.backend_type);
-    const containerNameRaw = (req.body.container_name || "").trim();
-    const containerName = containerNameRaw || agent.container_name;
+    const containerName = resolveContainerName({
+      requestedName: req.body.container_name,
+      currentName: agent.container_name,
+      agentName: agent.name,
+      runtimeSelection: runtimeFields,
+    });
     const image = resolveRequestedImage({
       requestedImage: req.body.image,
       runtimeFields,

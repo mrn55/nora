@@ -9,11 +9,11 @@ const snapshots = require("../snapshots");
 const scheduler = require("../scheduler");
 const monitoring = require("../monitoring");
 const {
-  buildContainerName,
   buildTemplatePayloadFromAgent,
   extractTemplateDefaultsFromSnapshot,
   extractTemplatePayloadFromSnapshot,
   materializeTemplateWiring,
+  resolveContainerName,
   sanitizeAgentName,
   serializeAgent,
   summarizeTemplatePayload,
@@ -478,8 +478,11 @@ router.post(
     const node = await scheduler.selectNode({
       fallback: runtimeFields.deploy_target,
     });
-    const containerNameRaw = (req.body.container_name || "").trim();
-    const containerName = containerNameRaw || buildContainerName(name);
+    const containerName = resolveContainerName({
+      requestedName: req.body.container_name,
+      agentName: name,
+      runtimeSelection: runtimeFields,
+    });
 
     const result = await db.query(
       `INSERT INTO agents(

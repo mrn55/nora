@@ -66,6 +66,9 @@ function loadBackend(backendId) {
     case 'docker':
       instance = new (require('./backends/docker'))();
       break;
+    case 'hermes':
+      instance = new (require('./backends/hermes'))();
+      break;
     case 'nemoclaw':
       instance = new (require('./backends/nemoclaw'))();
       break;
@@ -456,6 +459,9 @@ const worker = new Worker('deployments', async (job) => {
         console.log(`[provisioner] Falling back to container name as host: ${host}`);
       }
     }
+    if (!runtimeHost || runtimeHost === "localhost") {
+      runtimeHost = host;
+    }
   } catch (err) {
     console.error(`[${resolvedBackend}] Provisioning failed for agent ${id} (attempt ${job.attemptsMade + 1}/${job.opts?.attempts || 1}):`, err.message);
     // Mark as failed in DB
@@ -525,6 +531,7 @@ const worker = new Worker('deployments', async (job) => {
       gatewayHost,
       gatewayHostPort,
       gatewayPort,
+      checkGateway: resolvedRuntimeFields.runtime_family !== "hermes",
     });
     if (!readiness.ok) {
       const detail = buildReadinessWarningDetail(readiness);
@@ -543,7 +550,10 @@ const worker = new Worker('deployments', async (job) => {
          WHERE i.agent_id = $1 AND i.status = 'active'`,
         [id]
       );
-      if (intResult.rows.length > 0) {
+      if (
+        intResult.rows.length > 0 &&
+        resolvedRuntimeFields.runtime_family === "openclaw"
+      ) {
         const syncData = intResult.rows.map(buildIntegrationSyncEntry);
         const runtimeUrl = runtimeUrlForAgent({
           host,

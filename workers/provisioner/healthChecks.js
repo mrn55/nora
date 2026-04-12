@@ -59,6 +59,7 @@ async function waitForAgentReadiness({
   gatewayHostPort = null,
   gatewayHost = null,
   gatewayPort = OPENCLAW_GATEWAY_PORT,
+  checkGateway = true,
 } = {}, options = {}) {
   const resolvedRuntimeHost = runtimeHost || host;
   const resolvedRuntimePort = runtimePort || AGENT_RUNTIME_PORT;
@@ -71,31 +72,35 @@ async function waitForAgentReadiness({
     ...options.runtime,
   });
 
-  const resolvedGatewayHost = gatewayHostPort
-    ? (gatewayHost || process.env.GATEWAY_HOST || "host.docker.internal")
-    : (gatewayHost || host);
-  const resolvedGatewayPort = gatewayHostPort || gatewayPort || OPENCLAW_GATEWAY_PORT;
+  let gateway = null;
+  if (checkGateway) {
+    const resolvedGatewayHost = gatewayHostPort
+      ? (gatewayHost || process.env.GATEWAY_HOST || "host.docker.internal")
+      : (gatewayHost || host);
+    const resolvedGatewayPort = gatewayHostPort || gatewayPort || OPENCLAW_GATEWAY_PORT;
 
-  const gateway = await waitForHttpReady(gatewayUrl(resolvedGatewayHost, resolvedGatewayPort, "/"), {
-    attempts: 15,
-    intervalMs: 10000,
-    timeoutMs: 5000,
-    acceptStatuses: [200, 401, 403],
-    ...options.gateway,
-  });
+    gateway = await waitForHttpReady(gatewayUrl(resolvedGatewayHost, resolvedGatewayPort, "/"), {
+      attempts: 15,
+      intervalMs: 10000,
+      timeoutMs: 5000,
+      acceptStatuses: [200, 401, 403],
+      ...options.gateway,
+    });
+    gateway = {
+      ...gateway,
+      host: resolvedGatewayHost,
+      port: resolvedGatewayPort,
+    };
+  }
 
   return {
-    ok: runtime.ok && gateway.ok,
+    ok: runtime.ok && (checkGateway ? gateway?.ok : true),
     runtime: {
       ...runtime,
       host: resolvedRuntimeHost,
       port: resolvedRuntimePort,
     },
-    gateway: {
-      ...gateway,
-      host: resolvedGatewayHost,
-      port: resolvedGatewayPort,
-    },
+    gateway,
   };
 }
 

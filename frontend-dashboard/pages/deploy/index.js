@@ -19,6 +19,15 @@ import {
 } from "lucide-react";
 import { fetchWithAuth } from "../../lib/api";
 import { useToast } from "../../components/Toast";
+import {
+  activeExecutionTargetFromConfig,
+  containerNamePrefixForSelection,
+  pickExecutionTargetSelection,
+  pickRuntimeFamilySelection,
+  runtimeFamilyFromConfig,
+  visibleExecutionTargetsFromConfig,
+  visibleRuntimeFamiliesFromConfig,
+} from "../../lib/runtime";
 
 function slugifyName(value) {
   return value
@@ -60,6 +69,7 @@ export default function Deploy() {
   const [loading, setLoading] = useState(false);
   const [sub, setSub] = useState(null);
   const [agentCount, setAgentCount] = useState(0);
+  const [selectedRuntimeFamily, setSelectedRuntimeFamily] = useState("");
   const [selectedExecutionTarget, setSelectedExecutionTarget] = useState("");
   const [selectedSandboxProfile, setSelectedSandboxProfile] = useState("");
   const [backendConfig, setBackendConfig] = useState(null);
@@ -122,26 +132,36 @@ export default function Deploy() {
   const planLabel = isSelfHosted ? "Self-hosted" : plan.charAt(0).toUpperCase() + plan.slice(1);
   const limit = isSelfHosted ? (platformConfig?.selfhosted?.max_agents || 50) : (sub?.agent_limit || 3);
   const atLimit = agentCount >= limit;
-  const runtimeFamily =
-    backendConfig?.runtimeFamily || backendConfig?.runtimeFamilies?.[0] || null;
   const isAdmin = viewerRole === "admin";
-  const enabledExecutionTargets = useMemo(
-    () => (backendConfig?.executionTargets || []).filter((target) => target.enabled),
+  const defaultRuntimeFamily = useMemo(
+    () => runtimeFamilyFromConfig(backendConfig),
     [backendConfig]
+  );
+  const activeRuntimeFamily = useMemo(
+    () => runtimeFamilyFromConfig(backendConfig, selectedRuntimeFamily),
+    [backendConfig, selectedRuntimeFamily]
+  );
+  const visibleRuntimeFamilies = useMemo(
+    () => visibleRuntimeFamiliesFromConfig(backendConfig, viewerRole),
+    [backendConfig, viewerRole]
   );
   const visibleExecutionTargets = useMemo(
     () =>
-      enabledExecutionTargets.filter(
-        (target) => isAdmin || target.availableForOnboarding
+      visibleExecutionTargetsFromConfig(
+        backendConfig,
+        viewerRole,
+        activeRuntimeFamily?.id || selectedRuntimeFamily
       ),
-    [enabledExecutionTargets, isAdmin]
+    [backendConfig, viewerRole, activeRuntimeFamily?.id, selectedRuntimeFamily]
   );
   const activeExecutionTarget = useMemo(
     () =>
-      enabledExecutionTargets.find(
-        (target) => target.id === selectedExecutionTarget
-      ) || null,
-    [enabledExecutionTargets, selectedExecutionTarget]
+      activeExecutionTargetFromConfig(
+        backendConfig,
+        activeRuntimeFamily?.id || selectedRuntimeFamily,
+        selectedExecutionTarget
+      ),
+    [backendConfig, activeRuntimeFamily?.id, selectedRuntimeFamily, selectedExecutionTarget]
   );
   const visibleSandboxOptions = useMemo(() => {
     const sandboxProfiles = activeExecutionTarget?.sandboxProfiles || [];
@@ -180,36 +200,61 @@ export default function Deploy() {
   }, [platformConfig?.selfhosted?.max_disk_gb, selDisk]);
   const canDeployExecutionTarget = Boolean(activeSandboxOption?.available);
   const isNemoClaw = activeSandboxOption?.id === "nemoclaw";
+  const isHermes = activeRuntimeFamily?.id === "hermes";
   const showSandboxSelection = visibleSandboxOptions.length > 1;
+  const showRuntimeFamilySelection = visibleRuntimeFamilies.length > 1;
   const suggestedContainerName = useMemo(() => {
     const slug = slugifyName(name);
-    return slug ? `nora-${slug}` : "nora-my-first-agent";
-  }, [name]);
+    const prefix = containerNamePrefixForSelection({
+      runtimeFamily:
+        activeRuntimeFamily?.id ||
+        selectedRuntimeFamily ||
+        defaultRuntimeFamily?.id ||
+        "openclaw",
+      sandboxProfile:
+        selectedSandboxProfile ||
+        activeSandboxOption?.id ||
+        "standard",
+    });
+    return slug ? `${prefix}-${slug}` : `${prefix}-my-first-agent`;
+  }, [
+    activeRuntimeFamily?.id,
+    activeSandboxOption?.id,
+    defaultRuntimeFamily?.id,
+    name,
+    selectedRuntimeFamily,
+    selectedSandboxProfile,
+  ]);
 
   useEffect(() => {
-    const candidateTargets = isAdmin
-      ? enabledExecutionTargets
-      : visibleExecutionTargets;
-    if (!candidateTargets.length) return;
-
-    const current = candidateTargets.find(
-      (target) => target.id === selectedExecutionTarget
+    if (!backendConfig) return;
+    const nextRuntimeFamily = pickRuntimeFamilySelection(
+      backendConfig,
+      viewerRole,
+      selectedRuntimeFamily
     );
-    const nextTarget =
-      current ||
-      candidateTargets.find((target) => target.available && target.isDefault) ||
-      candidateTargets.find((target) => target.available) ||
-      candidateTargets[0] ||
-      null;
+    if (nextRuntimeFamily && nextRuntimeFamily !== selectedRuntimeFamily) {
+      setSelectedRuntimeFamily(nextRuntimeFamily);
+    }
+  }, [backendConfig, viewerRole, selectedRuntimeFamily]);
 
-    if (nextTarget && nextTarget.id !== selectedExecutionTarget) {
-      setSelectedExecutionTarget(nextTarget.id);
+  useEffect(() => {
+    if (!backendConfig) return;
+    const nextTarget = pickExecutionTargetSelection(
+      backendConfig,
+      viewerRole,
+      selectedExecutionTarget,
+      activeRuntimeFamily?.id || selectedRuntimeFamily
+    );
+    if (nextTarget && nextTarget !== selectedExecutionTarget) {
+      setSelectedExecutionTarget(nextTarget);
     }
   }, [
-    enabledExecutionTargets,
-    isAdmin,
+    backendConfig,
+    viewerRole,
     selectedExecutionTarget,
-    visibleExecutionTargets,
+    activeRuntimeFamily?.id,
+    selectedRuntimeFamily,
   ]);
 
   useEffect(() => {
@@ -264,8 +309,8 @@ export default function Deploy() {
         body: JSON.stringify({
           name,
           runtime_family:
-            activeExecutionTarget?.runtimeFamily ||
-            runtimeFamily?.id ||
+            activeRuntimeFamily?.id ||
+            defaultRuntimeFamily?.id ||
             "openclaw",
           deploy_target: selectedExecutionTarget,
           sandbox_profile: selectedSandboxProfile || "standard",
@@ -291,10 +336,14 @@ export default function Deploy() {
 
   const checklist = [
     "Pick a clear operator-friendly agent name.",
-    "Choose the execution target that matches your infrastructure.",
+    showRuntimeFamilySelection
+      ? "Choose the runtime family and execution target that match your workload."
+      : "Choose the execution target that matches your infrastructure.",
     "Size CPU, RAM, and disk for the workload.",
     "After deploy, add or sync your LLM provider key if needed.",
-    "Open chat, logs, and terminal to validate the runtime immediately.",
+    isHermes
+      ? "Open logs and terminal to validate the Hermes runtime immediately."
+      : "Open chat, logs, and terminal to validate the runtime immediately.",
   ];
 
   function executionTargetIcon(targetId) {
@@ -323,14 +372,20 @@ export default function Deploy() {
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-900 tracking-tight leading-none">Deploy New Agent</h1>
-                <p className="text-slate-400 font-medium mt-1">Provision a new OpenClaw runtime path to your Nora control plane.</p>
+                <p className="text-slate-400 font-medium mt-1">
+                  {isHermes
+                    ? "Provision a new Hermes runtime path to your Nora control plane."
+                    : "Provision a new OpenClaw runtime path to your Nora control plane."}
+                </p>
               </div>
             </div>
 
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5">
               <p className="text-xs font-black uppercase tracking-widest text-blue-700 mb-2">Fast path to activation</p>
               <p className="text-sm text-blue-700/80 leading-relaxed">
-                The goal of this screen is not just deployment — it is a complete first-run loop. Once the agent is live, finish activation by syncing an LLM provider and validating chat, logs, and terminal access.
+                {isHermes
+                  ? "The goal of this screen is not just deployment - it is a complete first-run loop. Once the agent is live, finish activation by syncing an LLM provider and validating runtime health, logs, and terminal access."
+                  : "The goal of this screen is not just deployment - it is a complete first-run loop. Once the agent is live, finish activation by syncing an LLM provider and validating chat, logs, and terminal access."}
               </p>
             </div>
           </div>
@@ -383,20 +438,65 @@ export default function Deploy() {
                     Runtime Family
                   </p>
                   <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600">
-                    {runtimeFamily?.contractStatusLabel || "Stable contract"}
+                    {activeRuntimeFamily?.contractStatusLabel ||
+                      defaultRuntimeFamily?.contractStatusLabel ||
+                      "Stable contract"}
                   </span>
                 </div>
                 <p className="text-sm font-bold text-slate-900 mt-2">
-                  {runtimeFamily?.label || "OpenClaw"}
+                  {activeRuntimeFamily?.label || defaultRuntimeFamily?.label || "OpenClaw"}
                 </p>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  {runtimeFamily?.operatorContractSummary ||
+                  {activeRuntimeFamily?.operatorContractSummary ||
                     "Nora keeps the operator workflow fixed while you choose where the runtime executes and which sandbox profile it uses."}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-                  {runtimeFamily?.expansionPolicy}
+                  {activeRuntimeFamily?.expansionPolicy}
                 </p>
               </div>
+              {showRuntimeFamilySelection ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {visibleRuntimeFamilies.map((family) => {
+                    const isSelected = selectedRuntimeFamily === family.id;
+                    const isAvailable = family.available;
+
+                    return (
+                      <button
+                        key={family.id}
+                        type="button"
+                        onClick={() => {
+                          if (isAvailable) setSelectedRuntimeFamily(family.id);
+                        }}
+                        className={`relative p-5 rounded-2xl border-2 text-left transition-all ${
+                          !isAvailable
+                            ? "border-slate-200 bg-slate-100 opacity-70 cursor-not-allowed"
+                            : isSelected
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                        }`}
+                        disabled={!isAvailable}
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-1">
+                          <span className="text-sm font-bold text-slate-900">
+                            {family.label}
+                          </span>
+                          <span className="inline-flex items-center rounded-full bg-white/80 px-2 py-1 text-[10px] font-bold text-slate-600 border border-slate-200">
+                            {family.contractStatusLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          {family.summary}
+                        </p>
+                        {!isAvailable && family.issue ? (
+                          <p className="text-[10px] text-amber-600 font-medium mt-2">
+                            {family.issue}
+                          </p>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
               <label className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none ml-2">
                 Container Name <span className="text-slate-300 font-medium normal-case tracking-normal">(optional)</span>
               </label>
@@ -661,20 +761,20 @@ export default function Deploy() {
           </div>
 
           <div className="flex flex-col gap-6">
-            <div className={`flex items-start gap-4 p-6 border rounded-[2rem] ${isNemoClaw ? "bg-green-50 border-green-100" : "bg-blue-50 border-blue-100"}`}>
-              {isNemoClaw ? <ShieldCheck size={24} className="text-green-600 flex-shrink-0" /> : <Server size={24} className="text-blue-600 flex-shrink-0" />}
+            <div className={`flex items-start gap-4 p-6 border rounded-[2rem] ${isNemoClaw ? "bg-green-50 border-green-100" : isHermes ? "bg-cyan-50 border-cyan-100" : "bg-blue-50 border-blue-100"}`}>
+              {isNemoClaw ? <ShieldCheck size={24} className="text-green-600 flex-shrink-0" /> : <Server size={24} className={`${isHermes ? "text-cyan-600" : "text-blue-600"} flex-shrink-0`} />}
               <div>
-                <p className={`text-xs font-black uppercase tracking-widest mb-2 ${isNemoClaw ? "text-green-700" : "text-blue-700"}`}>
+                <p className={`text-xs font-black uppercase tracking-widest mb-2 ${isNemoClaw ? "text-green-700" : isHermes ? "text-cyan-700" : "text-blue-700"}`}>
                   Runtime Path Summary
                 </p>
-                <p className={`text-sm font-medium leading-relaxed ${isNemoClaw ? "text-green-700" : "text-blue-700"}`}>
+                <p className={`text-sm font-medium leading-relaxed ${isNemoClaw ? "text-green-700" : isHermes ? "text-cyan-700" : "text-blue-700"}`}>
                   {activeSandboxOption?.detail ||
                     activeExecutionTarget?.detail ||
                     "Select an enabled execution target to see the runtime summary."}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 mt-3">
-                  <span className={`text-xs font-bold ${isNemoClaw ? "text-green-700/80" : "text-blue-700/80"}`}>
-                    {(activeExecutionTarget?.runtimeFamilyLabel || runtimeFamily?.label || "OpenClaw") +
+                  <span className={`text-xs font-bold ${isNemoClaw ? "text-green-700/80" : isHermes ? "text-cyan-700/80" : "text-blue-700/80"}`}>
+                    {(activeExecutionTarget?.runtimeFamilyLabel || activeRuntimeFamily?.label || defaultRuntimeFamily?.label || "OpenClaw") +
                       " runtime" +
                       " • " +
                       (activeExecutionTarget?.label || "Docker") +
@@ -713,7 +813,11 @@ export default function Deploy() {
                   </div>
                   <div>
                     <p className="text-sm font-bold text-slate-900">2. Validate the runtime</p>
-                    <p className="text-sm text-slate-500 leading-relaxed">After deploy, Nora sends you straight to the new agent so you can verify chat, logs, and terminal without hunting for the next screen.</p>
+                    <p className="text-sm text-slate-500 leading-relaxed">
+                      {isHermes
+                        ? "After deploy, Nora sends you straight to the new agent so you can verify runtime health, logs, and terminal access without hunting for the next screen."
+                        : "After deploy, Nora sends you straight to the new agent so you can verify chat, logs, and terminal without hunting for the next screen."}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">

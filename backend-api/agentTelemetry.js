@@ -59,6 +59,7 @@ function sampleFieldSql(alias = "") {
 function defaultCapabilitiesForBackend(backendType) {
   switch ((backendType || "docker").toLowerCase()) {
     case "docker":
+    case "hermes":
     case "nemoclaw":
       return DOCKER_CAPABILITIES;
     case "proxmox":

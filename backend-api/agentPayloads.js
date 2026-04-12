@@ -380,13 +380,65 @@ function sanitizeAgentName(rawName, fallbackLabel = "OpenClaw-Agent") {
   );
 }
 
-function buildContainerName(name) {
+const GENERATED_CONTAINER_NAME_PREFIXES = Object.freeze([
+  "oclaw-agent",
+  "oclaw-nemoclaw",
+  "hermes-agent",
+]);
+
+function containerNamePrefixForRuntime(runtimeSelection = {}) {
+  const runtimeFields = buildAgentRuntimeFields(runtimeSelection);
+  if (runtimeFields.runtime_family === "hermes") {
+    return "hermes-agent";
+  }
+  if (normalizeBackendName(runtimeFields.backend_type) === "nemoclaw") {
+    return "oclaw-nemoclaw";
+  }
+  return "oclaw-agent";
+}
+
+function isGeneratedContainerName(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return GENERATED_CONTAINER_NAME_PREFIXES.some((prefix) =>
+    normalized.startsWith(`${prefix}-`)
+  );
+}
+
+function buildContainerName(name, runtimeSelection = {}) {
+  const prefix = containerNamePrefixForRuntime(runtimeSelection);
   const slug = String(name || "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
     .slice(0, 48);
-  return `oclaw-agent-${slug || "agent"}-${Date.now().toString(36)}`;
+  return `${prefix}-${slug || "agent"}-${Date.now().toString(36)}`;
+}
+
+function resolveContainerName({
+  requestedName,
+  currentName,
+  agentName,
+  runtimeSelection = {},
+} = {}) {
+  const explicitRequestedName =
+    typeof requestedName === "string" ? requestedName.trim() : "";
+  if (explicitRequestedName) return explicitRequestedName;
+
+  const normalizedCurrentName =
+    typeof currentName === "string" ? currentName.trim() : "";
+  if (!normalizedCurrentName) {
+    return buildContainerName(agentName, runtimeSelection);
+  }
+
+  const expectedPrefix = `${containerNamePrefixForRuntime(runtimeSelection)}-`;
+  if (
+    !isGeneratedContainerName(normalizedCurrentName) ||
+    normalizedCurrentName.toLowerCase().startsWith(expectedPrefix)
+  ) {
+    return normalizedCurrentName;
+  }
+
+  return buildContainerName(agentName, runtimeSelection);
 }
 
 function serializeAgent(agent) {
@@ -684,6 +736,7 @@ module.exports = {
   extractTemplatePayloadFromSnapshot,
   materializeTemplateWiring,
   normalizeTemplatePayload,
+  resolveContainerName,
   sanitizeAgentName,
   serializeAgent,
   summarizeTemplatePayload,

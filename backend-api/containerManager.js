@@ -41,6 +41,11 @@ function getBackendInstance(type) {
       backendCache[type] = new DockerBackend();
       break;
     }
+    case "hermes": {
+      const HermesBackend = require(resolveBackendPath("hermes"));
+      backendCache[type] = new HermesBackend();
+      break;
+    }
     case "nemoclaw": {
       const NemoClawBackend = require(resolveBackendPath("nemoclaw"));
       backendCache[type] = new NemoClawBackend();

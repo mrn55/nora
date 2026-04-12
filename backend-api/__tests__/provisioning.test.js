@@ -165,6 +165,27 @@ describe("provisioning runtime/gateway contracts", () => {
     expect(fetchImpl.mock.calls[1][0]).toBe("http://gateway.service:28789/");
   });
 
+  it("can skip the gateway probe for runtime-only families", async () => {
+    const fetchImpl = jest.fn().mockResolvedValueOnce({ status: 200 });
+
+    const readiness = await waitForAgentReadiness(
+      {
+        host: "agent.internal",
+        runtimeHost: "runtime.service",
+        runtimePort: 8642,
+        checkGateway: false,
+      },
+      {
+        runtime: { attempts: 1, intervalMs: 1, timeoutMs: 1, fetchImpl },
+      }
+    );
+
+    expect(readiness.ok).toBe(true);
+    expect(readiness.gateway).toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe("http://runtime.service:8642/health");
+  });
+
   it("publishes both runtime and gateway ports for kubernetes agents", async () => {
     const K8sBackend = require("../../workers/provisioner/backends/k8s");
     const backend = new K8sBackend();

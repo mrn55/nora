@@ -30,11 +30,11 @@ const {
   hasGatewayEndpoint,
 } = require("../agent-runtime/lib/agentEndpoints");
 const {
-  DEFAULT_RUNTIME_FAMILY,
   getBackendCatalog,
   getBackendStatus,
   getDefaultBackend,
   getDefaultDeployTarget,
+  getDefaultRuntimeFamily,
   getDefaultSandboxProfile,
   getEnabledBackends,
   getEnabledDeployTargets,
@@ -382,9 +382,14 @@ app.get("/health", (req, res) => {
 
 app.get("/config/platform", async (_req, res) => {
   try {
+    const defaultRuntimeFamily = getDefaultRuntimeFamily();
     const runtimeFamilies = getRuntimeCatalog();
-    const executionTargets = getExecutionTargetCatalog();
-    const sandboxProfiles = getSandboxProfileCatalog();
+    const executionTargets = getExecutionTargetCatalog(process.env, {
+      runtimeFamily: defaultRuntimeFamily,
+    });
+    const sandboxProfiles = getSandboxProfileCatalog(process.env, {
+      runtimeFamily: defaultRuntimeFamily,
+    });
     res.json({
       mode: billing.PLATFORM_MODE,
       selfhosted:
@@ -399,7 +404,7 @@ app.get("/config/platform", async (_req, res) => {
       runtimeFamilies,
       executionTargets,
       sandboxProfiles,
-      defaultRuntimeFamily: runtimeFamilies[0]?.id || DEFAULT_RUNTIME_FAMILY,
+      defaultRuntimeFamily,
       deploymentDefaults: await getDeploymentDefaults(),
       release: await buildReleaseInfo(),
     });
@@ -409,13 +414,22 @@ app.get("/config/platform", async (_req, res) => {
 });
 
 app.get("/config/backends", (_req, res) => {
+  const defaultRuntimeFamily = getDefaultRuntimeFamily();
   const runtimeFamilies = getRuntimeCatalog();
-  const executionTargets = getExecutionTargetCatalog();
-  const sandboxProfiles = getSandboxProfileCatalog();
+  const executionTargets = getExecutionTargetCatalog(process.env, {
+    runtimeFamily: defaultRuntimeFamily,
+  });
+  const sandboxProfiles = getSandboxProfileCatalog(process.env, {
+    runtimeFamily: defaultRuntimeFamily,
+  });
+  const activeRuntimeFamily =
+    runtimeFamilies.find((runtimeFamily) => runtimeFamily.id === defaultRuntimeFamily) ||
+    runtimeFamilies[0] ||
+    null;
   res.json({
-    runtimeFamily: runtimeFamilies[0] || null,
+    runtimeFamily: activeRuntimeFamily,
     runtimeFamilies,
-    defaultRuntimeFamily: runtimeFamilies[0]?.id || DEFAULT_RUNTIME_FAMILY,
+    defaultRuntimeFamily,
     enabledDeployTargets: getEnabledDeployTargets(),
     defaultDeployTarget: getDefaultDeployTarget(),
     enabledSandboxProfiles: getEnabledSandboxProfiles(),
@@ -679,11 +693,15 @@ async function migrateDB() {
      EXCEPTION WHEN duplicate_column THEN NULL;
      END $$`,
     `UPDATE agents
-        SET runtime_family = 'openclaw'
+        SET runtime_family = CASE
+          WHEN backend_type = 'hermes' THEN 'hermes'
+          ELSE 'openclaw'
+        END
       WHERE runtime_family IS NULL OR BTRIM(runtime_family) = ''`,
     `UPDATE agents
         SET deploy_target = CASE
           WHEN backend_type = 'kubernetes' THEN 'k8s'
+          WHEN backend_type = 'hermes' THEN 'docker'
           WHEN backend_type = 'nemoclaw' THEN 'docker'
           WHEN backend_type IN ('docker', 'k8s', 'proxmox') THEN backend_type
           ELSE 'docker'
@@ -701,6 +719,7 @@ async function migrateDB() {
     `ALTER TABLE agents ALTER COLUMN sandbox_profile SET DEFAULT 'standard'`,
     `UPDATE agents
         SET backend_type = CASE
+          WHEN runtime_family = 'hermes' THEN 'hermes'
           WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
           WHEN deploy_target = 'kubernetes' THEN 'k8s'
           WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target
@@ -710,6 +729,7 @@ async function migrateDB() {
         AND deploy_target IS NOT NULL
         AND sandbox_profile IS NOT NULL
         AND backend_type IS DISTINCT FROM CASE
+          WHEN runtime_family = 'hermes' THEN 'hermes'
           WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
           WHEN deploy_target = 'kubernetes' THEN 'k8s'
           WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target

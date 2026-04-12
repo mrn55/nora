@@ -10,9 +10,12 @@ import {
   formatExecutionTargetLabel,
   formatRuntimePathLabel,
   formatSandboxProfileLabel,
+  isHermesRuntime,
   isNemoClawSandbox,
   resolveAgentExecutionTarget,
   resolveAgentSandboxProfile,
+  runtimeSupportsGateway,
+  runtimeSupportsMarketplacePublishing,
 } from "../../lib/runtime";
 
 function formatGatewayAddress(agent, browserHostname = "") {
@@ -34,6 +37,18 @@ function formatGatewayAddress(agent, browserHostname = "") {
   return `Port ${agent?.gateway_port || 18789}`;
 }
 
+function formatRuntimeAddress(agent) {
+  const host = agent?.runtime_host || agent?.host;
+  const defaultPort = isHermesRuntime(agent) ? 8642 : 9090;
+  const port = agent?.runtime_port || defaultPort;
+
+  if (host) {
+    return `${host}:${port}`;
+  }
+
+  return `Port ${port}`;
+}
+
 export default function OverviewTab({ agent, actionLoading, onStart, onStop, onRestart, onRedeploy, onDuplicate, onPublish }) {
   const [lastError, setLastError] = useState(null);
   const [browserHostname, setBrowserHostname] = useState("");
@@ -45,7 +60,11 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
     resolveAgentSandboxProfile(agent)
   );
   const isNemoClawAgent = isNemoClawSandbox(agent);
+  const isHermesAgent = isHermesRuntime(agent);
+  const supportsGateway = runtimeSupportsGateway(agent);
+  const supportsMarketplace = runtimeSupportsMarketplacePublishing(agent);
   const gatewayAddress = formatGatewayAddress(agent, browserHostname);
+  const runtimeAddress = formatRuntimeAddress(agent);
 
   // Fetch last error event when agent is in error state
   useEffect(() => {
@@ -109,8 +128,14 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
         <div className="flex items-center gap-3 bg-orange-50 border border-orange-200 rounded-2xl px-5 py-3">
           <AlertOctagon size={18} className="text-orange-600 shrink-0" />
           <div>
-            <p className="text-sm font-bold text-orange-800">Gateway health check failed</p>
-            <p className="text-xs text-orange-600">Agent deployed but the gateway is not responding. It may still be starting up.</p>
+            <p className="text-sm font-bold text-orange-800">
+              {isHermesAgent ? "Runtime health check failed" : "Gateway health check failed"}
+            </p>
+            <p className="text-xs text-orange-600">
+              {isHermesAgent
+                ? "Agent deployed but the Hermes API server is not responding yet. It may still be starting up."
+                : "Agent deployed but the gateway is not responding. It may still be starting up."}
+            </p>
           </div>
         </div>
       )}
@@ -125,14 +150,16 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
           {actionLoading === "duplicate" ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
           Duplicate
         </button>
-        <button
-          onClick={onPublish}
-          disabled={!!actionLoading}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
-        >
-          {actionLoading === "publish" ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-          Publish to Marketplace
-        </button>
+        {supportsMarketplace ? (
+          <button
+            onClick={onPublish}
+            disabled={!!actionLoading}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
+          >
+            {actionLoading === "publish" ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+            Publish to Marketplace
+          </button>
+        ) : null}
         {agent.status === "running" && (
           <>
             <button
@@ -176,7 +203,7 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
       </div>
 
       {/* Gateway Badge */}
-      {agent.status === "running" && (
+      {agent.status === "running" && supportsGateway && (
         <div className="flex items-center gap-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl px-5 py-3">
           <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
             <Zap size={16} className="text-white" />
@@ -185,6 +212,21 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
             <p className="text-sm font-bold text-slate-800">OpenClaw Gateway Active</p>
             <p className="text-[10px] text-slate-500">
               {gatewayAddress} &bull; Chat, Sessions, Cron, Tools available in the OpenClaw tab
+            </p>
+          </div>
+          <Radio size={14} className="ml-auto text-green-500 animate-pulse" />
+        </div>
+      )}
+
+      {agent.status === "running" && isHermesAgent && (
+        <div className="flex items-center gap-3 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-2xl px-5 py-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
+            <Bot size={16} className="text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-800">Hermes API Server Active</p>
+            <p className="text-[10px] text-slate-500">
+              {runtimeAddress} &bull; Hermes WebUI, logs, and terminal are available from Nora
             </p>
           </div>
           <Radio size={14} className="ml-auto text-green-500 animate-pulse" />
@@ -213,7 +255,12 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
           { label: "vCPU", value: agent.vcpu || "2", icon: Cpu, color: "text-blue-600" },
           { label: "RAM", value: `${agent.ram_mb ? agent.ram_mb / 1024 : 2} GB`, icon: MemoryStick, color: "text-emerald-600" },
           { label: "Disk", value: `${agent.disk_gb || 20} GB`, icon: HardDrive, color: "text-purple-600" },
-          { label: "Host", value: gatewayAddress || "—", icon: Globe, color: "text-orange-600" },
+          {
+            label: isHermesAgent ? "Runtime API" : "Host",
+            value: isHermesAgent ? runtimeAddress || "—" : gatewayAddress || "—",
+            icon: Globe,
+            color: "text-orange-600",
+          },
         ].map((item) => (
           <div key={item.label} className="bg-slate-50 border border-slate-200 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-2">

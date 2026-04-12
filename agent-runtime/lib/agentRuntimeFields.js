@@ -1,10 +1,17 @@
 const {
   DEFAULT_RUNTIME_FAMILY,
+  backendForRuntimeSelection,
   deployTargetForBackend,
   getDefaultBackend,
   getDefaultDeployTarget,
+  getDefaultSandboxProfile,
   isKnownBackend,
+  isKnownDeployTarget,
+  isKnownRuntimeFamily,
   normalizeBackendName,
+  normalizeDeployTargetName,
+  normalizeRuntimeFamilyName,
+  runtimeFamilyForBackend,
   sandboxForBackend,
 } = require("./backendCatalog");
 
@@ -19,13 +26,13 @@ function normalizeLegacyBackend(value) {
 }
 
 function parseRuntimeFamily(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return normalized === DEFAULT_RUNTIME_FAMILY ? DEFAULT_RUNTIME_FAMILY : null;
+  if (!isKnownRuntimeFamily(value)) return null;
+  return normalizeRuntimeFamilyName(value);
 }
 
 function parseDeployTarget(value) {
-  if (!isKnownBackend(value)) return null;
-  return normalizeBackendName(value);
+  if (!isKnownDeployTarget(value)) return null;
+  return normalizeDeployTargetName(value);
 }
 
 function parseSandboxProfile(value) {
@@ -37,28 +44,44 @@ function parseSandboxProfile(value) {
 }
 
 function normalizeRequestedDeployTarget(value) {
+  if (isKnownDeployTarget(value)) {
+    return normalizeDeployTargetName(value);
+  }
+
   const normalizedBackend = normalizeLegacyBackend(value);
   return normalizedBackend ? deployTargetForBackend(normalizedBackend) : null;
 }
 
 function resolveFallbackRuntimeFields(fallback = {}) {
-  return fallback && Object.keys(fallback).length > 0
-    ? buildAgentRuntimeFields(fallback)
-    : buildAgentRuntimeFields({ backend_type: getDefaultBackend(process.env) });
+  if (fallback && Object.keys(fallback).length > 0) {
+    return buildAgentRuntimeFields(fallback);
+  }
+
+  return buildAgentRuntimeFields({ backend_type: getDefaultBackend(process.env) });
 }
 
 function hasNewRuntimeSelection(agent = {}) {
   return Boolean(
-    parseDeployTarget(agent.deploy_target ?? agent.deployTarget) ||
+    parseRuntimeFamily(agent.runtime_family ?? agent.runtimeFamily) ||
+      parseDeployTarget(agent.deploy_target ?? agent.deployTarget) ||
       parseSandboxProfile(agent.sandbox_profile ?? agent.sandboxProfile)
   );
 }
 
 function resolveAgentRuntimeFamily(agent = {}) {
-  return (
-    parseRuntimeFamily(agent.runtime_family ?? agent.runtimeFamily) ||
-    DEFAULT_RUNTIME_FAMILY
+  const explicitRuntimeFamily = parseRuntimeFamily(
+    agent.runtime_family ?? agent.runtimeFamily
   );
+  if (explicitRuntimeFamily) return explicitRuntimeFamily;
+
+  const legacyBackend = normalizeLegacyBackend(
+    agent.backend_type ?? agent.backendType
+  );
+  if (legacyBackend) {
+    return runtimeFamilyForBackend(legacyBackend);
+  }
+
+  return DEFAULT_RUNTIME_FAMILY;
 }
 
 function resolveAgentSandboxProfile(agent = {}) {
@@ -66,6 +89,11 @@ function resolveAgentSandboxProfile(agent = {}) {
     agent.sandbox_profile ?? agent.sandboxProfile
   );
   if (explicitSandbox) return explicitSandbox;
+
+  const runtimeFamily = resolveAgentRuntimeFamily(agent);
+  if (runtimeFamily === "hermes") {
+    return "standard";
+  }
 
   const explicitDeployTarget = parseDeployTarget(
     agent.deploy_target ?? agent.deployTarget
@@ -79,12 +107,12 @@ function resolveAgentSandboxProfile(agent = {}) {
   );
   if (legacySandbox) return legacySandbox;
 
-  const legacyBackend = parseDeployTarget(
+  const legacyBackend = normalizeLegacyBackend(
     agent.backend_type ?? agent.backendType
   );
   if (legacyBackend) return sandboxForBackend(legacyBackend);
 
-  return "standard";
+  return getDefaultSandboxProfile(process.env, { runtimeFamily });
 }
 
 function resolveAgentDeployTarget(agent = {}) {
@@ -93,6 +121,11 @@ function resolveAgentDeployTarget(agent = {}) {
   );
   if (explicitDeployTarget) return explicitDeployTarget;
 
+  const runtimeFamily = resolveAgentRuntimeFamily(agent);
+  if (runtimeFamily === "hermes") {
+    return "docker";
+  }
+
   const explicitSandbox = parseSandboxProfile(
     agent.sandbox_profile ?? agent.sandboxProfile
   );
@@ -100,7 +133,7 @@ function resolveAgentDeployTarget(agent = {}) {
     return "docker";
   }
 
-  const legacyBackend = parseDeployTarget(
+  const legacyBackend = normalizeLegacyBackend(
     agent.backend_type ?? agent.backendType
   );
   if (legacyBackend) return deployTargetForBackend(legacyBackend);
@@ -110,25 +143,32 @@ function resolveAgentDeployTarget(agent = {}) {
     return "docker";
   }
 
-  return deployTargetForBackend(
-    getDefaultBackend(process.env, { sandbox: sandboxProfile })
-  );
+  return getDefaultDeployTarget(process.env, { runtimeFamily, sandbox: sandboxProfile });
 }
 
 function resolveAgentBackendType(agent = {}) {
+  const runtimeFamily = resolveAgentRuntimeFamily(agent);
   const sandboxProfile = resolveAgentSandboxProfile(agent);
   const deployTarget = resolveAgentDeployTarget(agent);
 
   if (hasNewRuntimeSelection(agent)) {
-    return sandboxProfile === "nemoclaw" ? "nemoclaw" : deployTarget;
+    return backendForRuntimeSelection({
+      runtimeFamily,
+      deployTarget,
+      sandboxProfile,
+    });
   }
 
-  const legacyBackend = parseDeployTarget(
+  const legacyBackend = normalizeLegacyBackend(
     agent.backend_type ?? agent.backendType
   );
   if (legacyBackend) return legacyBackend;
 
-  return sandboxProfile === "nemoclaw" ? "nemoclaw" : deployTarget;
+  return backendForRuntimeSelection({
+    runtimeFamily,
+    deployTarget,
+    sandboxProfile,
+  });
 }
 
 function resolveAgentSandboxType(agent = {}) {
@@ -146,10 +186,18 @@ function resolveAgentSandboxType(agent = {}) {
 
 function buildAgentRuntimeFields(agent = {}) {
   const runtimeFamily = resolveAgentRuntimeFamily(agent);
-  const deployTarget = resolveAgentDeployTarget(agent);
-  const sandboxProfile = resolveAgentSandboxProfile(agent);
+  const deployTarget = resolveAgentDeployTarget({
+    ...agent,
+    runtime_family: runtimeFamily,
+  });
+  const sandboxProfile = resolveAgentSandboxProfile({
+    ...agent,
+    runtime_family: runtimeFamily,
+    deploy_target: deployTarget,
+  });
   const backendType = resolveAgentBackendType({
     ...agent,
+    runtime_family: runtimeFamily,
     deploy_target: deployTarget,
     sandbox_profile: sandboxProfile,
   });
@@ -179,6 +227,13 @@ function resolveRequestedRuntimeFields({ request = {}, fallback = {} } = {}) {
   const requestedRuntimeFamily = parseRuntimeFamily(
     request.runtime_family ?? request.runtimeFamily
   );
+  const effectiveRuntimeFamily =
+    requestedRuntimeFamily ||
+    fallbackRuntime.runtime_family ||
+    DEFAULT_RUNTIME_FAMILY;
+  const runtimeFamilyChanged =
+    Boolean(requestedRuntimeFamily) &&
+    requestedRuntimeFamily !== fallbackRuntime.runtime_family;
   const rawRequestedDeployTarget = request.deploy_target ?? request.deployTarget;
   const rawRequestedBackend =
     request.backend ?? request.backend_type ?? request.backendType;
@@ -192,31 +247,43 @@ function resolveRequestedRuntimeFields({ request = {}, fallback = {} } = {}) {
       request.sandbox_type ??
       request.sandboxType
   );
-  const hasRequestedPlacement =
-    hasText(rawRequestedDeployTarget) || hasText(rawRequestedBackend);
   const legacyNemoHint =
-    normalizeLegacyBackend(rawRequestedDeployTarget) === "nemoclaw" ||
-    requestedBackend === "nemoclaw";
+    effectiveRuntimeFamily === "openclaw" &&
+    (normalizeLegacyBackend(rawRequestedDeployTarget) === "nemoclaw" ||
+      requestedBackend === "nemoclaw");
+  const placementRequested =
+    hasText(rawRequestedDeployTarget) || hasText(rawRequestedBackend);
+  const defaultRuntimeFields = runtimeFamilyChanged
+    ? buildAgentRuntimeFields({
+        runtime_family: effectiveRuntimeFamily,
+        backend_type: getDefaultBackend(process.env, {
+          runtimeFamily: effectiveRuntimeFamily,
+        }),
+      })
+    : fallbackRuntime;
   const sandboxProfile =
     requestedSandboxProfile ||
     (legacyNemoHint ? "nemoclaw" : null) ||
-    (hasRequestedPlacement
-      ? "standard"
-      : fallbackRuntime.sandbox_profile || "standard");
+    (placementRequested ? "standard" : defaultRuntimeFields.sandbox_profile) ||
+    getDefaultSandboxProfile(process.env, {
+      runtimeFamily: effectiveRuntimeFamily,
+    });
   const deployTarget =
     requestedDeployTarget ||
     (requestedBackend ? deployTargetForBackend(requestedBackend) : null) ||
     (requestedSandboxProfile === "nemoclaw" || legacyNemoHint
       ? "docker"
       : null) ||
-    (!hasRequestedPlacement ? fallbackRuntime.deploy_target : null) ||
-    getDefaultDeployTarget(process.env, { sandbox: sandboxProfile });
+    (!placementRequested && !runtimeFamilyChanged
+      ? defaultRuntimeFields.deploy_target
+      : null) ||
+    getDefaultDeployTarget(process.env, {
+      runtimeFamily: effectiveRuntimeFamily,
+      sandbox: sandboxProfile,
+    });
 
   return buildAgentRuntimeFields({
-    runtime_family:
-      requestedRuntimeFamily ||
-      fallbackRuntime.runtime_family ||
-      DEFAULT_RUNTIME_FAMILY,
+    runtime_family: effectiveRuntimeFamily,
     deploy_target: deployTarget,
     sandbox_profile: sandboxProfile,
   });

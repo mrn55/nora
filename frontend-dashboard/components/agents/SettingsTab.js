@@ -4,7 +4,9 @@ import ConfirmDialog from "../ConfirmDialog";
 import { useToast } from "../Toast";
 import {
   formatExecutionTargetLabel,
+  formatRuntimeFamilyLabel,
   formatSandboxProfileLabel,
+  runtimeSupportsMarketplacePublishing,
   resolveAgentExecutionTarget,
   resolveAgentSandboxProfile,
 } from "../../lib/runtime";
@@ -14,10 +16,8 @@ export default function SettingsTab({ agent, onDelete, onRename, onDuplicate, on
   const [agentName, setAgentName] = useState(agent.name || "");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const toast = useToast();
-  const runtimeFamilyLabel =
-    String(agent.runtime_family || "openclaw").trim().toLowerCase() === "openclaw"
-      ? "OpenClaw"
-      : agent.runtime_family || "OpenClaw";
+  const runtimeFamilyLabel = formatRuntimeFamilyLabel(agent.runtime_family);
+  const supportsMarketplace = runtimeSupportsMarketplacePublishing(agent);
   const executionTargetLabel = formatExecutionTargetLabel(
     resolveAgentExecutionTarget(agent)
   );
@@ -88,15 +88,17 @@ export default function SettingsTab({ agent, onDelete, onRename, onDuplicate, on
               {actionLoading === "duplicate" ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
               Duplicate Agent
             </button>
-            <button
-              type="button"
-              onClick={onPublish}
-              disabled={!!actionLoading}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl hover:bg-blue-100 transition-all disabled:opacity-50"
-            >
-              {actionLoading === "publish" ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-              Publish to Marketplace
-            </button>
+            {supportsMarketplace ? (
+              <button
+                type="button"
+                onClick={onPublish}
+                disabled={!!actionLoading}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl hover:bg-blue-100 transition-all disabled:opacity-50"
+              >
+                {actionLoading === "publish" ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                Publish to Marketplace
+              </button>
+            ) : null}
           </div>
         </form>
         <div>

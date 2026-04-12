@@ -12,20 +12,27 @@ const containerManager = require("../containerManager");
 const monitoring = require("../monitoring");
 const {
   CLONE_MODES,
-  buildContainerName,
   buildTemplatePayloadFromAgent,
   createEmptyTemplatePayload,
   materializeTemplateWiring,
+  resolveContainerName,
   sanitizeAgentName,
   serializeAgent,
 } = require("../agentPayloads");
 const { isGatewayAvailableStatus, reconcileAgentStatus } = require("../agentStatus");
 const { OPENCLAW_GATEWAY_PORT } = require("../../agent-runtime/lib/contracts");
-const { resolveGatewayAddress } = require("../../agent-runtime/lib/agentEndpoints");
+const {
+  resolveGatewayAddress,
+  resolveRuntimeAddress,
+  runtimeUrlForAgent,
+} = require("../../agent-runtime/lib/agentEndpoints");
 const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
 const {
   DEFAULT_RUNTIME_FAMILY,
+  KNOWN_RUNTIME_FAMILIES,
   getBackendStatus,
+  isKnownRuntimeFamily,
+  normalizeRuntimeFamilyName,
 } = require("../../agent-runtime/lib/backendCatalog");
 const { asyncHandler } = require("../middleware/errorHandler");
 const {
@@ -75,12 +82,29 @@ function resolveRequestedImage({
 }
 
 function normalizeRequestedRuntimeFamily(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return null;
-  return normalized === DEFAULT_RUNTIME_FAMILY ? DEFAULT_RUNTIME_FAMILY : null;
+  if (!isKnownRuntimeFamily(value)) return null;
+  return normalizeRuntimeFamilyName(value);
 }
 
 function assertSupportedRuntimeSelection(runtimeFields) {
+  if (runtimeFields?.runtime_family === "hermes") {
+    if (runtimeFields.deploy_target !== "docker") {
+      const error = new Error(
+        "Hermes runtime is only supported on the Docker execution target."
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+    if (runtimeFields.sandbox_profile !== "standard") {
+      const error = new Error(
+        "Hermes runtime currently supports only the Standard sandbox profile."
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+    return;
+  }
+
   if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
 
   if (runtimeFields.deploy_target !== "docker") {
@@ -265,15 +289,21 @@ router.get("/:id/gateway-url", asyncHandler(async (req, res) => {
   res.locals.auditContext = buildAgentContext(agent, {
     ownerEmail: req.user.email || null,
   });
+  const runtimeFields = buildAgentRuntimeFields(agent);
   if (!isGatewayAvailableStatus(agent.status)) {
     return res.status(409).json({ error: "Agent gateway is only available while running" });
+  }
+  if (runtimeFields.runtime_family !== "openclaw") {
+    return res.status(409).json({
+      error: "This runtime family does not expose an OpenClaw gateway",
+    });
   }
   if (!agent.container_id) return res.status(409).json({ error: "No container" });
 
   // Prefer the stored published port when present. This keeps browser access on
   // the control-plane host for Docker and local kind NodePort verification.
   let hostPort = agent.gateway_host_port;
-  const backendType = resolveAgentBackendType(agent);
+  const backendType = runtimeFields.backend_type;
   if (!hostPort && agent.container_id && ["docker", "nemoclaw"].includes(backendType)) {
     try {
       const Docker = require("dockerode");
@@ -307,6 +337,293 @@ router.get("/:id/gateway-url", asyncHandler(async (req, res) => {
   });
 }));
 
+function extractHermesApiError(payload, fallbackMessage) {
+  if (payload && typeof payload === "object") {
+    const nestedMessage = payload.error?.message;
+    if (typeof nestedMessage === "string" && nestedMessage.trim()) {
+      return nestedMessage.trim();
+    }
+    if (typeof payload.message === "string" && payload.message.trim()) {
+      return payload.message.trim();
+    }
+    if (typeof payload.raw === "string" && payload.raw.trim()) {
+      return payload.raw.trim();
+    }
+  }
+
+  if (typeof payload === "string" && payload.trim()) {
+    return payload.trim();
+  }
+
+  return fallbackMessage;
+}
+
+async function resolveHermesApiToken(agent) {
+  const storedToken = String(agent?.gateway_token || "").trim();
+  if (storedToken) return storedToken;
+  if (!agent?.container_id) return null;
+
+  try {
+    const Docker = require("dockerode");
+    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+    const info = await docker.getContainer(agent.container_id).inspect();
+    const envVars = Array.isArray(info?.Config?.Env) ? info.Config.Env : [];
+    const keyEntry = envVars.find((entry) =>
+      typeof entry === "string" && entry.startsWith("API_SERVER_KEY=")
+    );
+    const resolvedToken = keyEntry
+      ? keyEntry.slice("API_SERVER_KEY=".length).trim()
+      : "";
+
+    if (!resolvedToken) return null;
+
+    agent.gateway_token = resolvedToken;
+    try {
+      await db.query("UPDATE agents SET gateway_token = $2 WHERE id = $1", [
+        agent.id,
+        resolvedToken,
+      ]);
+    } catch {
+      // Best-effort cache only.
+    }
+
+    return resolvedToken;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchHermesApi(agent, path, options = {}) {
+  const runtimeUrl = runtimeUrlForAgent(agent, path);
+  if (!runtimeUrl) {
+    const error = new Error("Hermes runtime endpoint not available");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const apiToken = await resolveHermesApiToken(agent);
+  if (!apiToken) {
+    const error = new Error(
+      "Hermes API auth token unavailable. Redeploy the agent to refresh runtime auth."
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const requestHeaders = {
+    Accept: "application/json",
+    Authorization: `Bearer ${apiToken}`,
+    ...(options.headers || {}),
+  };
+
+  let body;
+  if (options.body != null) {
+    body =
+      typeof options.body === "string"
+        ? options.body
+        : JSON.stringify(options.body);
+    if (!requestHeaders["Content-Type"]) {
+      requestHeaders["Content-Type"] = "application/json";
+    }
+  }
+
+  const response = await fetch(runtimeUrl, {
+    method: options.method || "GET",
+    headers: requestHeaders,
+    body,
+    signal: AbortSignal.timeout(options.timeoutMs || 15000),
+  });
+
+  const raw = await response.text().catch(() => "");
+  let data = {};
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      data = { raw };
+    }
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    headers: response.headers,
+    data,
+  };
+}
+
+// Hermes runtime status and model metadata for the agent-details WebUI tab.
+router.get("/:id/hermes-ui", asyncHandler(async (req, res) => {
+  const result = await db.query(
+    "SELECT * FROM agents WHERE id = $1 AND user_id = $2",
+    [req.params.id, req.user.id]
+  );
+  const agent = result.rows[0];
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+  const runtimeFields = buildAgentRuntimeFields(agent);
+  if (runtimeFields.runtime_family !== "hermes") {
+    return res.status(409).json({
+      error: "This runtime family does not expose the Hermes WebUI surface",
+    });
+  }
+  if (!isGatewayAvailableStatus(agent.status)) {
+    return res.status(409).json({
+      error: "Hermes WebUI is only available while the agent is running",
+    });
+  }
+
+  const runtimeAddress = resolveRuntimeAddress(agent);
+  if (!runtimeAddress) {
+    return res.status(409).json({ error: "Hermes runtime address not available" });
+  }
+
+  let health = { ok: false, error: "Hermes runtime not ready yet" };
+  let models = [];
+  let modelsError = null;
+
+  try {
+    const healthResponse = await fetchHermesApi(agent, "/health", {
+      timeoutMs: 5000,
+    });
+    if (healthResponse.ok && healthResponse.data?.status === "ok") {
+      health = {
+        ok: true,
+        ...healthResponse.data,
+      };
+      const modelsResponse = await fetchHermesApi(agent, "/v1/models", {
+        timeoutMs: 5000,
+      });
+      if (modelsResponse.ok && Array.isArray(modelsResponse.data?.data)) {
+        models = modelsResponse.data.data;
+      } else {
+        modelsError = extractHermesApiError(
+          modelsResponse.data,
+          `Hermes model listing returned ${modelsResponse.status}`
+        );
+      }
+    } else {
+      health = {
+        ok: false,
+        error: extractHermesApiError(
+          healthResponse.data,
+          `Hermes runtime returned ${healthResponse.status}`
+        ),
+      };
+    }
+  } catch (error) {
+    health = {
+      ok: false,
+      error: error.message || "Hermes runtime not reachable",
+    };
+  }
+
+  res.json({
+    url: runtimeUrlForAgent(agent, "/v1"),
+    runtime: runtimeAddress,
+    health,
+    models,
+    defaultModel: models[0]?.id || null,
+    ...(modelsError ? { modelsError } : {}),
+  });
+}));
+
+router.post("/:id/hermes-ui/chat", asyncHandler(async (req, res) => {
+  const result = await db.query(
+    "SELECT * FROM agents WHERE id = $1 AND user_id = $2",
+    [req.params.id, req.user.id]
+  );
+  const agent = result.rows[0];
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+  const runtimeFields = buildAgentRuntimeFields(agent);
+  if (runtimeFields.runtime_family !== "hermes") {
+    return res.status(409).json({
+      error: "This runtime family does not expose the Hermes WebUI surface",
+    });
+  }
+  if (!isGatewayAvailableStatus(agent.status)) {
+    return res.status(409).json({
+      error: "Hermes WebUI is only available while the agent is running",
+    });
+  }
+
+  const messages = (Array.isArray(req.body?.messages) ? req.body.messages : [])
+    .map((entry) => ({
+      role: String(entry?.role || "").trim(),
+      content: String(entry?.content || ""),
+    }))
+    .filter(
+      (entry) =>
+        ["system", "user", "assistant"].includes(entry.role) &&
+        entry.content.trim()
+    );
+
+  if (!messages.length) {
+    return res.status(400).json({ error: "At least one chat message is required" });
+  }
+
+  if (messages[messages.length - 1]?.role !== "user") {
+    return res.status(400).json({
+      error: "Hermes chat requests must end with a user message",
+    });
+  }
+
+  const requestedModel =
+    typeof req.body?.model === "string" ? req.body.model.trim() : "";
+  const sessionId =
+    typeof req.body?.sessionId === "string" ? req.body.sessionId.trim() : "";
+
+  let chatResponse;
+  try {
+    chatResponse = await fetchHermesApi(agent, "/v1/chat/completions", {
+      method: "POST",
+      timeoutMs: 240000,
+      headers: sessionId
+        ? {
+            "X-Hermes-Session-Id": sessionId,
+          }
+        : undefined,
+      body: {
+        ...(requestedModel ? { model: requestedModel } : {}),
+        stream: false,
+        messages,
+      },
+    });
+  } catch (error) {
+    return res
+      .status(error.statusCode || 502)
+      .json({ error: error.message || "Hermes runtime unreachable" });
+  }
+
+  if (!chatResponse.ok) {
+    const upstreamStatus =
+      chatResponse.status >= 500 ? 502 : chatResponse.status;
+    return res.status(upstreamStatus).json({
+      error: extractHermesApiError(
+        chatResponse.data,
+        `Hermes chat returned ${chatResponse.status}`
+      ),
+    });
+  }
+
+  const assistantMessage =
+    chatResponse.data?.choices?.[0]?.message?.content || "";
+  if (!assistantMessage) {
+    return res.status(502).json({
+      error: "Hermes chat returned an empty assistant message",
+    });
+  }
+
+  res.json({
+    message: assistantMessage,
+    usage: chatResponse.data?.usage || null,
+    model: chatResponse.data?.model || requestedModel || null,
+    sessionId:
+      chatResponse.headers.get("x-hermes-session-id") || sessionId || null,
+  });
+}));
+
 // Live container resource stats (CPU, memory, network, PIDs)
 router.get("/:id/stats", asyncHandler(async (req, res) => {
   const result = await db.query(
@@ -328,18 +645,21 @@ router.post("/deploy", async (req, res) => {
     const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
     if (req.body.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
-        error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+        error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
       });
     }
     const name = sanitizeAgentName(req.body.name, "OpenClaw-Agent");
     if (name.length > 100) return res.status(400).json({ error: "Agent name must be 100 characters or less" });
-    const containerNameRaw = (req.body.container_name || "").trim();
-    const containerName = containerNameRaw || buildContainerName(name);
     const runtimeFields = resolveRequestedRuntimeFields({
       request: {
         ...req.body,
         runtime_family: runtimeFamily || DEFAULT_RUNTIME_FAMILY,
       },
+    });
+    const containerName = resolveContainerName({
+      requestedName: req.body.container_name,
+      agentName: name,
+      runtimeSelection: runtimeFields,
     });
     assertSupportedRuntimeSelection(runtimeFields);
     const backendStatus = assertBackendAvailable(runtimeFields.backend_type);
@@ -488,7 +808,7 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
   const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
   if (req.body.runtime_family != null && runtimeFamily == null) {
     return res.status(400).json({
-      error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+      error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
     });
   }
   const name = sanitizeAgentName(
@@ -511,8 +831,6 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
   const node = await scheduler.selectNode({
     fallback: runtimeFields.deploy_target,
   });
-  const containerNameRaw = (req.body.container_name || "").trim();
-  const containerName = containerNameRaw || buildContainerName(name);
   const specs = {
     vcpu: sourceAgent.vcpu || 2,
     ram_mb: sourceAgent.ram_mb || 2048,
@@ -523,6 +841,11 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
     runtimeFields,
     fallbackImage: sourceAgent.image || null,
     fallbackRuntimeFields: sourceRuntime,
+  });
+  const containerName = resolveContainerName({
+    requestedName: req.body.container_name,
+    agentName: name,
+    runtimeSelection: runtimeFields,
   });
 
   let templatePayload;
@@ -755,7 +1078,7 @@ router.post("/:id/redeploy", async (req, res) => {
     const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
     if (req.body.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
-        error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
+        error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
       });
     }
 
@@ -769,8 +1092,12 @@ router.post("/:id/redeploy", async (req, res) => {
     });
     assertSupportedRuntimeSelection(runtimeFields);
     assertBackendAvailable(runtimeFields.backend_type);
-    const containerNameRaw = (req.body.container_name || "").trim();
-    const containerName = containerNameRaw || agent.container_name;
+    const containerName = resolveContainerName({
+      requestedName: req.body.container_name,
+      currentName: agent.container_name,
+      agentName: agent.name,
+      runtimeSelection: runtimeFields,
+    });
     const image = resolveRequestedImage({
       requestedImage: req.body.image,
       runtimeFields,

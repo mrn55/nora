@@ -59,6 +59,22 @@ describe("agent runtime fields", () => {
     );
   });
 
+  it("derives Hermes runtime fields from the backend alias", () => {
+    expect(
+      buildAgentRuntimeFields({
+        backend_type: "hermes",
+      })
+    ).toEqual(
+      expect.objectContaining({
+        runtime_family: "hermes",
+        deploy_target: "docker",
+        sandbox_profile: "standard",
+        backend_type: "hermes",
+        sandbox_type: "standard",
+      })
+    );
+  });
+
   it("collapses unsupported runtime-family values back to the stable OpenClaw contract", () => {
     expect(
       buildAgentRuntimeFields({
@@ -95,6 +111,29 @@ describe("agent runtime fields", () => {
         deploy_target: "k8s",
         sandbox_profile: "standard",
         backend_type: "k8s",
+        sandbox_type: "standard",
+      })
+    );
+  });
+
+  it("switches to Hermes defaults when the requested runtime family changes", () => {
+    expect(
+      resolveRequestedRuntimeFields({
+        request: {
+          runtime_family: "hermes",
+        },
+        fallback: {
+          runtime_family: "openclaw",
+          deploy_target: "k8s",
+          sandbox_profile: "standard",
+        },
+      })
+    ).toEqual(
+      expect.objectContaining({
+        runtime_family: "hermes",
+        deploy_target: "docker",
+        sandbox_profile: "standard",
+        backend_type: "hermes",
         sandbox_type: "standard",
       })
     );

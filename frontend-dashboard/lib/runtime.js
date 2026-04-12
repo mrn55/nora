@@ -1,3 +1,14 @@
+const RUNTIME_FAMILY_LABELS = Object.freeze({
+  openclaw: "OpenClaw",
+  hermes: "Hermes",
+});
+
+export function normalizeRuntimeFamily(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["openclaw", "hermes"].includes(normalized)) return normalized;
+  return null;
+}
+
 export function normalizeDeployTarget(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "kubernetes") return "k8s";
@@ -12,20 +23,89 @@ export function normalizeSandboxProfile(value) {
   return null;
 }
 
-export function runtimeFamilyFromConfig(backendConfig = {}) {
-  return backendConfig?.runtimeFamily || backendConfig?.runtimeFamilies?.[0] || null;
+export function runtimeFamilyFromConfig(backendConfig = {}, runtimeFamily = "") {
+  const normalizedRuntimeFamily = normalizeRuntimeFamily(runtimeFamily);
+  const runtimeFamilies = Array.isArray(backendConfig?.runtimeFamilies)
+    ? backendConfig.runtimeFamilies
+    : [];
+
+  if (normalizedRuntimeFamily) {
+    return runtimeFamilies.find((entry) => entry.id === normalizedRuntimeFamily) || null;
+  }
+
+  return (
+    backendConfig?.runtimeFamily ||
+    runtimeFamilies.find((entry) => entry.isDefault) ||
+    runtimeFamilies[0] ||
+    null
+  );
 }
 
-export function enabledExecutionTargetsFromConfig(backendConfig = {}) {
-  return (backendConfig?.executionTargets || []).filter((target) => target.enabled);
+export function enabledRuntimeFamiliesFromConfig(backendConfig = {}) {
+  return (backendConfig?.runtimeFamilies || []).filter(
+    (runtimeFamily) => runtimeFamily.enabled !== false
+  );
 }
 
-export function visibleExecutionTargetsFromConfig(
+export function visibleRuntimeFamiliesFromConfig(
   backendConfig = {},
   viewerRole = "user"
 ) {
   const isAdmin = viewerRole === "admin";
-  const enabledExecutionTargets = enabledExecutionTargetsFromConfig(backendConfig);
+  const enabledRuntimeFamilies = enabledRuntimeFamiliesFromConfig(backendConfig);
+
+  return isAdmin
+    ? enabledRuntimeFamilies
+    : enabledRuntimeFamilies.filter(
+        (runtimeFamily) => runtimeFamily.availableForOnboarding !== false
+      );
+}
+
+export function pickRuntimeFamilySelection(
+  backendConfig = {},
+  viewerRole = "user",
+  currentRuntimeFamily = ""
+) {
+  const candidates = visibleRuntimeFamiliesFromConfig(backendConfig, viewerRole);
+  const normalizedRuntimeFamily = normalizeRuntimeFamily(currentRuntimeFamily);
+  const current = candidates.find((runtimeFamily) => runtimeFamily.id === normalizedRuntimeFamily);
+  const nextRuntimeFamily =
+    current ||
+    candidates.find((runtimeFamily) => runtimeFamily.available && runtimeFamily.isDefault) ||
+    candidates.find((runtimeFamily) => runtimeFamily.available) ||
+    candidates[0] ||
+    null;
+
+  return nextRuntimeFamily?.id || "";
+}
+
+function executionTargetsForRuntimeFamily(backendConfig = {}, runtimeFamily = "") {
+  const activeRuntimeFamily = runtimeFamilyFromConfig(backendConfig, runtimeFamily);
+  if (Array.isArray(activeRuntimeFamily?.executionTargets)) {
+    return activeRuntimeFamily.executionTargets;
+  }
+  return backendConfig?.executionTargets || [];
+}
+
+export function enabledExecutionTargetsFromConfig(
+  backendConfig = {},
+  runtimeFamily = ""
+) {
+  return executionTargetsForRuntimeFamily(backendConfig, runtimeFamily).filter(
+    (target) => target.enabled
+  );
+}
+
+export function visibleExecutionTargetsFromConfig(
+  backendConfig = {},
+  viewerRole = "user",
+  runtimeFamily = ""
+) {
+  const isAdmin = viewerRole === "admin";
+  const enabledExecutionTargets = enabledExecutionTargetsFromConfig(
+    backendConfig,
+    runtimeFamily
+  );
 
   return isAdmin
     ? enabledExecutionTargets
@@ -34,11 +114,19 @@ export function visibleExecutionTargetsFromConfig(
 
 export function activeExecutionTargetFromConfig(
   backendConfig = {},
-  executionTarget = ""
+  runtimeFamilyOrExecutionTarget = "",
+  maybeExecutionTarget
 ) {
+  const runtimeFamily =
+    maybeExecutionTarget === undefined ? "" : runtimeFamilyOrExecutionTarget;
+  const executionTarget =
+    maybeExecutionTarget === undefined
+      ? runtimeFamilyOrExecutionTarget
+      : maybeExecutionTarget;
   const normalizedExecutionTarget = normalizeDeployTarget(executionTarget);
+
   return (
-    enabledExecutionTargetsFromConfig(backendConfig).find(
+    enabledExecutionTargetsFromConfig(backendConfig, runtimeFamily).find(
       (target) => target.id === normalizedExecutionTarget
     ) || null
   );
@@ -73,9 +161,14 @@ export function activeSandboxOptionFromTarget(
 export function pickExecutionTargetSelection(
   backendConfig = {},
   viewerRole = "user",
-  currentExecutionTarget = ""
+  currentExecutionTarget = "",
+  runtimeFamily = ""
 ) {
-  const candidates = visibleExecutionTargetsFromConfig(backendConfig, viewerRole);
+  const candidates = visibleExecutionTargetsFromConfig(
+    backendConfig,
+    viewerRole,
+    runtimeFamily
+  );
   const normalizedExecutionTarget = normalizeDeployTarget(currentExecutionTarget);
   const current = candidates.find((target) => target.id === normalizedExecutionTarget);
   const nextTarget =
@@ -106,12 +199,21 @@ export function pickSandboxProfileSelection(
   return nextProfile?.id || "";
 }
 
+export function resolveAgentRuntimeFamily(agent = {}) {
+  const explicitRuntimeFamily = normalizeRuntimeFamily(agent.runtime_family);
+  if (explicitRuntimeFamily) return explicitRuntimeFamily;
+
+  const legacyBackend = String(agent.backend_type || "").trim().toLowerCase();
+  if (legacyBackend === "hermes") return "hermes";
+  return "openclaw";
+}
+
 export function resolveAgentExecutionTarget(agent = {}) {
   const explicitDeployTarget = normalizeDeployTarget(agent.deploy_target);
   if (explicitDeployTarget) return explicitDeployTarget;
 
   const legacyBackend = String(agent.backend_type || "").trim().toLowerCase();
-  if (legacyBackend === "nemoclaw") return "docker";
+  if (legacyBackend === "nemoclaw" || legacyBackend === "hermes") return "docker";
 
   return normalizeDeployTarget(legacyBackend) || "docker";
 }
@@ -125,6 +227,37 @@ export function resolveAgentSandboxProfile(agent = {}) {
   return String(agent.backend_type || "").trim().toLowerCase() === "nemoclaw"
     ? "nemoclaw"
     : "standard";
+}
+
+export function resolveBackendTypeForSelection({
+  runtimeFamily = "openclaw",
+  deployTarget = "docker",
+  sandboxProfile = "standard",
+} = {}) {
+  if (normalizeRuntimeFamily(runtimeFamily) === "hermes") {
+    return "hermes";
+  }
+
+  return normalizeSandboxProfile(sandboxProfile) === "nemoclaw"
+    ? "nemoclaw"
+    : normalizeDeployTarget(deployTarget) || "docker";
+}
+
+export function containerNamePrefixForSelection({
+  runtimeFamily = "openclaw",
+  sandboxProfile = "standard",
+} = {}) {
+  if (normalizeRuntimeFamily(runtimeFamily) === "hermes") {
+    return "hermes-agent";
+  }
+
+  return normalizeSandboxProfile(sandboxProfile) === "nemoclaw"
+    ? "oclaw-nemoclaw"
+    : "oclaw-agent";
+}
+
+export function formatRuntimeFamilyLabel(value) {
+  return RUNTIME_FAMILY_LABELS[normalizeRuntimeFamily(value)] || "OpenClaw";
 }
 
 export function formatExecutionTargetLabel(value) {
@@ -143,6 +276,10 @@ export function formatSandboxProfileLabel(value) {
 }
 
 export function formatRuntimePathLabel(agent = {}) {
+  if (resolveAgentRuntimeFamily(agent) === "hermes") {
+    return "Hermes + Docker";
+  }
+
   if (resolveAgentSandboxProfile(agent) === "nemoclaw") {
     return "NemoClaw + OpenClaw";
   }
@@ -159,4 +296,24 @@ export function formatRuntimePathLabel(agent = {}) {
 
 export function isNemoClawSandbox(agent = {}) {
   return resolveAgentSandboxProfile(agent) === "nemoclaw";
+}
+
+export function isHermesRuntime(agent = {}) {
+  return resolveAgentRuntimeFamily(agent) === "hermes";
+}
+
+export function runtimeSupportsGateway(agentOrRuntimeFamily = {}) {
+  const runtimeFamily =
+    typeof agentOrRuntimeFamily === "string"
+      ? normalizeRuntimeFamily(agentOrRuntimeFamily)
+      : resolveAgentRuntimeFamily(agentOrRuntimeFamily);
+  return runtimeFamily !== "hermes";
+}
+
+export function runtimeSupportsMarketplacePublishing(agentOrRuntimeFamily = {}) {
+  const runtimeFamily =
+    typeof agentOrRuntimeFamily === "string"
+      ? normalizeRuntimeFamily(agentOrRuntimeFamily)
+      : resolveAgentRuntimeFamily(agentOrRuntimeFamily);
+  return runtimeFamily !== "hermes";
 }

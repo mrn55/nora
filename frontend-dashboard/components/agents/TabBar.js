@@ -1,4 +1,14 @@
-import { Activity, Terminal, ScrollText, Zap, Settings, ShieldCheck, BarChart3 } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Terminal,
+  ScrollText,
+  Zap,
+  Settings,
+  ShieldCheck,
+  BarChart3,
+} from "lucide-react";
+import { runtimeSupportsGateway } from "../../lib/runtime";
 
 const baseTabs = [
   { id: "overview", label: "Overview", icon: Activity },
@@ -6,6 +16,7 @@ const baseTabs = [
   { id: "terminal", label: "Terminal", icon: Terminal },
   { id: "logs", label: "Logs", icon: ScrollText },
   { id: "openclaw", label: "OpenClaw", icon: Zap },
+  { id: "hermes-webui", label: "Hermes WebUI", icon: Bot, hermesOnly: true },
   { id: "nemoclaw", label: "NemoClaw", icon: ShieldCheck, needsNemoClaw: true },
   { id: "settings", label: "Settings", icon: Settings },
 ];
@@ -14,15 +25,24 @@ export default function TabBar({
   activeTab,
   onTabChange,
   badges = {},
+  runtimeFamily = "",
   sandboxProfile = "",
   sandboxType = "",
 }) {
   const activeSandboxProfile = sandboxProfile || sandboxType;
+  const showGatewayTabs = runtimeSupportsGateway(runtimeFamily);
+  const showHermesWebUi = runtimeFamily === "hermes";
 
   return (
     <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl overflow-x-auto scrollbar-hide w-full">
       {baseTabs
-        .filter((t) => !t.needsNemoClaw || activeSandboxProfile === "nemoclaw")
+        .filter(
+          (tab) =>
+            (showGatewayTabs ||
+              (tab.id !== "openclaw" && tab.id !== "nemoclaw")) &&
+            (showHermesWebUi || !tab.hermesOnly) &&
+            (!tab.needsNemoClaw || activeSandboxProfile === "nemoclaw")
+        )
         .map((tab) => {
           const Icon = tab.icon;
           const badge = badges[tab.id];

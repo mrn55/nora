@@ -8,6 +8,7 @@ import MetricsTab from "../../components/agents/MetricsTab";
 import LogViewer from "../../components/LogViewer";
 import RuntimePathFields from "../../components/RuntimePathFields";
 import OpenClawTab from "../../components/agents/OpenClawTab";
+import HermesWebUITab from "../../components/agents/HermesWebUITab";
 import SettingsTab from "../../components/agents/SettingsTab";
 import NemoClawTab from "../../components/agents/NemoClawTab";
 import StatusBadge from "../../components/agents/StatusBadge";
@@ -18,7 +19,10 @@ import {
   activeSandboxOptionFromTarget,
   formatExecutionTargetLabel,
   formatSandboxProfileLabel,
+  resolveAgentRuntimeFamily,
+  resolveBackendTypeForSelection,
   runtimeFamilyFromConfig,
+  runtimeSupportsGateway,
   resolveAgentExecutionTarget,
   resolveAgentSandboxProfile,
 } from "../../lib/runtime";
@@ -40,8 +44,10 @@ export default function AgentDetail() {
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
   const [duplicateCloneMode, setDuplicateCloneMode] = useState("files_only");
+  const [duplicateRuntimeFamily, setDuplicateRuntimeFamily] = useState("");
   const [duplicateExecutionTarget, setDuplicateExecutionTarget] = useState("");
   const [duplicateSandboxProfile, setDuplicateSandboxProfile] = useState("");
+  const [redeployRuntimeFamily, setRedeployRuntimeFamily] = useState("");
   const [redeployExecutionTarget, setRedeployExecutionTarget] = useState("");
   const [redeploySandboxProfile, setRedeploySandboxProfile] = useState("");
   const [publishName, setPublishName] = useState("");
@@ -130,12 +136,14 @@ export default function AgentDetail() {
   function openDuplicateDialog() {
     setDuplicateCloneMode("files_only");
     setDuplicateName(`${agent?.name || "OpenClaw Agent"} Copy`);
+    setDuplicateRuntimeFamily(resolveAgentRuntimeFamily(agent));
     setDuplicateExecutionTarget(resolveAgentExecutionTarget(agent));
     setDuplicateSandboxProfile(resolveAgentSandboxProfile(agent));
     setShowDuplicateDialog(true);
   }
 
   function openRedeployDialog() {
+    setRedeployRuntimeFamily(resolveAgentRuntimeFamily(agent));
     setRedeployExecutionTarget(resolveAgentExecutionTarget(agent));
     setRedeploySandboxProfile(resolveAgentSandboxProfile(agent));
     setShowRedeployDialog(true);
@@ -230,7 +238,10 @@ export default function AgentDetail() {
         body: JSON.stringify({
           name: trimmedName,
           clone_mode: duplicateCloneMode,
-          runtime_family: runtimeFamilyFromConfig(backendConfig)?.id || "openclaw",
+          runtime_family:
+            duplicateRuntimeFamily ||
+            runtimeFamilyFromConfig(backendConfig)?.id ||
+            "openclaw",
           deploy_target: duplicateExecutionTarget,
           sandbox_profile: duplicateSandboxProfile || "standard",
         }),
@@ -265,7 +276,10 @@ export default function AgentDetail() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          runtime_family: runtimeFamilyFromConfig(backendConfig)?.id || "openclaw",
+          runtime_family:
+            redeployRuntimeFamily ||
+            runtimeFamilyFromConfig(backendConfig)?.id ||
+            "openclaw",
           deploy_target: redeployExecutionTarget,
           sandbox_profile: redeploySandboxProfile || "standard",
         }),
@@ -282,15 +296,20 @@ export default function AgentDetail() {
                 ...current,
                 status: "queued",
                 runtime_family:
+                  redeployRuntimeFamily ||
                   runtimeFamilyFromConfig(backendConfig)?.id ||
                   current.runtime_family ||
                   "openclaw",
                 deploy_target: nextExecutionTarget,
                 sandbox_profile: nextSandboxProfile,
-                backend_type:
-                  nextSandboxProfile === "nemoclaw"
-                    ? "nemoclaw"
-                    : nextExecutionTarget,
+                backend_type: resolveBackendTypeForSelection({
+                  runtimeFamily:
+                    redeployRuntimeFamily ||
+                    current.runtime_family ||
+                    "openclaw",
+                  deployTarget: nextExecutionTarget,
+                  sandboxProfile: nextSandboxProfile,
+                }),
                 sandbox_type: nextSandboxProfile,
               }
             : current
@@ -378,6 +397,22 @@ export default function AgentDetail() {
     }
   }
 
+  const runtimeFamily = resolveAgentRuntimeFamily(agent || {});
+  const supportsGateway = runtimeSupportsGateway(runtimeFamily);
+
+  useEffect(() => {
+    if (
+      runtimeFamily === "hermes" &&
+      (activeTab === "openclaw" || activeTab === "nemoclaw")
+    ) {
+      setActiveTab("overview");
+      return;
+    }
+    if (runtimeFamily !== "hermes" && activeTab === "hermes-webui") {
+      setActiveTab("overview");
+    }
+  }, [activeTab, runtimeFamily]);
+
   if (loading) {
     return (
       <Layout>
@@ -409,6 +444,7 @@ export default function AgentDetail() {
   const sandboxLabel = formatSandboxProfileLabel(sandboxProfile);
   const duplicateActiveExecutionTarget = activeExecutionTargetFromConfig(
     backendConfig,
+    duplicateRuntimeFamily,
     duplicateExecutionTarget
   );
   const duplicateActiveSandboxOption = activeSandboxOptionFromTarget(
@@ -417,6 +453,7 @@ export default function AgentDetail() {
   );
   const redeployActiveExecutionTarget = activeExecutionTargetFromConfig(
     backendConfig,
+    redeployRuntimeFamily,
     redeployExecutionTarget
   );
   const redeployActiveSandboxOption = activeSandboxOptionFromTarget(
@@ -471,25 +508,44 @@ export default function AgentDetail() {
             </p>
             <p className={`text-sm mt-1 ${agent.status === "running" || agent.status === "warning" ? "text-blue-700/80" : "text-amber-700/80"}`}>
               {agent.status === "running" || agent.status === "warning"
-                ? "Check chat, logs, terminal, and the OpenClaw surface from this page before scaling the fleet."
-                : "Watch the logs first, then validate chat, terminal, and the OpenClaw surface as soon as the agent is live."}
+                ? supportsGateway
+                  ? "Check chat, logs, terminal, and the OpenClaw surface from this page before scaling the fleet."
+                  : "Check Hermes WebUI, logs, and terminal from this page before scaling the fleet."
+                : supportsGateway
+                  ? "Watch the logs first, then validate chat, terminal, and the OpenClaw surface as soon as the agent is live."
+                  : "Watch the logs first, then validate Hermes WebUI and terminal access as soon as the agent is live."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => setActiveTab("openclaw")} className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 hover:bg-slate-50 transition-all">
-              <Zap size={14} />
-              OpenClaw
-            </button>
+            {supportsGateway ? (
+              <button onClick={() => setActiveTab("openclaw")} className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 hover:bg-slate-50 transition-all">
+                <Zap size={14} />
+                OpenClaw
+              </button>
+            ) : (
+              <button onClick={() => setActiveTab("hermes-webui")} className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 hover:bg-slate-50 transition-all">
+                <Bot size={14} />
+                Hermes WebUI
+              </button>
+            )}
             <button onClick={() => setActiveTab("logs")} className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 hover:bg-slate-50 transition-all">
               <ScrollText size={14} />
               Logs
             </button>
             <button
-              onClick={() => setActiveTab(agent.status === "running" ? "terminal" : "openclaw")}
+              onClick={() =>
+                setActiveTab(
+                  agent.status === "running"
+                    ? "terminal"
+                    : supportsGateway
+                      ? "openclaw"
+                      : "logs"
+                )
+              }
               className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 hover:bg-slate-50 transition-all"
             >
-              {agent.status === "running" ? <Terminal size={14} /> : <MessagesSquare size={14} />}
-              {agent.status === "running" ? "Terminal" : "Chat"}
+              {agent.status === "running" ? <Terminal size={14} /> : supportsGateway ? <MessagesSquare size={14} /> : <ScrollText size={14} />}
+              {agent.status === "running" ? "Terminal" : supportsGateway ? "Chat" : "Logs"}
             </button>
           </div>
         </div>
@@ -498,6 +554,7 @@ export default function AgentDetail() {
         <TabBar
           activeTab={activeTab}
           onTabChange={setActiveTab}
+          runtimeFamily={runtimeFamily}
           sandboxProfile={sandboxProfile}
         />
 
@@ -566,9 +623,15 @@ export default function AgentDetail() {
             />
           </div>
 
-          {activeTab === "openclaw" && <OpenClawTab agentId={id} agentStatus={agent.status} />}
+          {activeTab === "openclaw" && supportsGateway && (
+            <OpenClawTab agentId={id} agentStatus={agent.status} />
+          )}
 
-          {activeTab === "nemoclaw" && sandboxProfile === "nemoclaw" && (
+          {activeTab === "hermes-webui" && runtimeFamily === "hermes" && (
+            <HermesWebUITab agentId={id} agentStatus={agent.status} />
+          )}
+
+          {activeTab === "nemoclaw" && supportsGateway && sandboxProfile === "nemoclaw" && (
             <NemoClawTab agentId={id} agentStatus={agent.status} />
           )}
 
@@ -595,8 +658,10 @@ export default function AgentDetail() {
         onCloneModeChange={setDuplicateCloneMode}
         backendConfig={backendConfig}
         viewerRole={viewerRole}
+        runtimeFamily={duplicateRuntimeFamily}
         executionTarget={duplicateExecutionTarget}
         sandboxProfile={duplicateSandboxProfile}
+        onRuntimeFamilyChange={setDuplicateRuntimeFamily}
         onExecutionTargetChange={setDuplicateExecutionTarget}
         onSandboxProfileChange={setDuplicateSandboxProfile}
         canConfirm={canDuplicate}
@@ -613,8 +678,10 @@ export default function AgentDetail() {
         agentName={agent.name}
         backendConfig={backendConfig}
         viewerRole={viewerRole}
+        runtimeFamily={redeployRuntimeFamily}
         executionTarget={redeployExecutionTarget}
         sandboxProfile={redeploySandboxProfile}
+        onRuntimeFamilyChange={setRedeployRuntimeFamily}
         onExecutionTargetChange={setRedeployExecutionTarget}
         onSandboxProfileChange={setRedeploySandboxProfile}
         canConfirm={canRedeploy}
@@ -661,8 +728,10 @@ function DuplicateAgentDialog({
   sourceName,
   backendConfig,
   viewerRole,
+  runtimeFamily,
   executionTarget,
   sandboxProfile,
+  onRuntimeFamilyChange,
   onExecutionTargetChange,
   onSandboxProfileChange,
   canConfirm,
@@ -719,8 +788,10 @@ function DuplicateAgentDialog({
           <RuntimePathFields
             backendConfig={backendConfig}
             viewerRole={viewerRole}
+            runtimeFamily={runtimeFamily}
             executionTarget={executionTarget}
             sandboxProfile={sandboxProfile}
+            onRuntimeFamilyChange={onRuntimeFamilyChange}
             onExecutionTargetChange={onExecutionTargetChange}
             onSandboxProfileChange={onSandboxProfileChange}
             disabled={loading}
@@ -755,8 +826,10 @@ function RedeployAgentDialog({
   agentName,
   backendConfig,
   viewerRole,
+  runtimeFamily,
   executionTarget,
   sandboxProfile,
+  onRuntimeFamilyChange,
   onExecutionTargetChange,
   onSandboxProfileChange,
   canConfirm,
@@ -787,8 +860,10 @@ function RedeployAgentDialog({
         <RuntimePathFields
           backendConfig={backendConfig}
           viewerRole={viewerRole}
+          runtimeFamily={runtimeFamily}
           executionTarget={executionTarget}
           sandboxProfile={sandboxProfile}
+          onRuntimeFamilyChange={onRuntimeFamilyChange}
           onExecutionTargetChange={onExecutionTargetChange}
           onSandboxProfileChange={onSandboxProfileChange}
           disabled={loading}

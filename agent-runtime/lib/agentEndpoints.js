@@ -13,6 +13,20 @@ function normalizePort(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function runtimeExposesGateway(agent) {
+  const runtimeFamily = String(
+    agent?.runtime_family ?? agent?.runtimeFamily ?? ""
+  )
+    .trim()
+    .toLowerCase();
+  if (runtimeFamily) return runtimeFamily !== "hermes";
+
+  const backendType = String(agent?.backend_type ?? agent?.backendType ?? "")
+    .trim()
+    .toLowerCase();
+  return backendType !== "hermes";
+}
+
 function joinHttpUrl(host, port, path = "/") {
   return `http://${host}:${port}${normalizePath(path)}`;
 }
@@ -34,6 +48,7 @@ function resolveGatewayAddress(
   { publishedHost = process.env.GATEWAY_HOST || "host.docker.internal" } = {}
 ) {
   if (!agent) return null;
+  if (!runtimeExposesGateway(agent)) return null;
 
   if (agent.gateway_host && agent.gateway_port) {
     return {

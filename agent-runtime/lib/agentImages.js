@@ -4,6 +4,7 @@ const {
   getDefaultDeployTarget,
   isKnownSandboxProfile,
   normalizeBackendName,
+  runtimeFamilyForBackend,
 } = require("./backendCatalog");
 
 function getProvisionerBackendName() {
@@ -16,6 +17,10 @@ function getStandardDockerAgentImage() {
 
 function getStandardDockerPackageSpec() {
   return process.env.OPENCLAW_DOCKER_PACKAGE || "openclaw@latest";
+}
+
+function getHermesDockerAgentImage() {
+  return process.env.HERMES_DOCKER_IMAGE || "nousresearch/hermes-agent:latest";
 }
 
 function getNemoClawAgentImage() {
@@ -57,23 +62,29 @@ function getDefaultAgentImage({
   deploy_target,
   deployTarget,
 } = {}) {
+  const resolvedBackend = resolveProvisionerBackend({
+    backend,
+    deployTarget: deploy_target ?? deployTarget,
+    sandboxProfile:
+      normalizeRequestedSandboxProfile(
+        sandbox_profile ?? sandboxProfile ?? sandbox
+      ) || "standard",
+  });
+  const resolvedRuntimeFamily = runtimeFamilyForBackend(resolvedBackend);
   const resolvedSandboxProfile =
     normalizeRequestedSandboxProfile(
       sandbox_profile ?? sandboxProfile ?? sandbox
     ) ||
-    (String(backend || "").trim().toLowerCase() === "nemoclaw"
-      ? "nemoclaw"
-      : "standard");
+    (resolvedBackend === "nemoclaw" ? "nemoclaw" : "standard");
+
+  if (resolvedRuntimeFamily === "hermes") {
+    return getHermesDockerAgentImage();
+  }
 
   if (resolvedSandboxProfile === "nemoclaw") {
     return getNemoClawAgentImage();
   }
 
-  const resolvedBackend = resolveProvisionerBackend({
-    backend,
-    deployTarget: deploy_target ?? deployTarget,
-    sandboxProfile: resolvedSandboxProfile,
-  });
   const resolvedDeployTarget =
     deploy_target ??
     deployTarget ??
@@ -89,6 +100,7 @@ function getDefaultAgentImage({
 
 module.exports = {
   getDefaultAgentImage,
+  getHermesDockerAgentImage,
   getNemoClawAgentImage,
   getProvisionerBackendName,
   getStandardDockerAgentImage,

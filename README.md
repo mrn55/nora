@@ -269,7 +269,7 @@ Nora starts as a single Docker Compose stack and scales into serious infrastruct
 | Variable | Default | Description |
 |---|---|---|
 | `PLATFORM_MODE` | `selfhosted` | `paas` to run Nora as your own hosted platform |
-| `ENABLED_BACKENDS` | `docker` | Comma-separated: `docker`, `k8s`, `proxmox`, `nemoclaw` |
+| `ENABLED_BACKENDS` | `docker` | Comma-separated: `docker`, `k8s`, `proxmox`, `nemoclaw`, `hermes` |
 | `NGINX_CONFIG_FILE` | `nginx.conf` | `nginx.public.conf` for public-domain mode |
 | `NGINX_HTTP_PORT` | `8080` | `80` for public deployments |
 | `K8S_EXPOSURE_MODE` | `cluster-ip` | `node-port` for local Kind verification |

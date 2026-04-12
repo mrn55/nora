@@ -4,8 +4,10 @@ import {
   activeExecutionTargetFromConfig,
   activeSandboxOptionFromTarget,
   pickExecutionTargetSelection,
+  pickRuntimeFamilySelection,
   pickSandboxProfileSelection,
   runtimeFamilyFromConfig,
+  visibleRuntimeFamiliesFromConfig,
   visibleExecutionTargetsFromConfig,
   visibleSandboxOptionsFromTarget,
 } from "../lib/runtime";
@@ -20,23 +22,39 @@ function optionLabel(option) {
 export default function RuntimePathFields({
   backendConfig = null,
   viewerRole = "user",
+  runtimeFamily = "",
+  onRuntimeFamilyChange,
   executionTarget = "",
   sandboxProfile = "",
   onExecutionTargetChange,
   onSandboxProfileChange,
   disabled = false,
 }) {
-  const runtimeFamily = useMemo(
-    () => runtimeFamilyFromConfig(backendConfig),
-    [backendConfig]
+  const activeRuntimeFamily = useMemo(
+    () => runtimeFamilyFromConfig(backendConfig, runtimeFamily),
+    [backendConfig, runtimeFamily]
   );
-  const visibleExecutionTargets = useMemo(
-    () => visibleExecutionTargetsFromConfig(backendConfig, viewerRole),
+  const visibleRuntimeFamilies = useMemo(
+    () => visibleRuntimeFamiliesFromConfig(backendConfig, viewerRole),
     [backendConfig, viewerRole]
   );
+  const visibleExecutionTargets = useMemo(
+    () =>
+      visibleExecutionTargetsFromConfig(
+        backendConfig,
+        viewerRole,
+        activeRuntimeFamily?.id || runtimeFamily
+      ),
+    [backendConfig, viewerRole, activeRuntimeFamily?.id, runtimeFamily]
+  );
   const activeExecutionTarget = useMemo(
-    () => activeExecutionTargetFromConfig(backendConfig, executionTarget),
-    [backendConfig, executionTarget]
+    () =>
+      activeExecutionTargetFromConfig(
+        backendConfig,
+        activeRuntimeFamily?.id || runtimeFamily,
+        executionTarget
+      ),
+    [backendConfig, activeRuntimeFamily?.id, runtimeFamily, executionTarget]
   );
   const visibleSandboxOptions = useMemo(
     () => visibleSandboxOptionsFromTarget(activeExecutionTarget, viewerRole),
@@ -48,16 +66,36 @@ export default function RuntimePathFields({
   );
 
   useEffect(() => {
+    if (!backendConfig || typeof onRuntimeFamilyChange !== "function") return;
+    const nextRuntimeFamily = pickRuntimeFamilySelection(
+      backendConfig,
+      viewerRole,
+      runtimeFamily
+    );
+    if (nextRuntimeFamily && nextRuntimeFamily !== runtimeFamily) {
+      onRuntimeFamilyChange(nextRuntimeFamily);
+    }
+  }, [backendConfig, onRuntimeFamilyChange, runtimeFamily, viewerRole]);
+
+  useEffect(() => {
     if (!backendConfig || typeof onExecutionTargetChange !== "function") return;
     const nextExecutionTarget = pickExecutionTargetSelection(
       backendConfig,
       viewerRole,
-      executionTarget
+      executionTarget,
+      activeRuntimeFamily?.id || runtimeFamily
     );
     if (nextExecutionTarget && nextExecutionTarget !== executionTarget) {
       onExecutionTargetChange(nextExecutionTarget);
     }
-  }, [backendConfig, executionTarget, onExecutionTargetChange, viewerRole]);
+  }, [
+    backendConfig,
+    executionTarget,
+    onExecutionTargetChange,
+    viewerRole,
+    activeRuntimeFamily?.id,
+    runtimeFamily,
+  ]);
 
   useEffect(() => {
     if (
@@ -99,13 +137,38 @@ export default function RuntimePathFields({
           Runtime Family
         </p>
         <p className="mt-1 text-sm font-bold text-slate-900">
-          {runtimeFamily?.label || "OpenClaw"}
+          {activeRuntimeFamily?.label || "OpenClaw"}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          {runtimeFamily?.operatorContractSummary ||
+          {activeRuntimeFamily?.operatorContractSummary ||
             "Pick where the OpenClaw runtime executes and which sandbox profile it uses."}
         </p>
       </div>
+
+      {visibleRuntimeFamilies.length > 1 ? (
+        <div>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Runtime Family
+          </label>
+          <select
+            value={runtimeFamily}
+            onChange={(event) => onRuntimeFamilyChange?.(event.target.value)}
+            disabled={disabled || visibleRuntimeFamilies.length === 0}
+            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+          >
+            {visibleRuntimeFamilies.map((family) => (
+              <option key={family.id} value={family.id} disabled={!family.available}>
+                {optionLabel(family)}
+              </option>
+            ))}
+          </select>
+          {activeRuntimeFamily?.issue && !activeRuntimeFamily.available ? (
+            <p className="mt-2 text-xs leading-relaxed text-amber-600">
+              {activeRuntimeFamily.issue}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div>
         <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-400">

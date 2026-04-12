@@ -1,10 +1,17 @@
 const DEFAULT_RUNTIME_FAMILY = "openclaw";
-const KNOWN_BACKENDS = Object.freeze(["docker", "k8s", "proxmox", "nemoclaw"]);
+const KNOWN_RUNTIME_FAMILIES = Object.freeze(["openclaw", "hermes"]);
+const KNOWN_BACKENDS = Object.freeze([
+  "docker",
+  "k8s",
+  "proxmox",
+  "nemoclaw",
+  "hermes",
+]);
 const KNOWN_DEPLOY_TARGETS = Object.freeze(["docker", "k8s", "proxmox"]);
 const KNOWN_SANDBOX_PROFILES = Object.freeze(["standard", "nemoclaw"]);
 const PROXMOX_RELEASE_BLOCKER_ISSUE =
   "Proxmox execution target is not release-ready in this Nora build. New Proxmox deployments are disabled for the first release.";
-const RUNTIME_OPERATOR_CONTRACT = Object.freeze([
+const OPENCLAW_OPERATOR_CONTRACT = Object.freeze([
   "deploy/redeploy",
   "readiness",
   "gateway/chat",
@@ -12,6 +19,13 @@ const RUNTIME_OPERATOR_CONTRACT = Object.freeze([
   "exec",
   "bootstrap/template files",
   "auth/integration sync",
+]);
+const HERMES_OPERATOR_CONTRACT = Object.freeze([
+  "deploy/redeploy",
+  "readiness",
+  "logs",
+  "exec",
+  "provider/integration env sync",
 ]);
 const MATURITY_METADATA = Object.freeze({
   ga: Object.freeze({
@@ -40,17 +54,32 @@ const MATURITY_METADATA = Object.freeze({
   }),
 });
 const RUNTIME_FAMILY_METADATA = Object.freeze({
-  id: DEFAULT_RUNTIME_FAMILY,
-  label: "OpenClaw",
-  summary:
-    "Default runtime family for Nora. Use deploy targets and sandbox profiles to change placement or isolation without changing the operator workflow.",
-  contractStatus: "stable",
-  contractStatusLabel: "Stable contract",
-  operatorContract: [...RUNTIME_OPERATOR_CONTRACT],
-  operatorContractSummary:
-    "Deploy/redeploy, readiness, gateway/chat, logs, exec, bootstrap/template files, and auth/integration sync all stay inside the OpenClaw contract.",
-  expansionPolicy:
-    "Add another runtime family only when it can satisfy Nora's full operator contract end-to-end.",
+  openclaw: Object.freeze({
+    id: "openclaw",
+    label: "OpenClaw",
+    summary:
+      "Default runtime family for Nora. Use deploy targets and sandbox profiles to change placement or isolation without changing the operator workflow.",
+    contractStatus: "stable",
+    contractStatusLabel: "Stable contract",
+    operatorContract: [...OPENCLAW_OPERATOR_CONTRACT],
+    operatorContractSummary:
+      "Deploy/redeploy, readiness, gateway/chat, logs, exec, bootstrap/template files, and auth/integration sync all stay inside the OpenClaw contract.",
+    expansionPolicy:
+      "Add another runtime family only when it can satisfy Nora's full operator contract end-to-end.",
+  }),
+  hermes: Object.freeze({
+    id: "hermes",
+    label: "Hermes",
+    summary:
+      "Deploy Nous Hermes Agent as a Docker-managed runtime when you want Nora lifecycle control without the OpenClaw gateway surface.",
+    contractStatus: "deployment-first",
+    contractStatusLabel: "Deployment-first contract",
+    operatorContract: [...HERMES_OPERATOR_CONTRACT],
+    operatorContractSummary:
+      "Deploy/redeploy, readiness, logs, exec, and provider or integration env sync stay inside the Hermes contract. OpenClaw gateway and chat surfaces are not part of this runtime family.",
+    expansionPolicy:
+      "Hermes currently ships as a Docker-only runtime path backed by its own API server and filesystem layout.",
+  }),
 });
 const EXECUTION_TARGET_METADATA = Object.freeze({
   docker: Object.freeze({
@@ -60,7 +89,7 @@ const EXECUTION_TARGET_METADATA = Object.freeze({
     summary:
       "Containerized runtime on the local Docker host. This is the recommended default for most self-hosted deployments.",
     detail:
-      "OpenClaw + Docker agents are deployed as isolated containers. This is the fastest and clearest path from install to live operations.",
+      "Run the selected runtime family as an isolated container on the local Docker host. This is the fastest and clearest path from install to live operations.",
     badges: ["Fast path", "Local socket", "General purpose"],
   }),
   k8s: Object.freeze({
@@ -70,7 +99,7 @@ const EXECUTION_TARGET_METADATA = Object.freeze({
     summary:
       "Run agents as Kubernetes workloads when Nora should provision into a shared cluster instead of the local Docker host.",
     detail:
-      "OpenClaw + Kubernetes agents run as Deployments and Services. Use this when your control plane is wired to a Kubernetes cluster.",
+      "Use a shared cluster when your control plane is wired to Kubernetes and you want Nora to place runtimes as Deployments and Services.",
     badges: ["Cluster workload", "Service-backed", "Kube API"],
   }),
   proxmox: Object.freeze({
@@ -80,7 +109,7 @@ const EXECUTION_TARGET_METADATA = Object.freeze({
     summary:
       "Provision agents as Proxmox LXCs when your infrastructure standard is VM and LXC orchestration through the Proxmox API.",
     detail:
-      "OpenClaw + Proxmox agents are provisioned as LXCs through the Proxmox API. This path depends on external Proxmox configuration and is blocked for the first release.",
+      "Use Proxmox when Nora should create LXCs through the Proxmox API instead of scheduling onto Docker or Kubernetes.",
     badges: ["LXC", "Proxmox API", "Infrastructure-specific"],
   }),
 });
@@ -89,9 +118,9 @@ const SANDBOX_PROFILE_METADATA = Object.freeze({
     id: "standard",
     label: "Standard",
     summary:
-      "Default OpenClaw runtime environment. Use this when you want the normal Nora operator contract on the chosen execution target.",
+      "Default runtime environment for the selected Nora runtime family and execution target.",
     detail:
-      "Standard keeps the usual OpenClaw runtime workflow while the execution target decides where the runtime is provisioned.",
+      "Standard keeps the usual runtime workflow while the runtime family decides the operator contract and the execution target decides where the runtime is provisioned.",
     badges: ["Default"],
   }),
   nemoclaw: Object.freeze({
@@ -107,6 +136,7 @@ const SANDBOX_PROFILE_METADATA = Object.freeze({
 const BACKEND_METADATA = Object.freeze({
   docker: Object.freeze({
     id: "docker",
+    runtimeFamily: "openclaw",
     label: "OpenClaw + Docker",
     shortLabel: "Docker",
     deployTarget: "docker",
@@ -120,6 +150,7 @@ const BACKEND_METADATA = Object.freeze({
   }),
   k8s: Object.freeze({
     id: "k8s",
+    runtimeFamily: "openclaw",
     label: "OpenClaw + Kubernetes",
     shortLabel: "Kubernetes",
     deployTarget: "k8s",
@@ -133,6 +164,7 @@ const BACKEND_METADATA = Object.freeze({
   }),
   proxmox: Object.freeze({
     id: "proxmox",
+    runtimeFamily: "openclaw",
     label: "OpenClaw + Proxmox",
     shortLabel: "Proxmox",
     deployTarget: "proxmox",
@@ -146,6 +178,7 @@ const BACKEND_METADATA = Object.freeze({
   }),
   nemoclaw: Object.freeze({
     id: "nemoclaw",
+    runtimeFamily: "openclaw",
     label: "NemoClaw + OpenClaw",
     shortLabel: "NemoClaw",
     deployTarget: "docker",
@@ -157,6 +190,20 @@ const BACKEND_METADATA = Object.freeze({
       "NemoClaw + OpenClaw agents run in NVIDIA secure sandboxes with deny-by-default networking and capability-restricted containers.",
     badges: ["Secure sandbox", "Deny-by-default network", "Capability-restricted"],
   }),
+  hermes: Object.freeze({
+    id: "hermes",
+    runtimeFamily: "hermes",
+    label: "Hermes + Docker",
+    shortLabel: "Hermes",
+    deployTarget: "docker",
+    sandboxProfile: "standard",
+    maturityTier: "experimental",
+    summary:
+      "Deploy Nous Hermes Agent as a Docker container managed by Nora.",
+    detail:
+      "Hermes agents run as Docker containers using Hermes's built-in API server for readiness, logs, exec, and provider or integration env sync without the OpenClaw gateway surface.",
+    badges: ["Docker-only", "API server", "Experimental"],
+  }),
 });
 const NEMOCLAW_MODELS = Object.freeze([
   "nvidia/nemotron-3-super-120b-a12b",
@@ -164,6 +211,13 @@ const NEMOCLAW_MODELS = Object.freeze([
   "nvidia/llama-3.3-nemotron-super-49b-v1.5",
   "nvidia/nemotron-3-nano-30b-a3b",
 ]);
+
+function normalizeRuntimeFamilyName(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return KNOWN_RUNTIME_FAMILIES.includes(normalized)
+    ? normalized
+    : DEFAULT_RUNTIME_FAMILY;
+}
 
 function normalizeBackendName(value) {
   const normalized = String(value || "docker").trim().toLowerCase();
@@ -175,6 +229,11 @@ function normalizeDeployTargetName(value) {
   const normalized = String(value || "docker").trim().toLowerCase();
   if (normalized === "kubernetes") return "k8s";
   return KNOWN_DEPLOY_TARGETS.includes(normalized) ? normalized : "docker";
+}
+
+function isKnownRuntimeFamily(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return KNOWN_RUNTIME_FAMILIES.includes(normalized);
 }
 
 function isKnownBackend(value) {
@@ -192,12 +251,56 @@ function isKnownSandboxProfile(value) {
   return KNOWN_SANDBOX_PROFILES.includes(normalized);
 }
 
+function getBackendMetadata(backend) {
+  return BACKEND_METADATA[normalizeBackendName(backend)];
+}
+
+function getRuntimeFamilyMetadata(runtimeFamily) {
+  return RUNTIME_FAMILY_METADATA[normalizeRuntimeFamilyName(runtimeFamily)];
+}
+
+function getExecutionTargetMetadata(deployTarget) {
+  return EXECUTION_TARGET_METADATA[normalizeDeployTargetName(deployTarget)];
+}
+
+function getSandboxProfileMetadata(sandboxProfile) {
+  return SANDBOX_PROFILE_METADATA[
+    isKnownSandboxProfile(sandboxProfile) ? sandboxProfile : "standard"
+  ];
+}
+
+function runtimeFamilyForBackend(backend) {
+  return getBackendMetadata(backend)?.runtimeFamily || DEFAULT_RUNTIME_FAMILY;
+}
+
+function backendForRuntimeSelection({
+  runtimeFamily = DEFAULT_RUNTIME_FAMILY,
+  deployTarget = "docker",
+  sandboxProfile = "standard",
+} = {}) {
+  const normalizedRuntimeFamily = normalizeRuntimeFamilyName(runtimeFamily);
+  if (normalizedRuntimeFamily === "hermes") {
+    return "hermes";
+  }
+
+  return sandboxProfile === "nemoclaw"
+    ? "nemoclaw"
+    : normalizeDeployTargetName(deployTarget);
+}
+
 function sandboxForBackend(backend) {
   return getBackendMetadata(backend)?.sandboxProfile || "standard";
 }
 
 function selectionTypeForBackend(backend) {
-  return normalizeBackendName(backend) === "nemoclaw"
+  const normalizedBackend = normalizeBackendName(backend);
+  const runtimeFamily = runtimeFamilyForBackend(normalizedBackend);
+
+  if (runtimeFamily !== DEFAULT_RUNTIME_FAMILY) {
+    return "runtime_family";
+  }
+
+  return normalizedBackend === "nemoclaw"
     ? "sandbox_profile"
     : "deploy_target";
 }
@@ -225,7 +328,10 @@ function buildMaturityFields(maturityTier) {
   };
 }
 
-function resolveMaturityTier({ deployTarget, sandboxProfile }) {
+function resolveMaturityTier({ runtimeFamily, deployTarget, sandboxProfile }) {
+  if (normalizeRuntimeFamilyName(runtimeFamily) === "hermes") {
+    return "experimental";
+  }
   if (sandboxProfile === "nemoclaw") return "experimental";
 
   switch (normalizeDeployTargetName(deployTarget)) {
@@ -236,20 +342,6 @@ function resolveMaturityTier({ deployTarget, sandboxProfile }) {
     default:
       return "ga";
   }
-}
-
-function getBackendMetadata(backend) {
-  return BACKEND_METADATA[normalizeBackendName(backend)];
-}
-
-function getExecutionTargetMetadata(deployTarget) {
-  return EXECUTION_TARGET_METADATA[normalizeDeployTargetName(deployTarget)];
-}
-
-function getSandboxProfileMetadata(sandboxProfile) {
-  return SANDBOX_PROFILE_METADATA[
-    isKnownSandboxProfile(sandboxProfile) ? sandboxProfile : "standard"
-  ];
 }
 
 function parseEnabledBackendList(rawValue) {
@@ -279,11 +371,34 @@ function getEnabledBackends(env = process.env) {
   return ["docker"];
 }
 
-function getEnabledDeployTargets(env = process.env) {
+function getEnabledRuntimeFamilies(env = process.env) {
+  const seen = new Set();
+  const runtimeFamilies = [];
+
+  for (const backend of getEnabledBackends(env)) {
+    const runtimeFamily = runtimeFamilyForBackend(backend);
+    if (seen.has(runtimeFamily)) continue;
+    seen.add(runtimeFamily);
+    runtimeFamilies.push(runtimeFamily);
+  }
+
+  return runtimeFamilies.length > 0
+    ? runtimeFamilies
+    : [DEFAULT_RUNTIME_FAMILY];
+}
+
+function getEnabledDeployTargets(env = process.env, options = {}) {
+  const runtimeFamily = isKnownRuntimeFamily(options.runtimeFamily)
+    ? normalizeRuntimeFamilyName(options.runtimeFamily)
+    : null;
   const seen = new Set();
   const enabledDeployTargets = [];
 
   for (const backend of getEnabledBackends(env)) {
+    if (runtimeFamily && runtimeFamilyForBackend(backend) !== runtimeFamily) {
+      continue;
+    }
+
     const deployTarget = deployTargetForBackend(backend);
     if (seen.has(deployTarget)) continue;
     seen.add(deployTarget);
@@ -293,11 +408,18 @@ function getEnabledDeployTargets(env = process.env) {
   return enabledDeployTargets;
 }
 
-function getEnabledSandboxProfiles(env = process.env) {
+function getEnabledSandboxProfiles(env = process.env, options = {}) {
+  const runtimeFamily = isKnownRuntimeFamily(options.runtimeFamily)
+    ? normalizeRuntimeFamilyName(options.runtimeFamily)
+    : null;
   const seen = new Set();
   const enabledSandboxProfiles = [];
 
   for (const backend of getEnabledBackends(env)) {
+    if (runtimeFamily && runtimeFamilyForBackend(backend) !== runtimeFamily) {
+      continue;
+    }
+
     const sandboxProfile = sandboxForBackend(backend);
     if (seen.has(sandboxProfile)) continue;
     seen.add(sandboxProfile);
@@ -308,7 +430,14 @@ function getEnabledSandboxProfiles(env = process.env) {
 }
 
 function getDefaultBackend(env = process.env, options = {}) {
-  const enabledBackends = getEnabledBackends(env);
+  const requestedRuntimeFamily = isKnownRuntimeFamily(options.runtimeFamily)
+    ? normalizeRuntimeFamilyName(options.runtimeFamily)
+    : null;
+  const enabledBackends = getEnabledBackends(env).filter((backend) =>
+    requestedRuntimeFamily
+      ? runtimeFamilyForBackend(backend) === requestedRuntimeFamily
+      : true
+  );
   const availableEnabledBackends = enabledBackends.filter(
     (backend) => backendConfigIssue(backend, env) == null
   );
@@ -333,7 +462,15 @@ function getDefaultBackend(env = process.env, options = {}) {
     if (matching) return matching;
   }
 
-  return candidateBackends[0] || "docker";
+  if (candidateBackends.length > 0) {
+    return candidateBackends[0];
+  }
+
+  return requestedRuntimeFamily === "hermes" ? "hermes" : "docker";
+}
+
+function getDefaultRuntimeFamily(env = process.env) {
+  return runtimeFamilyForBackend(getDefaultBackend(env));
 }
 
 function getDefaultDeployTarget(env = process.env, options = {}) {
@@ -359,16 +496,19 @@ function backendConfigIssue(backend, env = process.env) {
 function buildCatalogEntry(backendId, env = process.env, options = {}) {
   const normalized = normalizeBackendName(backendId);
   const metadata = getBackendMetadata(normalized);
+  const runtimeFamily = runtimeFamilyForBackend(normalized);
+  const runtimeFamilyMetadata = getRuntimeFamilyMetadata(runtimeFamily);
   const issue = backendConfigIssue(normalized, env);
   const enabledSet = options.enabledSet || new Set(getEnabledBackends(env));
   const enabled = enabledSet.has(normalized);
-  const defaultBackend = options.defaultBackend || getDefaultBackend(env);
+  const defaultBackend =
+    options.defaultBackend || getDefaultBackend(env, { runtimeFamily });
   const sandboxProfile = metadata?.sandboxProfile || sandboxForBackend(normalized);
   const deployTarget = metadata?.deployTarget || deployTargetForBackend(normalized);
   const deployTargetMetadata = getExecutionTargetMetadata(deployTarget);
   const maturityTier =
     metadata?.maturityTier ||
-    resolveMaturityTier({ deployTarget, sandboxProfile });
+    resolveMaturityTier({ runtimeFamily, deployTarget, sandboxProfile });
   const maturityFields = buildMaturityFields(maturityTier);
 
   return {
@@ -388,8 +528,8 @@ function buildCatalogEntry(backendId, env = process.env, options = {}) {
         ? env.NEMOCLAW_SANDBOX_IMAGE ||
           "ghcr.io/nvidia/openshell-community/sandboxes/openclaw"
         : null,
-    runtimeFamily: RUNTIME_FAMILY_METADATA.id,
-    runtimeFamilyLabel: RUNTIME_FAMILY_METADATA.label,
+    runtimeFamily: runtimeFamilyMetadata.id,
+    runtimeFamilyLabel: runtimeFamilyMetadata.label,
     selectionId: normalized,
     selectionLabel: metadata.label,
     selectionType: selectionTypeForBackend(normalized),
@@ -403,13 +543,45 @@ function buildCatalogEntry(backendId, env = process.env, options = {}) {
   };
 }
 
-function buildSandboxProfileOption(deployTarget, sandboxProfile, env = process.env, options = {}) {
+function supportedSandboxProfilesForDeployTarget(
+  runtimeFamily,
+  deployTarget
+) {
+  const normalizedRuntimeFamily = normalizeRuntimeFamilyName(runtimeFamily);
+  const normalizedDeployTarget = normalizeDeployTargetName(deployTarget);
+
+  if (normalizedRuntimeFamily === "hermes") {
+    return normalizedDeployTarget === "docker" ? ["standard"] : [];
+  }
+
+  return normalizedDeployTarget === "docker"
+    ? ["standard", "nemoclaw"]
+    : ["standard"];
+}
+
+function executionTargetsForRuntimeFamily(runtimeFamily) {
+  return normalizeRuntimeFamilyName(runtimeFamily) === "hermes"
+    ? ["docker"]
+    : [...KNOWN_DEPLOY_TARGETS];
+}
+
+function buildSandboxProfileOption(
+  runtimeFamily,
+  deployTarget,
+  sandboxProfile,
+  env = process.env,
+  options = {}
+) {
+  const normalizedRuntimeFamily = normalizeRuntimeFamilyName(runtimeFamily);
   const normalizedDeployTarget = normalizeDeployTargetName(deployTarget);
   const normalizedSandboxProfile = isKnownSandboxProfile(sandboxProfile)
     ? sandboxProfile
     : "standard";
-  const legacyBackendId =
-    normalizedSandboxProfile === "nemoclaw" ? "nemoclaw" : normalizedDeployTarget;
+  const legacyBackendId = backendForRuntimeSelection({
+    runtimeFamily: normalizedRuntimeFamily,
+    deployTarget: normalizedDeployTarget,
+    sandboxProfile: normalizedSandboxProfile,
+  });
   const backendEntry = buildCatalogEntry(legacyBackendId, env, options);
   const sandboxMetadata = getSandboxProfileMetadata(normalizedSandboxProfile);
   const deployTargetMetadata = getExecutionTargetMetadata(normalizedDeployTarget);
@@ -439,6 +611,7 @@ function buildSandboxProfileOption(deployTarget, sandboxProfile, env = process.e
     availableForOnboarding: backendEntry.availableForOnboarding,
     ...buildMaturityFields(
       resolveMaturityTier({
+        runtimeFamily: normalizedRuntimeFamily,
         deployTarget: normalizedDeployTarget,
         sandboxProfile: normalizedSandboxProfile,
       })
@@ -446,15 +619,27 @@ function buildSandboxProfileOption(deployTarget, sandboxProfile, env = process.e
   };
 }
 
-function buildExecutionTargetEntry(deployTarget, env = process.env, options = {}) {
+function buildExecutionTargetEntry(
+  runtimeFamily,
+  deployTarget,
+  env = process.env,
+  options = {}
+) {
+  const normalizedRuntimeFamily = normalizeRuntimeFamilyName(runtimeFamily);
   const normalized = normalizeDeployTargetName(deployTarget);
   const metadata = getExecutionTargetMetadata(normalized);
-  const supportedSandboxProfiles =
-    normalized === "docker"
-      ? ["standard", "nemoclaw"]
-      : ["standard"];
+  const supportedSandboxProfiles = supportedSandboxProfilesForDeployTarget(
+    normalizedRuntimeFamily,
+    normalized
+  );
   const sandboxProfiles = supportedSandboxProfiles.map((sandboxProfile) =>
-    buildSandboxProfileOption(normalized, sandboxProfile, env, options)
+    buildSandboxProfileOption(
+      normalizedRuntimeFamily,
+      normalized,
+      sandboxProfile,
+      env,
+      options
+    )
   );
   const enabledSandboxProfiles = sandboxProfiles
     .filter((option) => option.enabled)
@@ -465,7 +650,9 @@ function buildExecutionTargetEntry(deployTarget, env = process.env, options = {}
   const selectableSandboxProfiles = sandboxProfiles.filter(
     (option) => option.enabled && option.availableForOnboarding
   );
-  const defaultBackend = options.defaultBackend || getDefaultBackend(env);
+  const defaultBackend =
+    options.defaultBackend || getDefaultBackend(env, { runtimeFamily: normalizedRuntimeFamily });
+  const runtimeFamilyMetadata = getRuntimeFamilyMetadata(normalizedRuntimeFamily);
   const defaultSelection =
     sandboxProfiles.find((option) => option.legacyBackendId === defaultBackend) ||
     sandboxProfiles.find((option) => option.available) ||
@@ -482,11 +669,14 @@ function buildExecutionTargetEntry(deployTarget, env = process.env, options = {}
     available,
     issue:
       enabled && !available
-        ? defaultSelection?.issue || sandboxProfiles.find((option) => option.issue)?.issue || null
+        ? defaultSelection?.issue ||
+          sandboxProfiles.find((option) => option.issue)?.issue ||
+          null
         : null,
-    isDefault: normalized === getDefaultDeployTarget(env),
-    runtimeFamily: RUNTIME_FAMILY_METADATA.id,
-    runtimeFamilyLabel: RUNTIME_FAMILY_METADATA.label,
+    isDefault:
+      normalized === getDefaultDeployTarget(env, { runtimeFamily: normalizedRuntimeFamily }),
+    runtimeFamily: runtimeFamilyMetadata.id,
+    runtimeFamilyLabel: runtimeFamilyMetadata.label,
     defaultSandboxProfile: defaultSelection?.id || "standard",
     enabledSandboxProfiles,
     availableSandboxProfiles,
@@ -494,33 +684,70 @@ function buildExecutionTargetEntry(deployTarget, env = process.env, options = {}
     supportsSandboxSelection: selectableSandboxProfiles.length > 1,
     sandboxProfiles,
     availableForOnboarding: selectableSandboxProfiles.length > 0,
-    fullLabel: defaultSelection?.fullLabel || `${RUNTIME_FAMILY_METADATA.label} + ${metadata.label}`,
-    ...buildMaturityFields(defaultSelection?.maturityTier || "ga"),
+    fullLabel:
+      defaultSelection?.fullLabel ||
+      `${runtimeFamilyMetadata.label} + ${metadata.label}`,
+    ...buildMaturityFields(
+      defaultSelection?.maturityTier ||
+        resolveMaturityTier({
+          runtimeFamily: normalizedRuntimeFamily,
+          deployTarget: normalized,
+          sandboxProfile: defaultSelection?.id || "standard",
+        })
+    ),
   };
 }
 
-function getBackendCatalog(env = process.env) {
+function getBackendCatalog(env = process.env, options = {}) {
+  const runtimeFamily = isKnownRuntimeFamily(options.runtimeFamily)
+    ? normalizeRuntimeFamilyName(options.runtimeFamily)
+    : null;
   const enabledSet = new Set(getEnabledBackends(env));
-  const defaultBackend = getDefaultBackend(env);
+  const backends = runtimeFamily
+    ? KNOWN_BACKENDS.filter((backendId) => runtimeFamilyForBackend(backendId) === runtimeFamily)
+    : KNOWN_BACKENDS;
 
-  return KNOWN_BACKENDS.map((backendId) =>
-    buildCatalogEntry(backendId, env, { enabledSet, defaultBackend })
+  return backends.map((backendId) =>
+    buildCatalogEntry(backendId, env, {
+      enabledSet,
+      defaultBackend: getDefaultBackend(env, {
+        runtimeFamily: runtimeFamilyForBackend(backendId),
+      }),
+    })
   );
 }
 
-function getExecutionTargetCatalog(env = process.env) {
-  const enabledSet = new Set(getEnabledBackends(env));
-  const defaultBackend = getDefaultBackend(env);
-
-  return KNOWN_DEPLOY_TARGETS.map((deployTarget) =>
-    buildExecutionTargetEntry(deployTarget, env, { enabledSet, defaultBackend })
+function getExecutionTargetCatalog(env = process.env, options = {}) {
+  const runtimeFamily = normalizeRuntimeFamilyName(
+    options.runtimeFamily || getDefaultRuntimeFamily(env)
   );
+  const enabledSet = options.enabledSet || new Set(getEnabledBackends(env));
+  const defaultBackend =
+    options.defaultBackend || getDefaultBackend(env, { runtimeFamily });
+
+  return executionTargetsForRuntimeFamily(runtimeFamily)
+    .map((deployTarget) =>
+      buildExecutionTargetEntry(runtimeFamily, deployTarget, env, {
+        enabledSet,
+        defaultBackend,
+      })
+    )
+    .filter(Boolean);
 }
 
-function getSandboxProfileCatalog(env = process.env) {
-  const executionTargets = getExecutionTargetCatalog(env);
+function getSandboxProfileCatalog(env = process.env, options = {}) {
+  const runtimeFamily = normalizeRuntimeFamilyName(
+    options.runtimeFamily || getDefaultRuntimeFamily(env)
+  );
+  const executionTargets = getExecutionTargetCatalog(env, {
+    runtimeFamily,
+  });
+  const supportedSandboxProfiles =
+    runtimeFamily === "hermes"
+      ? ["standard"]
+      : [...KNOWN_SANDBOX_PROFILES];
 
-  return KNOWN_SANDBOX_PROFILES.map((sandboxProfile) => {
+  return supportedSandboxProfiles.map((sandboxProfile) => {
     const relatedTargets = executionTargets.filter((target) =>
       target.enabled &&
       target.sandboxProfiles.some(
@@ -537,15 +764,16 @@ function getSandboxProfileCatalog(env = process.env) {
       relatedOptions.find((option) => option.enabled) ||
       null;
     const fallbackMaturityTier =
-      sandboxProfile === "nemoclaw" ? "experimental" : "ga";
+      sandboxProfile === "nemoclaw" || runtimeFamily === "hermes"
+        ? "experimental"
+        : "ga";
 
     return {
       ...metadata,
       enabled: relatedOptions.some((option) => option.enabled),
       available: relatedOptions.some((option) => option.available),
       executionTargets: relatedTargets.map((target) => target.id),
-      models:
-        sandboxProfile === "nemoclaw" ? [...NEMOCLAW_MODELS] : [],
+      models: sandboxProfile === "nemoclaw" ? [...NEMOCLAW_MODELS] : [],
       defaultModel:
         sandboxProfile === "nemoclaw"
           ? env.NEMOCLAW_DEFAULT_MODEL || NEMOCLAW_MODELS[0]
@@ -565,48 +793,90 @@ function isBackendEnabled(backend, env = process.env) {
 }
 
 function getBackendStatus(backend, env = process.env) {
-  return buildCatalogEntry(backend, env);
+  return buildCatalogEntry(backend, env, {
+    defaultBackend: getDefaultBackend(env, {
+      runtimeFamily: runtimeFamilyForBackend(backend),
+    }),
+  });
 }
 
 function getRuntimeCatalog(env = process.env) {
-  return [
-    {
-      ...RUNTIME_FAMILY_METADATA,
-      available: true,
-      defaultDeployTarget: getDefaultDeployTarget(env),
-      defaultSandboxProfile: getDefaultSandboxProfile(env),
-      enabledDeployTargets: getEnabledDeployTargets(env),
-      enabledSandboxProfiles: getEnabledSandboxProfiles(env),
-    },
-  ];
+  const enabledSet = new Set(getEnabledBackends(env));
+  const defaultRuntimeFamily = getDefaultRuntimeFamily(env);
+
+  return getEnabledRuntimeFamilies(env).map((runtimeFamily) => {
+    const metadata = getRuntimeFamilyMetadata(runtimeFamily);
+    const defaultBackend = getDefaultBackend(env, { runtimeFamily });
+    const executionTargets = getExecutionTargetCatalog(env, {
+      runtimeFamily,
+      enabledSet,
+      defaultBackend,
+    });
+    const sandboxProfiles = getSandboxProfileCatalog(env, {
+      runtimeFamily,
+    });
+    const enabled = executionTargets.some((target) => target.enabled);
+    const configured = executionTargets.some((target) => target.configured);
+    const available = executionTargets.some((target) => target.available);
+
+    return {
+      ...metadata,
+      enabled,
+      configured,
+      available,
+      isDefault: runtimeFamily === defaultRuntimeFamily,
+      defaultDeployTarget: getDefaultDeployTarget(env, { runtimeFamily }),
+      defaultSandboxProfile: getDefaultSandboxProfile(env, { runtimeFamily }),
+      enabledDeployTargets: getEnabledDeployTargets(env, { runtimeFamily }),
+      enabledSandboxProfiles: getEnabledSandboxProfiles(env, { runtimeFamily }),
+      executionTargets,
+      sandboxProfiles,
+      availableForOnboarding: executionTargets.some(
+        (target) => target.availableForOnboarding
+      ),
+      issue:
+        enabled && !available
+          ? executionTargets.find((target) => target.issue)?.issue || null
+          : null,
+    };
+  });
 }
 
 module.exports = {
   DEFAULT_RUNTIME_FAMILY,
+  KNOWN_RUNTIME_FAMILIES,
   KNOWN_BACKENDS,
   KNOWN_DEPLOY_TARGETS,
   KNOWN_SANDBOX_PROFILES,
   NEMOCLAW_MODELS,
   PROXMOX_RELEASE_BLOCKER_ISSUE,
   RUNTIME_FAMILY_METADATA,
+  backendForRuntimeSelection,
   getBackendCatalog,
   getBackendMetadata,
   getBackendStatus,
   getDefaultBackend,
   getDefaultDeployTarget,
+  getDefaultRuntimeFamily,
   getDefaultSandboxProfile,
   getEnabledBackends,
   getEnabledDeployTargets,
+  getEnabledRuntimeFamilies,
   getEnabledSandboxProfiles,
   getExecutionTargetCatalog,
+  getExecutionTargetMetadata,
   getRuntimeCatalog,
+  getRuntimeFamilyMetadata,
   getSandboxProfileCatalog,
   isBackendEnabled,
   isKnownBackend,
   isKnownDeployTarget,
+  isKnownRuntimeFamily,
   isKnownSandboxProfile,
   normalizeBackendName,
   normalizeDeployTargetName,
+  normalizeRuntimeFamilyName,
+  runtimeFamilyForBackend,
   selectionTypeForBackend,
   sandboxForBackend,
   sandboxProfileLabel,

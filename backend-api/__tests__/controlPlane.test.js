@@ -287,6 +287,48 @@ describe("public platform config", () => {
     );
   });
 
+  it("surfaces Hermes as a distinct runtime family and backend when enabled", async () => {
+    process.env.ENABLED_BACKENDS = "hermes";
+
+    const res = await request(app).get("/config/backends");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        defaultRuntimeFamily: "hermes",
+        defaultDeployTarget: "docker",
+        defaultSandboxProfile: "standard",
+      })
+    );
+    expect(res.body.runtimeFamily).toEqual(
+      expect.objectContaining({
+        id: "hermes",
+        label: "Hermes",
+        contractStatusLabel: "Deployment-first contract",
+      })
+    );
+    expect(res.body.executionTargets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "docker",
+          runtimeFamily: "hermes",
+          defaultSandboxProfile: "standard",
+        }),
+      ])
+    );
+    expect(res.body.backends).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "hermes",
+          runtimeFamily: "hermes",
+          selectionType: "runtime_family",
+          deployTarget: "docker",
+          sandboxProfile: "standard",
+        }),
+      ])
+    );
+  });
+
   it("returns release metadata when a newer version is announced", async () => {
     process.env.NORA_CURRENT_VERSION = "1.2.3";
     process.env.NORA_CURRENT_COMMIT = "abc123def456";

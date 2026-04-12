@@ -1,5 +1,9 @@
+const { spawnSync } = require("child_process");
+const { PassThrough } = require("stream");
+
 const mockDb = { query: jest.fn() };
 const mockRestart = jest.fn();
+const mockExec = jest.fn();
 const mockGetProviderKeys = jest.fn();
 const mockBuildAuthProfiles = jest.fn();
 const mockGetIntegrationEnvVars = jest.fn();
@@ -8,6 +12,7 @@ const mockWaitForAgentReadiness = jest.fn();
 
 jest.mock("../db", () => mockDb);
 jest.mock("../containerManager", () => ({
+  exec: mockExec,
   restart: mockRestart,
 }));
 jest.mock("../llmProviders", () => ({
@@ -27,7 +32,10 @@ jest.mock("../healthChecks", () => ({
   waitForAgentReadiness: mockWaitForAgentReadiness,
 }));
 
-const { syncAuthToUserAgents } = require("../authSync");
+const {
+  buildHermesEnvWriteCommand,
+  syncAuthToUserAgents,
+} = require("../authSync");
 
 function jsonResponse(body, status = 200) {
   return {
@@ -37,12 +45,27 @@ function jsonResponse(body, status = 200) {
   };
 }
 
+function execResult(output = "", exitCode = 0) {
+  const stream = new PassThrough();
+  setImmediate(() => {
+    if (output) stream.write(output);
+    stream.end();
+  });
+  return {
+    exec: {
+      inspect: jest.fn().mockResolvedValue({ ExitCode: exitCode }),
+    },
+    stream,
+  };
+}
+
 describe("auth sync", () => {
   let consoleLogSpy;
   let consoleWarnSpy;
 
   beforeEach(() => {
     mockDb.query.mockReset();
+    mockExec.mockReset().mockResolvedValue(execResult());
     mockRestart.mockReset().mockResolvedValue(undefined);
     mockGetProviderKeys.mockReset().mockResolvedValue({
       OPENAI_API_KEY: "sk-live-test",
@@ -167,5 +190,89 @@ describe("auth sync", () => {
         error: "write failed",
       }),
     ]);
+  });
+
+  it("rewrites the Hermes env file and waits only for runtime readiness", async () => {
+    mockGetIntegrationEnvVars.mockResolvedValue({
+      GITHUB_TOKEN: "gh-token",
+    });
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{ provider: "openai", model: "gpt-5.4" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "agent-hermes-1",
+            container_id: "hermes-agent-123",
+            backend_type: "hermes",
+            runtime_family: "hermes",
+            host: "agent.internal",
+            runtime_host: "runtime.internal",
+            runtime_port: 8642,
+            gateway_host_port: null,
+            gateway_host: null,
+            gateway_port: null,
+          },
+        ],
+      });
+
+    const execSpy = jest.fn().mockResolvedValue(execResult());
+    mockExec.mockImplementation(execSpy);
+
+    const results = await syncAuthToUserAgents("user-1");
+
+    expect(mockEvictConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-hermes-1" })
+    );
+    expect(mockExec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "agent-hermes-1",
+        runtime_family: "hermes",
+      }),
+      expect.objectContaining({
+        cmd: expect.arrayContaining(["/bin/sh", "-lc"]),
+      })
+    );
+    expect(execSpy.mock.calls[0][1].cmd[2]).toContain("/opt/data/.env");
+    expect(execSpy.mock.calls[0][1].cmd[2]).toContain("NORA MANAGED ENV");
+    expect(execSpy.mock.calls[0][1].cmd[2]).not.toContain("then;");
+    expect(execSpy.mock.calls[0][1].cmd[2]).not.toContain("else;");
+    expect(mockRestart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "agent-hermes-1",
+        container_id: "hermes-agent-123",
+      })
+    );
+    expect(mockWaitForAgentReadiness).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "agent.internal",
+        runtimeHost: "runtime.internal",
+        runtimePort: 8642,
+        checkGateway: false,
+      })
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      { agentId: "agent-hermes-1", status: "synced" },
+    ]);
+  });
+
+  it("builds a shell-parseable Hermes env rewrite command", () => {
+    const command = buildHermesEnvWriteCommand({
+      OPENAI_API_KEY: "sk-live-test",
+      GITHUB_TOKEN: "gh-token",
+    });
+    const parse = spawnSync("/bin/sh", ["-n"], { input: command });
+    const encodedBlock = command.match(/printf '%s' '([^']+)' \| base64 -d/);
+    const decodedBlock = encodedBlock
+      ? Buffer.from(encodedBlock[1], "base64").toString("utf8")
+      : "";
+
+    expect(parse.status).toBe(0);
+    expect(decodedBlock).toContain('OPENAI_API_KEY="sk-live-test"');
+    expect(decodedBlock).toContain('GITHUB_TOKEN="gh-token"');
+    expect(command).not.toContain("then;");
+    expect(command).not.toContain("else;");
   });
 });

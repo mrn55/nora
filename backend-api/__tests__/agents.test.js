@@ -139,6 +139,24 @@ const app = require("../server");
 const userToken = jwt.sign({ id: "user-1", email: "user@nora.test", role: "user" }, JWT_SECRET, { expiresIn: "1h" });
 const auth = (req) => req.set("Authorization", `Bearer ${userToken}`);
 
+function createMockFetchResponse({ ok = true, status = 200, body = {}, headers = {} } = {}) {
+  const normalizedHeaders = Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value])
+  );
+  const rawBody = typeof body === "string" ? body : JSON.stringify(body);
+
+  return {
+    ok,
+    status,
+    headers: {
+      get(name) {
+        return normalizedHeaders[String(name || "").toLowerCase()] ?? null;
+      },
+    },
+    text: jest.fn().mockResolvedValue(rawBody),
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockDb.query.mockReset();
@@ -392,6 +410,139 @@ describe("GET /agents/:id/gateway-url", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/only available while running/i);
+  });
+});
+
+describe("Hermes WebUI routes", () => {
+  it("returns Hermes runtime status and model metadata", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-hermes-ui",
+        user_id: "user-1",
+        status: "running",
+        runtime_family: "hermes",
+        backend_type: "hermes",
+        container_id: "hermes-container",
+        runtime_host: "10.0.0.40",
+        runtime_port: 8642,
+        gateway_token: "hermes-token",
+      }],
+    });
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createMockFetchResponse({
+          body: { status: "ok", platform: "hermes-agent" },
+        })
+      )
+      .mockResolvedValueOnce(
+        createMockFetchResponse({
+          body: {
+            object: "list",
+            data: [{ id: "desk-bot", object: "model" }],
+          },
+        })
+      );
+
+    const res = await auth(request(app).get("/agents/a-hermes-ui/hermes-ui"));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        url: "http://10.0.0.40:8642/v1",
+        runtime: { host: "10.0.0.40", port: 8642 },
+        health: expect.objectContaining({ ok: true, status: "ok" }),
+        defaultModel: "desk-bot",
+      })
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      1,
+      "http://10.0.0.40:8642/health",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          Authorization: "Bearer hermes-token",
+        }),
+      })
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      "http://10.0.0.40:8642/v1/models",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          Authorization: "Bearer hermes-token",
+        }),
+      })
+    );
+  });
+
+  it("proxies Hermes chat requests through the runtime API", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-hermes-chat",
+        user_id: "user-1",
+        status: "running",
+        runtime_family: "hermes",
+        backend_type: "hermes",
+        container_id: "hermes-container",
+        runtime_host: "10.0.0.41",
+        runtime_port: 8642,
+        gateway_token: "hermes-token",
+      }],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce(
+      createMockFetchResponse({
+        body: {
+          id: "chatcmpl-1",
+          model: "desk-bot",
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "I checked the workspace.",
+              },
+            },
+          ],
+          usage: { total_tokens: 42 },
+        },
+        headers: {
+          "x-hermes-session-id": "sess-123",
+        },
+      })
+    );
+
+    const res = await auth(
+      request(app).post("/agents/a-hermes-chat/hermes-ui/chat").send({
+        messages: [{ role: "user", content: "Inspect the workspace" }],
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        message: "I checked the workspace.",
+        model: "desk-bot",
+        sessionId: "sess-123",
+        usage: expect.objectContaining({ total_tokens: 42 }),
+      })
+    );
+
+    const [targetUrl, requestOptions] = global.fetch.mock.calls[0];
+    expect(targetUrl).toBe("http://10.0.0.41:8642/v1/chat/completions");
+    expect(requestOptions).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer hermes-token",
+          "Content-Type": "application/json",
+        }),
+      })
+    );
+    expect(JSON.parse(requestOptions.body)).toEqual({
+      stream: false,
+      messages: [{ role: "user", content: "Inspect the workspace" }],
+    });
   });
 });
 
@@ -749,6 +900,43 @@ describe("POST /agents/deploy", () => {
       specs: { vcpu: 1, ram_mb: 1024, disk_gb: 10 },
       sandbox: "standard",
     }));
+  });
+
+  it("uses a Hermes-specific container prefix for Hermes runtime deploys", async () => {
+    process.env.ENABLED_BACKENDS = "docker,hermes";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-deploy",
+          name: "Desk Bot",
+          status: "queued",
+          user_id: "user-1",
+          runtime_family: "hermes",
+          backend_type: "hermes",
+          deploy_target: "docker",
+          sandbox_profile: "standard",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/deploy").send({
+        name: "Desk Bot",
+        runtime_family: "hermes",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const insertParams = mockDb.query.mock.calls[0][1];
+    expect(insertParams[8]).toMatch(/^hermes-agent-desk-bot-/);
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-hermes-deploy",
+        backend: "hermes",
+        container_name: expect.stringMatching(/^hermes-agent-desk-bot-/),
+      })
+    );
   });
 
   it("queues an explicitly selected enabled backend", async () => {
@@ -1187,6 +1375,64 @@ describe("POST /agents/:id/duplicate", () => {
         backend: "k8s",
         sandbox: "standard",
         image: "node:22-slim",
+      })
+    );
+  });
+
+  it("uses a Hermes-specific container prefix when duplicating into Hermes", async () => {
+    process.env.ENABLED_BACKENDS = "docker,hermes";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-source-hermes",
+          name: "Desk Bot",
+          user_id: "user-1",
+          status: "stopped",
+          runtime_family: "openclaw",
+          deploy_target: "docker",
+          sandbox_profile: "standard",
+          vcpu: 2,
+          ram_mb: 2048,
+          disk_gb: 20,
+          image: "nora-openclaw-agent:local",
+          template_payload: JSON.stringify({
+            files: [{ path: "AGENT.md", content: "hello" }],
+            memoryFiles: [],
+            metadata: { source: "template" },
+          }),
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-duplicate-hermes",
+          name: "Desk Bot Hermes",
+          status: "queued",
+          user_id: "user-1",
+          runtime_family: "hermes",
+          backend_type: "hermes",
+          deploy_target: "docker",
+          sandbox_profile: "standard",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/a-source-hermes/duplicate").send({
+        name: "Desk Bot Hermes",
+        runtime_family: "hermes",
+        clone_mode: "files_only",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const insertParams = mockDb.query.mock.calls[1][1];
+    expect(insertParams[8]).toMatch(/^hermes-agent-desk-bot-hermes-/);
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-duplicate-hermes",
+        backend: "hermes",
+        container_name: expect.stringMatching(/^hermes-agent-desk-bot-hermes-/),
       })
     );
   });
@@ -2054,6 +2300,59 @@ describe("POST /agents/:id/redeploy", () => {
         backend: "k8s",
         sandbox: "standard",
         image: "node:22-slim",
+      })
+    );
+  });
+
+  it("regenerates auto-generated container names when redeploying into Hermes", async () => {
+    process.env.ENABLED_BACKENDS = "docker,hermes";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-redeploy",
+          name: "Desk Bot",
+          status: "stopped",
+          runtime_family: "openclaw",
+          deploy_target: "docker",
+          sandbox_profile: "standard",
+          vcpu: 2,
+          ram_mb: 2048,
+          disk_gb: 20,
+          container_name: "oclaw-agent-desk-bot-old123",
+          image: "nora-openclaw-agent:local",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/a-hermes-redeploy/redeploy").send({
+        runtime_family: "hermes",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockDb.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("container_name = $7"),
+      [
+        "a-hermes-redeploy",
+        "hermes",
+        "standard",
+        "hermes",
+        "docker",
+        "standard",
+        expect.stringMatching(/^hermes-agent-desk-bot-/),
+        "nousresearch/hermes-agent:latest",
+      ]
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-hermes-redeploy",
+        backend: "hermes",
+        container_name: expect.stringMatching(/^hermes-agent-desk-bot-/),
+        image: "nousresearch/hermes-agent:latest",
       })
     );
   });
