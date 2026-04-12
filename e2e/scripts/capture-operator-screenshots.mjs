@@ -56,6 +56,7 @@ const IDS = {
     support: "22222222-2222-4222-8222-222222222222",
     queued: "33333333-3333-4333-8333-333333333333",
     stopped: "44444444-4444-4444-8444-444444444444",
+    hermes: "12121212-1212-4121-8121-121212121212",
   },
   snapshots: {
     presetSignalDesk: "55555555-5555-4555-8555-555555555551",
@@ -83,6 +84,74 @@ const IDS = {
 };
 
 const AGENT_IMAGE = "nora-openclaw-agent:local";
+const HERMES_IMAGE = "nousresearch/hermes-agent:latest";
+
+const HERMES_README_AGENT = {
+  id: IDS.agents.hermes,
+  user_id: "readme-hermes-operator",
+  name: "Hermes Ops Coordinator",
+  status: "running",
+  backend_type: "hermes",
+  runtime_family: "hermes",
+  deploy_target: "docker",
+  sandbox_profile: "standard",
+  sandbox_type: "standard",
+  node: "worker-02",
+  host: "hermes-runtime.internal",
+  runtime_host: "hermes-runtime.internal",
+  runtime_port: 8642,
+  container_name: "hermes-ops-coordinator",
+  image: HERMES_IMAGE,
+  vcpu: 4,
+  ram_mb: 6144,
+  disk_gb: 60,
+  created_at: "2026-04-12T16:40:00.000Z",
+  updated_at: "2026-04-12T16:58:00.000Z",
+};
+
+const HERMES_README_RUNTIME = {
+  url: "http://hermes-runtime.internal:8642/v1",
+  runtime: {
+    host: "hermes-runtime.internal",
+    port: 8642,
+  },
+  health: {
+    ok: true,
+    status: "ok",
+    platform: "hermes-agent",
+  },
+  models: [
+    { id: "hermes-agent" },
+    { id: "hermes-agent-fast" },
+  ],
+  defaultModel: "anthropic/claude-sonnet-4-5",
+  gateway: {
+    state: "running",
+    activeAgents: 1,
+    configuredPlatformsCount: 4,
+    discoveredTargetsCount: 12,
+    jobsCount: 3,
+    updatedAt: "2026-04-12T16:56:00.000Z",
+    exitReason: null,
+    restartRequested: false,
+    platformStates: {
+      telegram: {
+        state: "connected",
+      },
+      discord: {
+        state: "connected",
+      },
+      slack: {
+        state: "idle",
+      },
+      email: {
+        state: "warning",
+        error_message: "SMTP auth pending confirmation.",
+      },
+    },
+  },
+  directoryUpdatedAt: "2026-04-12T16:55:00.000Z",
+};
 
 function encodeContentBase64(value) {
   return Buffer.from(String(value || ""), "utf8").toString("base64");
@@ -1297,6 +1366,54 @@ async function gotoHeading(page, pathname, headingText) {
   await page.waitForTimeout(700);
 }
 
+async function captureHermesReadmeScreenshot(browser, token) {
+  const hermes = await newAuthedPage(browser, token);
+
+  await hermes.context.route(
+    `**/api/agents/${IDS.agents.hermes}/hermes-ui`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(HERMES_README_RUNTIME),
+      });
+    }
+  );
+
+  await hermes.context.route(`**/api/agents/${IDS.agents.hermes}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(HERMES_README_AGENT),
+    });
+  });
+
+  try {
+    await gotoHeading(
+      hermes.page,
+      `/app/agents/${IDS.agents.hermes}`,
+      HERMES_README_AGENT.name
+    );
+    await hermes.page.getByRole("button", { name: "Hermes WebUI" }).first().click();
+    await hermes.page.getByText("Hermes Status", { exact: true }).waitFor({
+      state: "visible",
+      timeout: 15000,
+    });
+    await hermes.page.waitForTimeout(400);
+    await hermes.page.screenshot({
+      path: path.join(SCREENSHOT_DIR, "proof-operator-hermes-webui-tab.png"),
+      clip: {
+        x: 0,
+        y: 0,
+        width: 1256,
+        height: 1000,
+      },
+    });
+  } finally {
+    await hermes.context.close();
+  }
+}
+
 async function captureScreens() {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
@@ -1353,6 +1470,8 @@ async function captureScreens() {
     await operator.page.screenshot({
       path: path.join(SCREENSHOT_DIR, "proof-operator-agent-detail.png"),
     });
+
+    await captureHermesReadmeScreenshot(browser, operatorAuth.token);
 
     await gotoHeading(operator.page, "/app/settings", "Settings");
     const providerSection = operator.page

@@ -12,8 +12,8 @@ const QUICKSTART_URL = `${OSS_REPO_URL}#quick-start`;
 const NEXT_STEPS = [
   "Create the operator account for this Nora instance.",
   "Add an LLM provider key in Settings.",
-  "Deploy the first runtime and open the operator surface.",
-  "Validate chat, logs, metrics, and terminal access from one place.",
+  "Deploy the first OpenClaw or Hermes runtime and open the operator surface.",
+  "Validate OpenClaw chat and metrics or Hermes WebUI, plus logs and terminal access from one place.",
 ];
 
 export default function Signup() {
@@ -76,7 +76,7 @@ export default function Signup() {
         <title>Create Account | Nora</title>
         <meta
           name="description"
-          content="Create a Nora operator account. Nora is fully open source, self-hostable, and commercially usable under Apache 2.0."
+          content="Create a Nora operator account for deploying OpenClaw and Hermes runtimes. Nora is fully open source, self-hostable, and commercially usable under Apache 2.0."
         />
       </Head>
 
@@ -122,6 +122,7 @@ export default function Signup() {
             <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">
               Nora is fully open source, self-hostable, and commercially usable under Apache 2.0. This page should help teams
               get into the product quickly without hiding the fact that the repo stays public and the trust model stays OSS-first.
+              From there, operators can launch OpenClaw or Hermes on the same Nora instance.
             </p>
 
             <div className="mt-8 rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
@@ -182,7 +183,8 @@ export default function Signup() {
             </div>
             <h2 className="text-3xl font-black leading-tight text-slate-950">Create operator account</h2>
             <p className="mt-3 text-sm leading-7 text-slate-700">
-              Use this account to enter the Nora operator surface for this instance. OAuth appears here only when it is enabled.
+              Use this account to enter the Nora operator surface for OpenClaw and Hermes deployments on this instance. OAuth
+              appears here only when it is enabled.
             </p>
 
             {OAUTH_LOGIN_ENABLED && (

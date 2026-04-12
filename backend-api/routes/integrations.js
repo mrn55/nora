@@ -16,16 +16,39 @@ async function getAgentIntegrationRuntimeTarget(agentId) {
   const agentResult = await db.query(
     `SELECT id, host, runtime_host, runtime_port, status, gateway_token,
             gateway_host_port, gateway_host, gateway_port, backend_type,
-            runtime_family, deploy_target, sandbox_profile
+            runtime_family, deploy_target, sandbox_profile, user_id
        FROM agents WHERE id = $1`,
     [agentId]
   );
   return agentResult.rows[0] || null;
 }
 
-async function syncIntegrationsToAgent(agentId) {
+async function syncIntegrationsToAgent(agentId, { strictHermes = false } = {}) {
   const agent = await getAgentIntegrationRuntimeTarget(agentId);
-  if (!agent || resolveAgentRuntimeFamily(agent) === "hermes") return;
+  if (!agent) return null;
+
+  if (resolveAgentRuntimeFamily(agent) === "hermes") {
+    const syncResults = await syncAuthToUserAgents(agent.user_id, agent.id);
+    const failedResult = Array.isArray(syncResults)
+      ? syncResults.find(
+          (entry) => entry?.agentId === agent.id && entry?.status === "failed"
+        )
+      : null;
+
+    if (strictHermes && failedResult) {
+      const error = new Error(
+        failedResult.error || "Failed to sync Hermes integrations to runtime"
+      );
+      error.statusCode = 502;
+      throw error;
+    }
+
+    return {
+      runtimeFamily: "hermes",
+      syncResults,
+    };
+  }
+
   const runtimeUrl = runtimeUrlForAgent(agent, "/integrations/sync");
   if (!runtimeUrl) return;
 
@@ -54,6 +77,10 @@ async function syncIntegrationsToAgent(agentId) {
       console.warn(`[sync-integrations] Gateway env push failed for agent ${agentId}:`, e.message);
     }
   }
+
+  return {
+    runtimeFamily: resolveAgentRuntimeFamily(agent),
+  };
 }
 
 async function invokeAgentIntegrationTool(agentId, payload = {}) {
@@ -113,10 +140,18 @@ router.post("/agents/:id/integrations", async (req, res) => {
   try {
     const { provider, token, config } = req.body;
     if (!provider) return res.status(400).json({ error: "Provider required" });
+    const agent = await getAgentIntegrationRuntimeTarget(req.params.id);
+    const runtimeFamily = resolveAgentRuntimeFamily(agent || {});
     const result = await integrations.connectIntegration(req.params.id, provider, token, config);
-    syncIntegrationsToAgent(req.params.id).catch(() => {});
-    // Also refresh auth-profiles.json for integrations that provide LLM tokens (e.g. HF_TOKEN)
-    syncAuthToUserAgents(req.user.id, req.params.id).catch(() => {});
+
+    if (runtimeFamily === "hermes") {
+      await syncIntegrationsToAgent(req.params.id, { strictHermes: true });
+    } else {
+      syncIntegrationsToAgent(req.params.id).catch(() => {});
+      // Also refresh auth-profiles.json for integrations that provide LLM tokens (e.g. HF_TOKEN)
+      syncAuthToUserAgents(req.user.id, req.params.id).catch(() => {});
+    }
+
     res.json(result);
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
@@ -125,9 +160,17 @@ router.post("/agents/:id/integrations", async (req, res) => {
 
 router.delete("/agents/:id/integrations/:iid", async (req, res) => {
   try {
+    const agent = await getAgentIntegrationRuntimeTarget(req.params.id);
+    const runtimeFamily = resolveAgentRuntimeFamily(agent || {});
     await integrations.removeIntegration(req.params.iid, req.params.id);
-    syncIntegrationsToAgent(req.params.id).catch(() => {});
-    syncAuthToUserAgents(req.user.id, req.params.id).catch(() => {});
+
+    if (runtimeFamily === "hermes") {
+      await syncIntegrationsToAgent(req.params.id, { strictHermes: true });
+    } else {
+      syncIntegrationsToAgent(req.params.id).catch(() => {});
+      syncAuthToUserAgents(req.user.id, req.params.id).catch(() => {});
+    }
+
     res.json({ success: true });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });

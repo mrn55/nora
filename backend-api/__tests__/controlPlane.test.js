@@ -29,7 +29,11 @@ const RELEASE_ENV_KEYS = [
   "NORA_MANUAL_UPGRADE_COMMAND",
   "NORA_MANUAL_UPGRADE_STEPS",
 ];
-const CATALOG_ENV_KEYS = ["ENABLED_BACKENDS", "KUBECONFIG"];
+const CATALOG_ENV_KEYS = [
+  "ENABLED_BACKENDS",
+  "ENABLED_RUNTIME_FAMILIES",
+  "KUBECONFIG",
+];
 
 jest.mock("../db", () => mockDb);
 jest.mock("../redisQueue", () => ({ addDeploymentJob: jest.fn(), getDLQJobs: jest.fn(), retryDLQJob: jest.fn() }));
@@ -287,8 +291,8 @@ describe("public platform config", () => {
     );
   });
 
-  it("surfaces Hermes as a distinct runtime family and backend when enabled", async () => {
-    process.env.ENABLED_BACKENDS = "hermes";
+  it("surfaces Hermes as a distinct runtime family and backend when ENABLED_RUNTIME_FAMILIES enables it", async () => {
+    process.env.ENABLED_RUNTIME_FAMILIES = "hermes";
 
     const res = await request(app).get("/config/backends");
 
@@ -324,6 +328,56 @@ describe("public platform config", () => {
           selectionType: "runtime_family",
           deployTarget: "docker",
           sandboxProfile: "standard",
+        }),
+      ])
+    );
+  });
+
+  it("keeps legacy ENABLED_BACKENDS=hermes working for Hermes enablement", async () => {
+    process.env.ENABLED_BACKENDS = "hermes";
+
+    const res = await request(app).get("/config/backends");
+
+    expect(res.status).toBe(200);
+    expect(res.body.defaultRuntimeFamily).toBe("hermes");
+    expect(res.body.backends).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "hermes",
+          runtimeFamily: "hermes",
+        }),
+      ])
+    );
+  });
+
+  it("fills in a default backend for runtime families that are enabled without an explicit backend", async () => {
+    process.env.ENABLED_RUNTIME_FAMILIES = "openclaw,hermes";
+    process.env.ENABLED_BACKENDS = "k8s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    const res = await request(app).get("/config/backends");
+
+    expect(res.status).toBe(200);
+    expect(res.body.enabledBackends).toEqual(["k8s", "hermes"]);
+    expect(res.body.runtimeFamilies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "openclaw" }),
+        expect.objectContaining({ id: "hermes" }),
+      ])
+    );
+    expect(res.body.backends).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "k8s",
+          enabled: true,
+        }),
+        expect.objectContaining({
+          id: "hermes",
+          enabled: true,
+        }),
+        expect.objectContaining({
+          id: "docker",
+          enabled: false,
         }),
       ])
     );

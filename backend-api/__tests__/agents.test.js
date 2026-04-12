@@ -10,6 +10,25 @@ process.env.JWT_SECRET = JWT_SECRET;
 const mockDb = { query: jest.fn() };
 const mockAddDeploymentJob = jest.fn();
 const mockStats = jest.fn();
+const mockSyncAuthToUserAgents = jest.fn().mockResolvedValue([]);
+const mockListHermesChannels = jest.fn();
+const mockSaveHermesChannel = jest.fn();
+const mockDeleteHermesChannel = jest.fn();
+const mockTestHermesChannel = jest.fn();
+const mockReadHermesRuntimeSnapshot = jest.fn().mockResolvedValue({
+  runtimeStatus: {
+    gateway_state: "running",
+    active_agents: 1,
+    updated_at: "2026-04-12T12:00:00.000Z",
+    platforms: {},
+  },
+  directory: {
+    updated_at: "2026-04-12T12:00:00.000Z",
+    platforms: {},
+  },
+  platformDetails: {},
+  jobsCount: 0,
+});
 const mockGetDeploymentDefaults = jest.fn().mockResolvedValue({
   vcpu: 1,
   ram_mb: 1024,
@@ -68,6 +87,7 @@ jest.mock("../integrations", () => ({
   getCatalog: jest.fn().mockResolvedValue([]),
   getCatalogItem: jest.fn(),
   getIntegrationsForSync: jest.fn().mockResolvedValue({}),
+  getIntegrationEnvVars: jest.fn().mockResolvedValue({}),
   seedCatalog: jest.fn(),
   buildCloneableIntegration: jest.fn((row) => ({
     provider: row.provider,
@@ -133,6 +153,17 @@ jest.mock("../platformSettings", () => {
     getDeploymentDefaults: mockGetDeploymentDefaults,
   };
 });
+jest.mock("../authSync", () => ({
+  syncAuthToUserAgents: mockSyncAuthToUserAgents,
+  runContainerCommand: jest.fn(),
+}));
+jest.mock("../hermesUi", () => ({
+  listHermesChannels: mockListHermesChannels,
+  saveHermesChannel: mockSaveHermesChannel,
+  deleteHermesChannel: mockDeleteHermesChannel,
+  testHermesChannel: mockTestHermesChannel,
+  readHermesRuntimeSnapshot: mockReadHermesRuntimeSnapshot,
+}));
 
 const app = require("../server");
 
@@ -161,12 +192,42 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockDb.query.mockReset();
   mockAddDeploymentJob.mockReset();
+  mockSyncAuthToUserAgents.mockReset().mockResolvedValue([]);
+  mockListHermesChannels.mockReset().mockResolvedValue({
+    channels: [],
+    availableTypes: [],
+    gateway: null,
+    directoryUpdatedAt: null,
+  });
+  mockSaveHermesChannel.mockReset();
+  mockDeleteHermesChannel.mockReset().mockResolvedValue({
+    channels: [],
+    availableTypes: [],
+    gateway: null,
+    directoryUpdatedAt: null,
+  });
+  mockTestHermesChannel.mockReset();
+  mockReadHermesRuntimeSnapshot.mockReset().mockResolvedValue({
+    runtimeStatus: {
+      gateway_state: "running",
+      active_agents: 1,
+      updated_at: "2026-04-12T12:00:00.000Z",
+      platforms: {},
+    },
+    directory: {
+      updated_at: "2026-04-12T12:00:00.000Z",
+      platforms: {},
+    },
+    platformDetails: {},
+    jobsCount: 0,
+  });
   mockGetDeploymentDefaults.mockReset().mockResolvedValue({
     vcpu: 1,
     ram_mb: 1024,
     disk_gb: 10,
   });
   delete process.env.ENABLED_BACKENDS;
+  delete process.env.ENABLED_RUNTIME_FAMILIES;
   delete process.env.KUBECONFIG;
   delete process.env.KUBERNETES_SERVICE_HOST;
   require("../billing").IS_PAAS = false;
@@ -475,6 +536,13 @@ describe("Hermes WebUI routes", () => {
         }),
       })
     );
+    expect(res.body.gateway).toEqual(
+      expect.objectContaining({
+        state: "running",
+        activeAgents: 1,
+        jobsCount: 0,
+      })
+    );
   });
 
   it("proxies Hermes chat requests through the runtime API", async () => {
@@ -543,6 +611,385 @@ describe("Hermes WebUI routes", () => {
       stream: false,
       messages: [{ role: "user", content: "Inspect the workspace" }],
     });
+  });
+
+  it("rejects Hermes cron routes for non-Hermes agents", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-openclaw-hermes-ui",
+        user_id: "user-1",
+        status: "running",
+        runtime_family: "openclaw",
+      }],
+    });
+
+    const res = await auth(request(app).get("/agents/a-openclaw-hermes-ui/hermes-ui/cron"));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/does not expose the Hermes WebUI surface/i);
+  });
+
+  it("rejects Hermes channel routes when the runtime is not running", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-hermes-ui-stopped",
+        user_id: "user-1",
+        status: "stopped",
+        runtime_family: "hermes",
+      }],
+    });
+
+    const res = await auth(request(app).get("/agents/a-hermes-ui-stopped/hermes-ui/channels"));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/only available while the agent is running/i);
+  });
+
+  it("proxies Hermes cron list requests", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-hermes-cron-list",
+        user_id: "user-1",
+        status: "running",
+        runtime_family: "hermes",
+        backend_type: "hermes",
+        container_id: "hermes-container",
+        runtime_host: "10.0.0.42",
+        runtime_port: 8642,
+        gateway_token: "hermes-token",
+      }],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce(
+      createMockFetchResponse({
+        body: {
+          jobs: [{ id: "job-1", name: "Daily summary" }],
+        },
+      })
+    );
+
+    const res = await auth(request(app).get("/agents/a-hermes-cron-list/hermes-ui/cron"));
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobs).toEqual([{ id: "job-1", name: "Daily summary" }]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://10.0.0.42:8642/api/jobs?include_disabled=true",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          Authorization: "Bearer hermes-token",
+        }),
+      })
+    );
+  });
+
+  it("maps Nora cron create payloads to Hermes prompt payloads", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-hermes-cron-create",
+        user_id: "user-1",
+        status: "running",
+        runtime_family: "hermes",
+        backend_type: "hermes",
+        container_id: "hermes-container",
+        runtime_host: "10.0.0.43",
+        runtime_port: 8642,
+        gateway_token: "hermes-token",
+      }],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce(
+      createMockFetchResponse({
+        body: {
+          job: { id: "job-2", name: "Daily summary" },
+        },
+      })
+    );
+
+    const res = await auth(
+      request(app).post("/agents/a-hermes-cron-create/hermes-ui/cron").send({
+        name: "Daily summary",
+        schedule: "0 9 * * *",
+        message: "Summarize the last 24 hours",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const [targetUrl, requestOptions] = global.fetch.mock.calls[0];
+    expect(targetUrl).toBe("http://10.0.0.43:8642/api/jobs");
+    expect(requestOptions).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer hermes-token",
+          "Content-Type": "application/json",
+        }),
+      })
+    );
+    expect(JSON.parse(requestOptions.body)).toEqual({
+      name: "Daily summary",
+      schedule: "0 9 * * *",
+      prompt: "Summarize the last 24 hours",
+    });
+  });
+
+  it("proxies Hermes cron deletions", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-hermes-cron-delete",
+        user_id: "user-1",
+        status: "running",
+        runtime_family: "hermes",
+        backend_type: "hermes",
+        container_id: "hermes-container",
+        runtime_host: "10.0.0.44",
+        runtime_port: 8642,
+        gateway_token: "hermes-token",
+      }],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce(
+      createMockFetchResponse({
+        body: {
+          deleted: true,
+        },
+      })
+    );
+
+    const res = await auth(
+      request(app).delete("/agents/a-hermes-cron-delete/hermes-ui/cron/job-9")
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(expect.objectContaining({ success: true, deleted: true }));
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://10.0.0.44:8642/api/jobs/job-9",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          Authorization: "Bearer hermes-token",
+        }),
+      })
+    );
+  });
+
+  it("lists Hermes channels through the helper", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "a-hermes-channel-list",
+        user_id: "user-1",
+        status: "running",
+        runtime_family: "hermes",
+      }],
+    });
+    mockListHermesChannels.mockResolvedValueOnce({
+      channels: [{ type: "telegram", name: "Telegram" }],
+      availableTypes: [{ type: "telegram", label: "Telegram" }],
+      gateway: { state: "running" },
+      directoryUpdatedAt: "2026-04-12T12:00:00.000Z",
+    });
+
+    const res = await auth(
+      request(app).get("/agents/a-hermes-channel-list/hermes-ui/channels")
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.channels).toEqual([{ type: "telegram", name: "Telegram" }]);
+    expect(mockListHermesChannels).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "a-hermes-channel-list" })
+    );
+  });
+
+  it("creates and updates Hermes channel config through the helper", async () => {
+    const agent = {
+      id: "a-hermes-channel-save",
+      user_id: "user-1",
+      status: "running",
+      runtime_family: "hermes",
+    };
+    mockDb.query
+      .mockResolvedValueOnce({ rows: [agent] })
+      .mockResolvedValueOnce({ rows: [agent] });
+    mockSaveHermesChannel
+      .mockResolvedValueOnce({
+        payload: { channels: [{ type: "telegram" }] },
+        channel: { type: "telegram" },
+      })
+      .mockResolvedValueOnce({
+        payload: { channels: [{ type: "telegram" }] },
+        channel: { type: "telegram" },
+      });
+
+    const createRes = await auth(
+      request(app).post("/agents/a-hermes-channel-save/hermes-ui/channels").send({
+        type: "Telegram",
+        config: { TELEGRAM_BOT_TOKEN: "secret-token" },
+      })
+    );
+    const updateRes = await auth(
+      request(app)
+        .patch("/agents/a-hermes-channel-save/hermes-ui/channels/telegram")
+        .send({
+          config: { TELEGRAM_BOT_TOKEN: "[REDACTED]" },
+        })
+    );
+
+    expect(createRes.status).toBe(200);
+    expect(updateRes.status).toBe(200);
+    expect(mockSaveHermesChannel).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: "a-hermes-channel-save" }),
+      "telegram",
+      { TELEGRAM_BOT_TOKEN: "secret-token" },
+      { create: true }
+    );
+    expect(mockSaveHermesChannel).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: "a-hermes-channel-save" }),
+      "telegram",
+      { TELEGRAM_BOT_TOKEN: "[REDACTED]" }
+    );
+  });
+
+  it("deletes and tests Hermes channels through the helper", async () => {
+    const agent = {
+      id: "a-hermes-channel-actions",
+      user_id: "user-1",
+      status: "running",
+      runtime_family: "hermes",
+    };
+    mockDb.query
+      .mockResolvedValueOnce({ rows: [agent] })
+      .mockResolvedValueOnce({ rows: [agent] });
+    mockDeleteHermesChannel.mockResolvedValueOnce({
+      channels: [],
+      availableTypes: [{ type: "telegram", label: "Telegram" }],
+      gateway: { state: "running" },
+      directoryUpdatedAt: "2026-04-12T12:00:00.000Z",
+    });
+    mockTestHermesChannel.mockResolvedValueOnce({
+      success: true,
+      message: "Telegram is healthy",
+      state: "connected",
+    });
+
+    const deleteRes = await auth(
+      request(app)
+        .delete("/agents/a-hermes-channel-actions/hermes-ui/channels/telegram")
+    );
+    const testRes = await auth(
+      request(app)
+        .post("/agents/a-hermes-channel-actions/hermes-ui/channels/telegram/test")
+    );
+
+    expect(deleteRes.status).toBe(200);
+    expect(testRes.status).toBe(200);
+    expect(mockDeleteHermesChannel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "a-hermes-channel-actions" }),
+      "telegram"
+    );
+    expect(mockTestHermesChannel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "a-hermes-channel-actions" }),
+      "telegram"
+    );
+  });
+});
+
+describe("Hermes integration sync routes", () => {
+  it("syncs Hermes env after connecting an integration", async () => {
+    const integrationsModule = require("../integrations");
+    integrationsModule.connectIntegration.mockResolvedValueOnce({
+      id: "int-hermes-1",
+      provider: "slack",
+    });
+    mockSyncAuthToUserAgents.mockResolvedValueOnce([
+      { agentId: "a-hermes-integration", status: "synced" },
+    ]);
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-integration",
+          user_id: "user-1",
+          name: "Hermes Integration Agent",
+          status: "running",
+          host: "runtime-host",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-integration",
+          user_id: "user-1",
+          status: "running",
+          runtime_family: "hermes",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-integration",
+          user_id: "user-1",
+          status: "running",
+          runtime_family: "hermes",
+        }],
+      });
+
+    const res = await auth(
+      request(app).post("/agents/a-hermes-integration/integrations").send({
+        provider: "slack",
+        token: "xoxb-secret",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockSyncAuthToUserAgents).toHaveBeenCalledWith(
+      "user-1",
+      "a-hermes-integration"
+    );
+  });
+
+  it("returns a 502 when Hermes integration sync fails after disconnect", async () => {
+    const integrationsModule = require("../integrations");
+    integrationsModule.removeIntegration.mockResolvedValueOnce();
+    mockSyncAuthToUserAgents.mockResolvedValueOnce([
+      {
+        agentId: "a-hermes-integration-failed",
+        status: "failed",
+        error: "Hermes restart failed",
+      },
+    ]);
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-integration-failed",
+          user_id: "user-1",
+          name: "Hermes Integration Agent",
+          status: "running",
+          host: "runtime-host",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-integration-failed",
+          user_id: "user-1",
+          status: "running",
+          runtime_family: "hermes",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-hermes-integration-failed",
+          user_id: "user-1",
+          status: "running",
+          runtime_family: "hermes",
+        }],
+      });
+
+    const res = await auth(
+      request(app).delete(
+        "/agents/a-hermes-integration-failed/integrations/int-hermes-1"
+      )
+    );
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("Hermes restart failed");
   });
 });
 

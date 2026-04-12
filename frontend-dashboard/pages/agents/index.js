@@ -1,19 +1,95 @@
 import Layout from "../../components/layout/Layout";
 import {
+  ArrowRight,
   Bot,
-  Search,
-  Power,
-  Terminal,
-  Plus,
   Loader2,
   ListChecks,
+  Plus,
+  Power,
   RotateCcw,
-  ArrowRight,
+  Search,
+  Terminal,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { clsx } from "clsx";
 import { fetchWithAuth } from "../../lib/api";
 import { useToast } from "../../components/Toast";
+import StatusBadge from "../../components/agents/StatusBadge";
+import {
+  formatExecutionTargetLabel,
+  formatRuntimeFamilyLabel,
+  formatRuntimePathLabel,
+  formatSandboxProfileLabel,
+  resolveAgentExecutionTarget,
+  resolveAgentSandboxProfile,
+} from "../../lib/runtime";
+
+function formatResourceSummary(agent) {
+  const cpu = Number.parseFloat(agent?.vcpu);
+  const ramMb = Number.parseInt(agent?.ram_mb, 10);
+  const diskGb = Number.parseInt(agent?.disk_gb, 10);
+  const parts = [];
+
+  if (Number.isFinite(cpu) && cpu > 0) {
+    parts.push(`${Number.isInteger(cpu) ? cpu.toFixed(0) : cpu.toFixed(1)} vCPU`);
+  }
+
+  if (Number.isFinite(ramMb) && ramMb > 0) {
+    if (ramMb >= 1024) {
+      const ramGb = ramMb / 1024;
+      parts.push(`${Number.isInteger(ramGb) ? ramGb.toFixed(0) : ramGb.toFixed(1)} GB RAM`);
+    } else {
+      parts.push(`${ramMb} MB RAM`);
+    }
+  }
+
+  if (Number.isFinite(diskGb) && diskGb > 0) {
+    parts.push(`${diskGb} GB disk`);
+  }
+
+  return parts.join(" · ") || "Not configured";
+}
+
+function formatPlacement(agent) {
+  const parts = [agent?.node, agent?.runtime_host, agent?.host]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return [...new Set(parts)].join(" · ") || "Local host";
+}
+
+function agentTone(status) {
+  switch (status) {
+    case "running":
+      return "bg-emerald-50 text-emerald-600 shadow-emerald-500/10";
+    case "warning":
+      return "bg-amber-50 text-amber-600 shadow-amber-500/10";
+    case "error":
+      return "bg-red-50 text-red-600 shadow-red-500/10";
+    case "stopped":
+      return "bg-slate-100 text-slate-600 shadow-slate-400/10";
+    default:
+      return "bg-blue-50 text-blue-600 shadow-blue-500/10";
+  }
+}
+
+function FleetInfoCard({ label, value, mono = false }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 min-w-0">
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none opacity-80">
+        {label}
+      </p>
+      <p
+        className={clsx(
+          "mt-2 text-sm font-bold text-slate-900 min-w-0",
+          mono ? "font-mono text-[11px] break-all" : "leading-5"
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
 
 export default function Agents() {
   const [agents, setAgents] = useState([]);
@@ -200,7 +276,18 @@ function SearchEmptyState({ search, onClear }) {
 }
 
 function AgentCard({ agent, onAction }) {
-  const isRunning = agent.status === "running";
+  const isActive = agent.status === "running" || agent.status === "warning";
+  const powerAction = isActive ? "stop" : "start";
+  const powerDisabled = !isActive && !agent.container_id;
+  const runtimePathLabel = formatRuntimePathLabel(agent);
+  const runtimeFamilyLabel = formatRuntimeFamilyLabel(agent.runtime_family);
+  const executionTargetLabel = formatExecutionTargetLabel(
+    resolveAgentExecutionTarget(agent)
+  );
+  const sandboxLabel = formatSandboxProfileLabel(resolveAgentSandboxProfile(agent));
+  const placementLabel = formatPlacement(agent);
+  const resourceSummary = formatResourceSummary(agent);
+  const containerLabel = agent.container_name || agent.container_id || "Pending container assignment";
 
   return (
     <div className="group bg-white border border-slate-200 rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:shadow-blue-500/10 hover:border-blue-500/20 transition-all duration-500 overflow-hidden flex flex-col p-1">
@@ -209,43 +296,53 @@ function AgentCard({ agent, onAction }) {
           <div
             className={clsx(
               "w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg",
-              isRunning ? "bg-emerald-50 text-emerald-600 shadow-emerald-500/10" : "bg-blue-50 text-blue-600 shadow-blue-500/10"
+              agentTone(agent.status)
             )}
           >
             {agent.status === "queued" ? <Loader2 size={24} className="animate-spin" /> : <Bot size={24} />}
           </div>
           <div className="flex flex-col">
             <h3 className="text-lg font-black text-slate-900 leading-tight mb-1 hover:text-blue-600 transition-colors">{agent.name}</h3>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none opacity-80">OpenClaw Agent</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none opacity-80">
+                Agent {String(agent.id || "").slice(0, 8)}
+              </span>
             </div>
           </div>
         </a>
       </div>
 
-      <div className="px-8 py-6">
-        {(agent.container_name || agent.container_id) && (
-          <div className="mb-4 flex items-center gap-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none opacity-80">Container</span>
-            <span className="text-xs font-mono text-slate-500 truncate">{agent.container_name || agent.container_id}</span>
+      <div className="px-8 py-6 space-y-4">
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-4">
+          <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest leading-none opacity-80">
+            Runtime Path
+          </p>
+          <p className="mt-2 text-base font-black text-slate-900">{runtimePathLabel}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-700 border border-blue-100">
+              {runtimeFamilyLabel}
+            </span>
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-700 border border-blue-100">
+              {executionTargetLabel}
+            </span>
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-700 border border-blue-100">
+              {sandboxLabel}
+            </span>
           </div>
-        )}
-        <div className="flex items-center justify-between mb-4 gap-4">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none opacity-80">Execution Status</span>
-          <div
-            className={clsx(
-              "px-2 py-1 rounded-lg text-[9px] font-black uppercase flex items-center gap-1 border shadow-sm",
-              isRunning ? "bg-emerald-50 text-emerald-700 border-emerald-100" : "bg-blue-50 text-blue-700 border-blue-100"
-            )}
-          >
-            <div
-              className={clsx(
-                "w-1.5 h-1.5 rounded-full",
-                isRunning ? "bg-emerald-500 animate-pulse" : "bg-blue-500 animate-pulse"
-              )}
-            ></div>
-            {agent.status}
-          </div>
+        </div>
+
+        <FleetInfoCard label="Container" value={containerLabel} mono />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FleetInfoCard label="Placement" value={placementLabel} />
+          <FleetInfoCard label="Resources" value={resourceSummary} />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none opacity-80">
+            Execution Status
+          </span>
+          <StatusBadge status={agent.status} />
         </div>
       </div>
 
@@ -255,11 +352,23 @@ function AgentCard({ agent, onAction }) {
           Open Validation View
         </a>
         <button
-          onClick={() => onAction(agent.id, isRunning ? "stop" : "start")}
+          onClick={() => onAction(agent.id, powerAction)}
+          disabled={powerDisabled}
           className={clsx(
             "w-12 h-12 flex items-center justify-center border rounded-2xl transition-all shadow-sm",
-            isRunning ? "bg-red-50 border-red-100 text-red-500 hover:bg-red-100" : "bg-emerald-50 border-emerald-100 text-emerald-500 hover:bg-emerald-100"
+            powerDisabled
+              ? "bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed"
+              : isActive
+                ? "bg-red-50 border-red-100 text-red-500 hover:bg-red-100"
+                : "bg-emerald-50 border-emerald-100 text-emerald-500 hover:bg-emerald-100"
           )}
+          title={
+            powerDisabled
+              ? "Start is unavailable until a container has been provisioned"
+              : isActive
+                ? "Stop agent"
+                : "Start agent"
+          }
         >
           <Power size={18} />
         </button>

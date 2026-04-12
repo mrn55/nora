@@ -155,6 +155,22 @@ describe("agent runtime fields", () => {
     delete process.env.ENABLED_BACKENDS;
   });
 
+  it("uses the Hermes runtime-family default when Hermes is the only enabled runtime family", () => {
+    process.env.ENABLED_RUNTIME_FAMILIES = "hermes";
+
+    expect(resolveRequestedRuntimeFields()).toEqual(
+      expect.objectContaining({
+        runtime_family: "hermes",
+        deploy_target: "docker",
+        sandbox_profile: "standard",
+        backend_type: "hermes",
+        sandbox_type: "standard",
+      })
+    );
+
+    delete process.env.ENABLED_RUNTIME_FAMILIES;
+  });
+
   it("treats legacy and new runtime metadata for the same path as equivalent", () => {
     expect(
       isSameRuntimePath(

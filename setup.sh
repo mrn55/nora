@@ -406,6 +406,29 @@ fi
 ENABLED_BACKENDS="$(IFS=,; echo "${enabled_backends[*]}")"
 ok "Enabled backends: ${ENABLED_BACKENDS}"
 
+enabled_runtime_families=()
+for backend in "${enabled_backends[@]}"; do
+  case "$backend" in
+    docker|k8s|proxmox|nemoclaw)
+      if [[ ! " ${enabled_runtime_families[*]} " =~ " openclaw " ]]; then
+        enabled_runtime_families+=("openclaw")
+      fi
+      ;;
+    hermes)
+      if [[ ! " ${enabled_runtime_families[*]} " =~ " hermes " ]]; then
+        enabled_runtime_families+=("hermes")
+      fi
+      ;;
+  esac
+done
+
+if [ ${#enabled_runtime_families[@]} -eq 0 ]; then
+  enabled_runtime_families=("openclaw")
+fi
+
+ENABLED_RUNTIME_FAMILIES="$(IFS=,; echo "${enabled_runtime_families[*]}")"
+ok "Enabled runtime families: ${ENABLED_RUNTIME_FAMILIES}"
+
 # ── Access mode ──────────────────────────────────────────────
 
 header "Access Mode"
@@ -626,7 +649,8 @@ STRIPE_WEBHOOK_SECRET=
 STRIPE_PRICE_PRO=
 STRIPE_PRICE_ENTERPRISE=
 
-# ── Deploy backends ──────────────────────────────────────────
+# ── Runtime families & deploy backends ───────────────────────
+ENABLED_RUNTIME_FAMILIES=${ENABLED_RUNTIME_FAMILIES}
 ENABLED_BACKENDS=${ENABLED_BACKENDS}
 
 # ── Kubernetes (when ENABLED_BACKENDS includes k8s) ──────────
@@ -700,6 +724,7 @@ else
   printf "  Limits:       %svCPU / %sMB / %sGB / %s agents\n" "$MAX_VCPU" "$MAX_RAM_MB" "$MAX_DISK_GB" "$MAX_AGENTS"
 fi
 
+printf "  Families:     %s\n" "$ENABLED_RUNTIME_FAMILIES"
 printf "  Backends:     %s\n" "$ENABLED_BACKENDS"
 
 if [ -n "$GOOGLE_CLIENT_ID" ] || [ -n "$GITHUB_CLIENT_ID" ]; then

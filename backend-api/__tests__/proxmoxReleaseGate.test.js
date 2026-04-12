@@ -9,6 +9,7 @@ const ProxmoxBackend = require("../../workers/provisioner/backends/proxmox");
 const ORIGINAL_ENV = { ...process.env };
 const ENV_KEYS = [
   "ENABLED_BACKENDS",
+  "ENABLED_RUNTIME_FAMILIES",
   "PROXMOX_API_URL",
   "PROXMOX_TOKEN_ID",
   "PROXMOX_TOKEN_SECRET",

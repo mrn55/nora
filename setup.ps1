@@ -377,6 +377,29 @@ if ($enabledBackends.Count -eq 0) {
 $ENABLED_BACKENDS = $enabledBackends -join ","
 Write-Ok "Enabled backends: $ENABLED_BACKENDS"
 
+$enabledRuntimeFamilies = @()
+foreach ($backend in $enabledBackends) {
+    switch ($backend) {
+        { $_ -in @("docker", "k8s", "proxmox", "nemoclaw") } {
+            if (-not ($enabledRuntimeFamilies -contains "openclaw")) {
+                $enabledRuntimeFamilies += "openclaw"
+            }
+        }
+        "hermes" {
+            if (-not ($enabledRuntimeFamilies -contains "hermes")) {
+                $enabledRuntimeFamilies += "hermes"
+            }
+        }
+    }
+}
+
+if ($enabledRuntimeFamilies.Count -eq 0) {
+    $enabledRuntimeFamilies = @("openclaw")
+}
+
+$ENABLED_RUNTIME_FAMILIES = $enabledRuntimeFamilies -join ","
+Write-Ok "Enabled runtime families: $ENABLED_RUNTIME_FAMILIES"
+
 # ── Access mode ──────────────────────────────────────────────
 
 Write-Header "Access Mode"
@@ -593,7 +616,8 @@ STRIPE_WEBHOOK_SECRET=
 STRIPE_PRICE_PRO=
 STRIPE_PRICE_ENTERPRISE=
 
-# ── Deploy backends ──────────────────────────────────────────
+# ── Runtime families & deploy backends ───────────────────────
+ENABLED_RUNTIME_FAMILIES=$ENABLED_RUNTIME_FAMILIES
 ENABLED_BACKENDS=$ENABLED_BACKENDS
 
 # ── Kubernetes (when ENABLED_BACKENDS includes k8s) ──────────
@@ -670,6 +694,7 @@ if ($PLATFORM_MODE -eq "paas") {
     Write-Host ("  Limits:       {0}vCPU / {1}MB / {2}GB / {3} agents" -f $MAX_VCPU, $MAX_RAM_MB, $MAX_DISK_GB, $MAX_AGENTS)
 }
 
+Write-Host "  Families:     $ENABLED_RUNTIME_FAMILIES"
 Write-Host "  Backends:     $ENABLED_BACKENDS"
 
 if ($GOOGLE_CLIENT_ID -or $GITHUB_CLIENT_ID) {

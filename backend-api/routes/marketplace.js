@@ -21,6 +21,7 @@ const {
 const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
 const {
   DEFAULT_RUNTIME_FAMILY,
+  buildBackendEnablementMessage,
   getBackendStatus,
   getDefaultBackend,
   isKnownBackend,
@@ -145,9 +146,7 @@ function assertSupportedRuntimeSelection(runtimeFields) {
 function assertBackendAvailable(backend) {
   const status = getBackendStatus(backend);
   if (!status.enabled) {
-    const error = new Error(
-      `${status.label} is not enabled. Add "${status.id}" to ENABLED_BACKENDS to use this runtime path.`
-    );
+    const error = new Error(buildBackendEnablementMessage(status));
     error.statusCode = 400;
     throw error;
   }

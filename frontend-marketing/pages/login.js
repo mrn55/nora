@@ -12,7 +12,7 @@ const QUICKSTART_URL = `${OSS_REPO_URL}#quick-start`;
 const LOGIN_NOTES = [
   "Inspect the public GitHub repo before you trust the platform.",
   "Run Nora on infrastructure you control and use it commercially under Apache 2.0.",
-  "After login, add a provider key, deploy a runtime, and validate the operator workflow.",
+  "After login, add a provider key, deploy OpenClaw or Hermes, and validate the operator workflow.",
 ];
 
 export default function Login() {
@@ -105,7 +105,7 @@ export default function Login() {
         <title>Log In | Nora</title>
         <meta
           name="description"
-          content="Log in to Nora, the open-source platform for deploying and operating agent runtimes. Public repo first, self-hostable, and commercially usable under Apache 2.0."
+          content="Log in to Nora, the open-source platform for deploying and operating OpenClaw and Hermes runtimes. Public repo first, self-hostable, and commercially usable under Apache 2.0."
         />
       </Head>
 
@@ -150,7 +150,8 @@ export default function Login() {
             </h1>
             <p className="mt-5 max-w-xl text-base leading-8 text-slate-300">
               Nora is built for operator teams that want the product code, the self-host path, and the runtime control surface
-              visible in the open. The login flow should stay simple while the trust model stays explicit.
+              for OpenClaw and Hermes visible in the open. The login flow should stay simple while the trust model stays
+              explicit.
             </p>
 
             <div className="mt-8 rounded-[28px] border border-white/10 bg-white/[0.03] p-5">

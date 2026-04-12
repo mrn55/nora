@@ -27,7 +27,7 @@
 
 | | |
 |---|---|
-| ![OpenClaw UI tab in Nora](.github/readme-assets/proof-operator-openclaw-ui-tab.png) **OpenClaw UI tab** | ![Agent details metrics tab in Nora](.github/readme-assets/proof-operator-openclaw-usage-metrics.png) **Agent details metrics** |
+| ![OpenClaw UI tab in Nora](.github/readme-assets/proof-operator-openclaw-ui-tab.png) **OpenClaw UI tab** | ![Hermes WebUI tab in Nora](.github/readme-assets/proof-operator-hermes-webui-tab.png) **Hermes WebUI tab** |
 
 ## Why Nora?
 
@@ -269,12 +269,15 @@ Nora starts as a single Docker Compose stack and scales into serious infrastruct
 | Variable | Default | Description |
 |---|---|---|
 | `PLATFORM_MODE` | `selfhosted` | `paas` to run Nora as your own hosted platform |
-| `ENABLED_BACKENDS` | `docker` | Comma-separated: `docker`, `k8s`, `proxmox`, `nemoclaw`, `hermes` |
+| `ENABLED_RUNTIME_FAMILIES` | `openclaw` | High-level runtime contracts. Comma-separated: `openclaw`, `hermes` |
+| `ENABLED_BACKENDS` | `docker` | Low-level runtime paths. Comma-separated: `docker`, `k8s`, `proxmox`, `nemoclaw`, `hermes` |
 | `NGINX_CONFIG_FILE` | `nginx.conf` | `nginx.public.conf` for public-domain mode |
 | `NGINX_HTTP_PORT` | `8080` | `80` for public deployments |
 | `K8S_EXPOSURE_MODE` | `cluster-ip` | `node-port` for local Kind verification |
 | `NVIDIA_API_KEY` | — | Required when backends include `nemoclaw` |
 | `CORS_ORIGINS` | — | Comma-separated allowed origins |
+
+If you only want the Hermes runtime contract, `ENABLED_RUNTIME_FAMILIES=hermes` is enough. Keep `ENABLED_BACKENDS` for concrete OpenClaw path selection such as `k8s`, `proxmox`, or `nemoclaw`.
 
 ### TLS
 

@@ -30,6 +30,7 @@ const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
 const {
   DEFAULT_RUNTIME_FAMILY,
   KNOWN_RUNTIME_FAMILIES,
+  buildBackendEnablementMessage,
   getBackendStatus,
   isKnownRuntimeFamily,
   normalizeRuntimeFamilyName,
@@ -50,6 +51,13 @@ const {
   buildAuditMetadata,
   createMutationFailureAuditMiddleware,
 } = require("../auditLog");
+const {
+  deleteHermesChannel,
+  listHermesChannels,
+  readHermesRuntimeSnapshot,
+  saveHermesChannel,
+  testHermesChannel,
+} = require("../hermesUi");
 
 const router = express.Router();
 router.use(createMutationFailureAuditMiddleware("agent"));
@@ -170,9 +178,7 @@ function resolvePublishedGatewayProtocol(req) {
 function assertBackendAvailable(backend) {
   const status = getBackendStatus(backend);
   if (!status.enabled) {
-    const error = new Error(
-      `${status.label} is not enabled. Add "${status.id}" to ENABLED_BACKENDS to use this runtime path.`
-    );
+    const error = new Error(buildBackendEnablementMessage(status));
     error.statusCode = 400;
     throw error;
   }
@@ -358,6 +364,121 @@ function extractHermesApiError(payload, fallbackMessage) {
   return fallbackMessage;
 }
 
+function createStatusCodeError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+async function loadHermesUiAgent(req) {
+  const result = await db.query(
+    "SELECT * FROM agents WHERE id = $1 AND user_id = $2",
+    [req.params.id, req.user.id]
+  );
+  const agent = result.rows[0];
+  if (!agent) {
+    throw createStatusCodeError("Agent not found", 404);
+  }
+
+  const runtimeFields = buildAgentRuntimeFields(agent);
+  if (runtimeFields.runtime_family !== "hermes") {
+    throw createStatusCodeError(
+      "This runtime family does not expose the Hermes WebUI surface",
+      409
+    );
+  }
+
+  if (!isGatewayAvailableStatus(agent.status)) {
+    throw createStatusCodeError(
+      "Hermes WebUI is only available while the agent is running",
+      409
+    );
+  }
+
+  return agent;
+}
+
+function buildHermesGatewaySummary(snapshot = {}) {
+  const directoryPlatforms = snapshot?.directory?.platforms || {};
+  const configuredPlatforms = Object.values(snapshot?.platformDetails || {}).filter(
+    (entry) => entry?.connected || entry?.enabled
+  );
+  const discoveredTargetsCount = Object.values(directoryPlatforms).reduce(
+    (count, entries) => count + (Array.isArray(entries) ? entries.length : 0),
+    0
+  );
+
+  return {
+    state: snapshot?.runtimeStatus?.gateway_state || null,
+    exitReason: snapshot?.runtimeStatus?.exit_reason || null,
+    restartRequested: Boolean(snapshot?.runtimeStatus?.restart_requested),
+    activeAgents: snapshot?.runtimeStatus?.active_agents || 0,
+    updatedAt: snapshot?.runtimeStatus?.updated_at || null,
+    configuredPlatformsCount: configuredPlatforms.length,
+    discoveredTargetsCount,
+    jobsCount:
+      typeof snapshot?.jobsCount === "number" ? snapshot.jobsCount : null,
+    platformStates: snapshot?.runtimeStatus?.platforms || {},
+  };
+}
+
+function normalizeHermesCronPayload(body = {}) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return {};
+  }
+
+  const payload = { ...body };
+  if (!payload.prompt && typeof payload.message === "string") {
+    payload.prompt = payload.message;
+  }
+  delete payload.message;
+
+  for (const key of ["name", "schedule", "prompt", "deliver", "timezone"]) {
+    if (typeof payload[key] === "string") {
+      payload[key] = payload[key].trim();
+    }
+  }
+
+  return payload;
+}
+
+function normalizeHermesCronListPayload(payload) {
+  if (Array.isArray(payload)) {
+    return { jobs: payload };
+  }
+
+  if (payload && typeof payload === "object") {
+    if (Array.isArray(payload.jobs)) {
+      return payload;
+    }
+    if (Array.isArray(payload.items)) {
+      return {
+        ...payload,
+        jobs: payload.items,
+      };
+    }
+  }
+
+  return { jobs: [] };
+}
+
+function resolveHermesChannelConfig(body = {}) {
+  if (
+    body?.config &&
+    typeof body.config === "object" &&
+    !Array.isArray(body.config)
+  ) {
+    return body.config;
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return {};
+  }
+
+  const { type, config, ...rest } = body;
+  return rest;
+}
+
 async function resolveHermesApiToken(agent) {
   const storedToken = String(agent?.gateway_token || "").trim();
   if (storedToken) return storedToken;
@@ -454,24 +575,7 @@ async function fetchHermesApi(agent, path, options = {}) {
 
 // Hermes runtime status and model metadata for the agent-details WebUI tab.
 router.get("/:id/hermes-ui", asyncHandler(async (req, res) => {
-  const result = await db.query(
-    "SELECT * FROM agents WHERE id = $1 AND user_id = $2",
-    [req.params.id, req.user.id]
-  );
-  const agent = result.rows[0];
-  if (!agent) return res.status(404).json({ error: "Agent not found" });
-
-  const runtimeFields = buildAgentRuntimeFields(agent);
-  if (runtimeFields.runtime_family !== "hermes") {
-    return res.status(409).json({
-      error: "This runtime family does not expose the Hermes WebUI surface",
-    });
-  }
-  if (!isGatewayAvailableStatus(agent.status)) {
-    return res.status(409).json({
-      error: "Hermes WebUI is only available while the agent is running",
-    });
-  }
+  const agent = await loadHermesUiAgent(req);
 
   const runtimeAddress = resolveRuntimeAddress(agent);
   if (!runtimeAddress) {
@@ -481,6 +585,9 @@ router.get("/:id/hermes-ui", asyncHandler(async (req, res) => {
   let health = { ok: false, error: "Hermes runtime not ready yet" };
   let models = [];
   let modelsError = null;
+  let gateway = null;
+  let gatewayError = null;
+  let directoryUpdatedAt = null;
 
   try {
     const healthResponse = await fetchHermesApi(agent, "/health", {
@@ -518,35 +625,29 @@ router.get("/:id/hermes-ui", asyncHandler(async (req, res) => {
     };
   }
 
+  try {
+    const snapshot = await readHermesRuntimeSnapshot(agent);
+    gateway = buildHermesGatewaySummary(snapshot);
+    directoryUpdatedAt = snapshot?.directory?.updated_at || null;
+  } catch (error) {
+    gatewayError = error.message || "Failed to read Hermes gateway state";
+  }
+
   res.json({
     url: runtimeUrlForAgent(agent, "/v1"),
     runtime: runtimeAddress,
     health,
     models,
     defaultModel: models[0]?.id || null,
+    directoryUpdatedAt,
+    ...(gateway ? { gateway } : {}),
     ...(modelsError ? { modelsError } : {}),
+    ...(gatewayError ? { gatewayError } : {}),
   });
 }));
 
 router.post("/:id/hermes-ui/chat", asyncHandler(async (req, res) => {
-  const result = await db.query(
-    "SELECT * FROM agents WHERE id = $1 AND user_id = $2",
-    [req.params.id, req.user.id]
-  );
-  const agent = result.rows[0];
-  if (!agent) return res.status(404).json({ error: "Agent not found" });
-
-  const runtimeFields = buildAgentRuntimeFields(agent);
-  if (runtimeFields.runtime_family !== "hermes") {
-    return res.status(409).json({
-      error: "This runtime family does not expose the Hermes WebUI surface",
-    });
-  }
-  if (!isGatewayAvailableStatus(agent.status)) {
-    return res.status(409).json({
-      error: "Hermes WebUI is only available while the agent is running",
-    });
-  }
+  const agent = await loadHermesUiAgent(req);
 
   const messages = (Array.isArray(req.body?.messages) ? req.body.messages : [])
     .map((entry) => ({
@@ -622,6 +723,172 @@ router.post("/:id/hermes-ui/chat", asyncHandler(async (req, res) => {
     sessionId:
       chatResponse.headers.get("x-hermes-session-id") || sessionId || null,
   });
+}));
+
+router.get("/:id/hermes-ui/cron", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+
+  try {
+    const cronResponse = await fetchHermesApi(
+      agent,
+      "/api/jobs?include_disabled=true",
+      { timeoutMs: 10000 }
+    );
+    if (!cronResponse.ok) {
+      return res.status(cronResponse.status >= 500 ? 502 : cronResponse.status).json({
+        error: extractHermesApiError(
+          cronResponse.data,
+          `Hermes cron listing returned ${cronResponse.status}`
+        ),
+      });
+    }
+
+    res.json(normalizeHermesCronListPayload(cronResponse.data));
+  } catch (error) {
+    res.status(error.statusCode || 502).json({
+      error: error.message || "Hermes cron endpoint unreachable",
+    });
+  }
+}));
+
+router.post("/:id/hermes-ui/cron", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+
+  try {
+    const cronResponse = await fetchHermesApi(agent, "/api/jobs", {
+      method: "POST",
+      timeoutMs: 15000,
+      body: normalizeHermesCronPayload(req.body),
+    });
+    if (!cronResponse.ok) {
+      return res.status(cronResponse.status >= 500 ? 502 : cronResponse.status).json({
+        error: extractHermesApiError(
+          cronResponse.data,
+          `Hermes cron creation returned ${cronResponse.status}`
+        ),
+      });
+    }
+
+    res.json(
+      cronResponse.data && typeof cronResponse.data === "object"
+        ? cronResponse.data
+        : { job: null }
+    );
+  } catch (error) {
+    res.status(error.statusCode || 502).json({
+      error: error.message || "Hermes cron endpoint unreachable",
+    });
+  }
+}));
+
+router.delete("/:id/hermes-ui/cron/:jobId", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+
+  try {
+    const cronResponse = await fetchHermesApi(
+      agent,
+      `/api/jobs/${encodeURIComponent(req.params.jobId)}`,
+      {
+        method: "DELETE",
+        timeoutMs: 15000,
+      }
+    );
+    if (!cronResponse.ok) {
+      return res.status(cronResponse.status >= 500 ? 502 : cronResponse.status).json({
+        error: extractHermesApiError(
+          cronResponse.data,
+          `Hermes cron deletion returned ${cronResponse.status}`
+        ),
+      });
+    }
+
+    res.json({
+      success: true,
+      ...(cronResponse.data && typeof cronResponse.data === "object"
+        ? cronResponse.data
+        : {}),
+    });
+  } catch (error) {
+    res.status(error.statusCode || 502).json({
+      error: error.message || "Hermes cron endpoint unreachable",
+    });
+  }
+}));
+
+router.get("/:id/hermes-ui/channels", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+
+  try {
+    res.json(await listHermesChannels(agent));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: error.message || "Failed to load Hermes channels",
+    });
+  }
+}));
+
+router.post("/:id/hermes-ui/channels", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+  const type =
+    typeof req.body?.type === "string" ? req.body.type.trim().toLowerCase() : "";
+
+  if (!type) {
+    return res.status(400).json({ error: "Channel type is required" });
+  }
+
+  try {
+    res.json(
+      await saveHermesChannel(agent, type, resolveHermesChannelConfig(req.body), {
+        create: true,
+      })
+    );
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: error.message || "Failed to save Hermes channel",
+    });
+  }
+}));
+
+router.patch("/:id/hermes-ui/channels/:channelId", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+
+  try {
+    res.json(
+      await saveHermesChannel(
+        agent,
+        req.params.channelId,
+        resolveHermesChannelConfig(req.body)
+      )
+    );
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: error.message || "Failed to update Hermes channel",
+    });
+  }
+}));
+
+router.delete("/:id/hermes-ui/channels/:channelId", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+
+  try {
+    res.json(await deleteHermesChannel(agent, req.params.channelId));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: error.message || "Failed to delete Hermes channel",
+    });
+  }
+}));
+
+router.post("/:id/hermes-ui/channels/:channelId/test", asyncHandler(async (req, res) => {
+  const agent = await loadHermesUiAgent(req);
+
+  try {
+    res.json(await testHermesChannel(agent, req.params.channelId));
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: error.message || "Failed to test Hermes channel",
+    });
+  }
 }));
 
 // Live container resource stats (CPU, memory, network, PIDs)

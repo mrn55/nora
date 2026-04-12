@@ -219,6 +219,12 @@ function normalizeRuntimeFamilyName(value) {
     : DEFAULT_RUNTIME_FAMILY;
 }
 
+function defaultBackendForRuntimeFamily(runtimeFamily) {
+  return normalizeRuntimeFamilyName(runtimeFamily) === "hermes"
+    ? "hermes"
+    : "docker";
+}
+
 function normalizeBackendName(value) {
   const normalized = String(value || "docker").trim().toLowerCase();
   if (normalized === "kubernetes") return "k8s";
@@ -362,10 +368,62 @@ function parseEnabledBackendList(rawValue) {
   return parsed;
 }
 
+function parseEnabledRuntimeFamilyList(rawValue) {
+  const seen = new Set();
+  const parsed = [];
+
+  for (const entry of String(rawValue || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)) {
+    if (!isKnownRuntimeFamily(entry)) continue;
+    const normalized = String(entry).trim().toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    parsed.push(normalized);
+  }
+
+  return parsed;
+}
+
 function getEnabledBackends(env = process.env) {
-  const configuredList = parseEnabledBackendList(env.ENABLED_BACKENDS);
-  if (configuredList.length > 0) {
-    return configuredList;
+  const explicitBackends = parseEnabledBackendList(env.ENABLED_BACKENDS);
+  const enabledRuntimeFamilies = parseEnabledRuntimeFamilyList(
+    env.ENABLED_RUNTIME_FAMILIES
+  );
+
+  if (enabledRuntimeFamilies.length > 0) {
+    const seen = new Set();
+    const effectiveBackends = [];
+    const runtimeFamilySet = new Set(enabledRuntimeFamilies);
+
+    const pushBackend = (backend) => {
+      const normalized = normalizeBackendName(backend);
+      if (seen.has(normalized)) return;
+      seen.add(normalized);
+      effectiveBackends.push(normalized);
+    };
+
+    for (const backend of explicitBackends) {
+      if (!runtimeFamilySet.has(runtimeFamilyForBackend(backend))) continue;
+      pushBackend(backend);
+    }
+
+    for (const runtimeFamily of enabledRuntimeFamilies) {
+      const familyAlreadyCovered = effectiveBackends.some(
+        (backend) => runtimeFamilyForBackend(backend) === runtimeFamily
+      );
+      if (familyAlreadyCovered) continue;
+      pushBackend(defaultBackendForRuntimeFamily(runtimeFamily));
+    }
+
+    if (effectiveBackends.length > 0) {
+      return effectiveBackends;
+    }
+  }
+
+  if (explicitBackends.length > 0) {
+    return explicitBackends;
   }
 
   return ["docker"];
@@ -800,6 +858,31 @@ function getBackendStatus(backend, env = process.env) {
   });
 }
 
+function buildBackendEnablementMessage(backendOrStatus, env = process.env) {
+  const status =
+    backendOrStatus && typeof backendOrStatus === "object"
+      ? backendOrStatus
+      : getBackendStatus(backendOrStatus, env);
+  const runtimeFamily =
+    status?.runtimeFamily || runtimeFamilyForBackend(status?.id || "");
+  const runtimeFamilyBackend = defaultBackendForRuntimeFamily(runtimeFamily);
+
+  if (
+    status?.selectionType === "runtime_family" ||
+    status?.id === runtimeFamilyBackend
+  ) {
+    return (
+      `${status.label} is not enabled. Enable it with ` +
+      `ENABLED_RUNTIME_FAMILIES=${runtimeFamily} or ENABLED_BACKENDS=${status.id}.`
+    );
+  }
+
+  return (
+    `${status.label} is not enabled. Enable it with ` +
+    `ENABLED_BACKENDS=${status.id}.`
+  );
+}
+
 function getRuntimeCatalog(env = process.env) {
   const enabledSet = new Set(getEnabledBackends(env));
   const defaultRuntimeFamily = getDefaultRuntimeFamily(env);
@@ -853,6 +936,7 @@ module.exports = {
   RUNTIME_FAMILY_METADATA,
   backendForRuntimeSelection,
   getBackendCatalog,
+  buildBackendEnablementMessage,
   getBackendMetadata,
   getBackendStatus,
   getDefaultBackend,

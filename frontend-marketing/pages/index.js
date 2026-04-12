@@ -35,7 +35,7 @@ const TRUST_ITEMS = [
   },
   {
     label: "Operator workflow",
-    text: "Deploy runtimes, manage keys, inspect logs, and work from the same control surface.",
+    text: "Deploy OpenClaw or Hermes runtimes, manage keys, inspect logs, and work from the same control surface.",
   },
   {
     label: "User-run PaaS mode",
@@ -47,12 +47,12 @@ const CONTROL_LANES = [
   {
     label: "Deploy",
     title: "Launch agent runtimes without stitching together the stack by hand.",
-    detail: "OpenClaw is the clearest path today.",
+    detail: "OpenClaw is the broadest path today. Hermes is supported as a Docker runtime.",
   },
   {
     label: "Observe",
     title: "Keep chat, logs, metrics, and runtime state in the same operator loop.",
-    detail: "From launch day to steady-state operations.",
+    detail: "OpenClaw chat and metrics or Hermes WebUI, plus logs and terminal access.",
   },
   {
     label: "Control",
@@ -65,7 +65,7 @@ const PLATFORM_ROWS = [
   {
     icon: Server,
     title: "Isolated runtime infrastructure",
-    copy: "Provision dedicated environments for agent workloads instead of squeezing operations into a thin dashboard shell.",
+    copy: "Provision dedicated OpenClaw or Hermes environments instead of squeezing operations into a thin dashboard shell.",
   },
   {
     icon: Lock,
@@ -80,7 +80,7 @@ const PLATFORM_ROWS = [
   {
     icon: BarChart3,
     title: "Logs, metrics, and terminal access",
-    copy: "Confirm runtime behavior with chat, logs, metrics, and terminal access in one operator surface.",
+    copy: "Confirm runtime behavior with OpenClaw chat and metrics or Hermes WebUI, plus logs and terminal access in one operator surface.",
   },
 ];
 
@@ -93,12 +93,12 @@ const WORKFLOW = [
   {
     step: "02",
     title: "Add one provider and one runtime",
-    body: "Save an LLM key, choose the runtime path you want to launch, and configure the first deployment.",
+    body: "Save an LLM key, choose OpenClaw or Hermes, and configure the first deployment.",
   },
   {
     step: "03",
     title: "Validate the operator loop",
-    body: "Use chat, logs, metrics, and terminal access to verify that the runtime is actually usable.",
+    body: "Use OpenClaw chat, logs, metrics, and terminal access or Hermes WebUI, logs, and terminal access to verify that the runtime is actually usable.",
   },
 ];
 
@@ -134,7 +134,7 @@ export default function Home() {
         <title>Nora | Deploy intelligence anywhere.</title>
         <meta
           name="description"
-          content="Nora helps teams deploy, observe, and operate agent runtimes. Create an account, inspect the public repo, self-host it, and use it commercially under Apache 2.0."
+          content="Nora helps teams deploy, observe, and operate OpenClaw and Hermes agent runtimes. Create an account, inspect the public repo, self-host it, and use it commercially under Apache 2.0."
         />
       </Head>
 
@@ -247,9 +247,11 @@ export default function Home() {
               </h1>
 
               <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-                Nora gives operator teams one place to deploy runtimes, manage provider keys, inspect logs, open terminals,
-                and monitor activity. The product is fully open source, self-hostable, and commercially usable under Apache
-                2.0, whether you are running it for your own team or operating Nora in PaaS mode for your own business.
+                Nora gives operator teams one place to deploy OpenClaw and Hermes runtimes, manage provider keys, inspect
+                logs, open terminals, and monitor activity. OpenClaw is the broadest operator path today, while Hermes is
+                supported as a Docker-managed runtime with its own WebUI. The product is fully open source, self-hostable,
+                and commercially usable under Apache 2.0, whether you are running it for your own team or operating Nora in
+                PaaS mode for your own business.
               </p>
 
               <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -299,7 +301,7 @@ export default function Home() {
                       Operator Surface
                     </div>
                     <h2 className="max-w-sm text-3xl font-black leading-tight text-white">
-                      Deploy, observe, and control from one operating loop.
+                      Deploy, observe, and control OpenClaw and Hermes from one operating loop.
                     </h2>
                   </div>
                   <div className="hidden text-right sm:block">
@@ -323,23 +325,6 @@ export default function Home() {
                   ))}
                 </div>
 
-                <div className="mt-5 grid gap-3 rounded-[28px] border border-white/10 bg-black/20 p-4 sm:grid-cols-3">
-                  <div>
-                    <div className="text-[0.62rem] font-black uppercase tracking-[0.28em] text-slate-500">Providers</div>
-                    <div className="mt-2 text-3xl font-black text-white">18</div>
-                    <div className="mt-1 text-sm text-slate-400">Major LLM providers from one operator surface.</div>
-                  </div>
-                  <div>
-                    <div className="text-[0.62rem] font-black uppercase tracking-[0.28em] text-slate-500">Integrations</div>
-                    <div className="mt-2 text-3xl font-black text-white">60+</div>
-                    <div className="mt-1 text-sm text-slate-400">Developer, data, and cloud systems wired into the product.</div>
-                  </div>
-                  <div>
-                    <div className="text-[0.62rem] font-black uppercase tracking-[0.28em] text-slate-500">Channels</div>
-                    <div className="mt-2 text-3xl font-black text-white">9</div>
-                    <div className="mt-1 text-sm text-slate-400">Communication paths teams can bring into the same operator loop.</div>
-                  </div>
-                </div>
               </div>
             </div>
           </section>
@@ -372,7 +357,7 @@ export default function Home() {
                 </h2>
                 <p className="mt-5 max-w-lg text-base leading-8 text-slate-300">
                   The public product story is simple: teams can create an account quickly, inspect the repo, and move from
-                  first deploy to live operations without hiding the operational details.
+                  first deploy to live OpenClaw or Hermes operations without hiding the operational details.
                 </p>
                 <div className="mt-8 grid gap-3 sm:grid-cols-3">
                   <div className="rounded-[24px] border border-white/10 bg-white/[0.03] px-4 py-4">

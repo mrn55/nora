@@ -190,6 +190,7 @@ beforeEach(() => {
     disk_gb: 10,
   });
   delete process.env.ENABLED_BACKENDS;
+  delete process.env.ENABLED_RUNTIME_FAMILIES;
 });
 
 describe("admin routes", () => {
