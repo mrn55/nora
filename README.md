@@ -337,7 +337,9 @@ For public-domain setup, use [`infra/nginx_public.conf.template`](infra/nginx_pu
 
 ## Contributing
 
-Nora is in active development. Good areas to contribute:
+Nora is in active development. Start with the full [contributing guide](./CONTRIBUTING.md) and the project [code of conduct](./CODE_OF_CONDUCT.md).
+
+Good areas to contribute:
 
 - Frontend UX for operator workflows
 - Backend provisioning and lifecycle management
@@ -351,10 +353,16 @@ git checkout -b feature/your-feature
 # make changes, commit, open a PR
 ```
 
+Before changing a subtree, read the root [AGENTS.md](./AGENTS.md) and the nearest local `AGENTS.md`. If your change affects documented behavior or architecture, update the relevant docs in the same PR.
+
 ---
 
 ## Community
 
+- [Contributing Guide](./CONTRIBUTING.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [Security Policy](./SECURITY.md)
+- [Support Paths](./SUPPORT.md)
 - [Issues](https://github.com/solomon2773/nora/issues)
 - [Discussions](https://github.com/solomon2773/nora/discussions)
 - [OpenClaw](https://github.com/openclaw/openclaw)
