@@ -34,6 +34,550 @@ function parseTimeoutMs(rawValue, fallbackMs) {
   return Number.isFinite(parsed) && parsed >= 60000 ? parsed : fallbackMs;
 }
 
+function parsePositiveInteger(rawValue, fallbackValue, { min = 1, max = 32 } = {}) {
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) return fallbackValue;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+const PROVIDER_ENV_MAP = Object.freeze({
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  google: 'GEMINI_API_KEY',
+  groq: 'GROQ_API_KEY',
+  mistral: 'MISTRAL_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+  together: 'TOGETHER_API_KEY',
+  cohere: 'COHERE_API_KEY',
+  xai: 'XAI_API_KEY',
+  moonshot: 'MOONSHOT_API_KEY',
+  zai: 'ZAI_API_KEY',
+  ollama: 'OLLAMA_API_KEY',
+  minimax: 'MINIMAX_API_KEY',
+  'github-copilot': 'COPILOT_GITHUB_TOKEN',
+  huggingface: 'HF_TOKEN',
+  cerebras: 'CEREBRAS_API_KEY',
+  nvidia: 'NVIDIA_API_KEY',
+});
+
+const PROVIDER_ENV_ENDPOINT_MAP = Object.freeze({
+  GEMINI_API_KEY: 'https://generativelanguage.googleapis.com/v1beta',
+  NVIDIA_API_KEY: 'https://integrate.api.nvidia.com/v1',
+});
+
+const PROVIDER_MODEL_DEFAULTS = Object.freeze({
+  anthropic: 'claude-sonnet-4-5',
+  openai: 'gpt-5.4',
+  google: 'gemini-3.1-pro-preview',
+  groq: 'llama-3.3-70b-versatile',
+  mistral: 'mistral-large-latest',
+  deepseek: 'deepseek-chat',
+  openrouter: 'openrouter/auto',
+  together: 'together/moonshotai/Kimi-K2.5',
+  cohere: 'command-r-plus',
+  xai: 'grok-4',
+  nvidia: 'nvidia/nvidia/nemotron-3-super-120b-a12b',
+  moonshot: 'kimi-k2.5',
+  zai: 'glm-5',
+  minimax: 'MiniMax-M2.7',
+});
+
+const HERMES_NATIVE_PROVIDER_MAP = Object.freeze({
+  anthropic: Object.freeze({ provider: 'anthropic' }),
+  deepseek: Object.freeze({ provider: 'deepseek' }),
+  google: Object.freeze({ provider: 'gemini' }),
+  huggingface: Object.freeze({ provider: 'huggingface' }),
+  minimax: Object.freeze({ provider: 'minimax' }),
+  moonshot: Object.freeze({ provider: 'kimi-coding' }),
+  openrouter: Object.freeze({
+    provider: 'openrouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+  }),
+  xai: Object.freeze({ provider: 'xai' }),
+  zai: Object.freeze({ provider: 'zai' }),
+});
+
+const HERMES_CUSTOM_PROVIDER_BASE_URLS = Object.freeze({
+  cerebras: 'https://api.cerebras.ai/v1',
+  cohere: 'https://api.cohere.ai/compatibility/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  nvidia: 'https://integrate.api.nvidia.com/v1',
+  openai: 'https://api.openai.com/v1',
+  together: 'https://api.together.xyz/v1',
+});
+
+const DOCKER_EXEC_FALLBACK_BACKENDS = new Set(['docker', 'nemoclaw']);
+
+function normalizeEnvValueMap(envVars = {}) {
+  return Object.fromEntries(
+    Object.entries(envVars || {})
+      .filter(([key, value]) => key && value != null && String(value) !== '')
+      .map(([key, value]) => [key, String(value)])
+  );
+}
+
+function buildAuthProfiles(providerKeys = {}) {
+  const envToProvider = Object.fromEntries(
+    Object.entries(PROVIDER_ENV_MAP).map(([provider, envVar]) => [envVar, provider])
+  );
+  const profiles = {};
+  const order = {};
+  const lastGood = {};
+  for (const [envVar, key] of Object.entries(normalizeEnvValueMap(providerKeys))) {
+    const provider = envToProvider[envVar];
+    if (!provider) continue;
+    const profileId = `${provider}:default`;
+    profiles[profileId] = {
+      type: 'api_key',
+      provider,
+      key,
+      ...(PROVIDER_ENV_ENDPOINT_MAP[envVar]
+        ? { endpoint: PROVIDER_ENV_ENDPOINT_MAP[envVar] }
+        : {}),
+    };
+    order[provider] = [profileId];
+    lastGood[provider] = profileId;
+  }
+  return {
+    version: 1,
+    profiles,
+    ...(Object.keys(order).length > 0 ? { order } : {}),
+    ...(Object.keys(lastGood).length > 0 ? { lastGood } : {}),
+  };
+}
+
+function buildAuthProfilesWriteCommand(authProfiles) {
+  const authJsonB64 = Buffer.from(JSON.stringify(authProfiles)).toString('base64');
+  return (
+    `mkdir -p /root/.openclaw/agents/main/agent && ` +
+    `printf '%s' '${authJsonB64}' | base64 -d > /root/.openclaw/agents/main/agent/auth-profiles.json && ` +
+    `chmod 0600 /root/.openclaw/agents/main/agent/auth-profiles.json`
+  );
+}
+
+function buildDefaultModelCommand(defaultProvider = null) {
+  if (!defaultProvider) return null;
+
+  const modelId =
+    defaultProvider.model || PROVIDER_MODEL_DEFAULTS[defaultProvider.provider];
+  if (!modelId) return null;
+
+  const fullModel = modelId.includes('/')
+    ? modelId
+    : `${defaultProvider.provider}/${modelId}`;
+
+  return (
+    'OPENCLAW_BIN="${OPENCLAW_CLI_PATH:-/usr/local/bin/openclaw}"; ' +
+    'if [ ! -x "$OPENCLAW_BIN" ]; then OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || true)"; fi; ' +
+    '[ -n "$OPENCLAW_BIN" ] && [ -x "$OPENCLAW_BIN" ] || exit 127; ' +
+    `exec "$OPENCLAW_BIN" ${["models", "set", fullModel]
+      .map((arg) => JSON.stringify(String(arg)))
+      .join(" ")}`
+  );
+}
+
+function normalizeProviderConfig(config) {
+  if (!config) return {};
+  if (typeof config === 'string') {
+    try {
+      const parsed = JSON.parse(config);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof config === 'object' && !Array.isArray(config) ? config : {};
+}
+
+function pickProviderBaseUrl(config = {}) {
+  for (const key of ['base_url', 'baseUrl', 'endpoint', 'url']) {
+    const value = config[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function buildHermesModelConfig(defaultProvider = null) {
+  if (!defaultProvider) return null;
+
+  const providerId = String(defaultProvider.provider || '').trim();
+  if (!providerId) {
+    throw new Error('Default LLM provider is missing a provider id');
+  }
+
+  const savedConfig = normalizeProviderConfig(defaultProvider.config);
+  const savedBaseUrl = pickProviderBaseUrl(savedConfig);
+  const modelId =
+    typeof defaultProvider.model === 'string' && defaultProvider.model.trim()
+      ? defaultProvider.model.trim()
+      : PROVIDER_MODEL_DEFAULTS[providerId];
+
+  if (!modelId) {
+    throw new Error(
+      `Default provider ${providerId} needs a saved model before Hermes can use it`
+    );
+  }
+
+  const nativeProvider = HERMES_NATIVE_PROVIDER_MAP[providerId];
+  if (nativeProvider) {
+    return {
+      provider: nativeProvider.provider,
+      defaultModel: modelId,
+      baseUrl: nativeProvider.baseUrl || savedBaseUrl || null,
+    };
+  }
+
+  const resolvedBaseUrl =
+    savedBaseUrl ||
+    HERMES_CUSTOM_PROVIDER_BASE_URLS[providerId] ||
+    '';
+
+  if (!resolvedBaseUrl) {
+    throw new Error(
+      `Provider ${providerId} needs a base URL before Hermes can use it`
+    );
+  }
+
+  return {
+    provider: 'custom',
+    defaultModel: modelId,
+    baseUrl: resolvedBaseUrl,
+  };
+}
+
+function escapeDotenvValue(value) {
+  return `"${String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/"/g, '\\"')}"`;
+}
+
+function buildHermesEnvWriteCommand(envVars = {}) {
+  const managedBlock = Object.entries(normalizeEnvValueMap(envVars))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${escapeDotenvValue(value)}`)
+    .join('\n');
+  const blockB64 = Buffer.from(managedBlock).toString('base64');
+
+  return [
+    'set -eu',
+    'start_marker="# >>> NORA MANAGED ENV >>>"',
+    'end_marker="# <<< NORA MANAGED ENV <<<"',
+    'tmp_file="$(mktemp)"',
+    'if [ -f /opt/data/.env ]; then',
+    "  awk -v start=\"$start_marker\" -v end=\"$end_marker\" 'BEGIN{skip=0} $0==start {skip=1; next} $0==end {skip=0; next} !skip {print}' /opt/data/.env > \"$tmp_file\"",
+    'else',
+    '  : > "$tmp_file"',
+    'fi',
+    'if [ -s "$tmp_file" ]; then printf \'\\n\' >> "$tmp_file"; fi',
+    'printf \'%s\\n\' "$start_marker" >> "$tmp_file"',
+    `printf '%s' '${blockB64}' | base64 -d >> "$tmp_file"`,
+    'printf \'\\n\' >> "$tmp_file"',
+    'printf \'%s\\n\' "$end_marker" >> "$tmp_file"',
+    'chown hermes:hermes "$tmp_file" 2>/dev/null || true',
+    'chmod 0600 "$tmp_file"',
+    'mv "$tmp_file" /opt/data/.env',
+    'chown hermes:hermes /opt/data/.env 2>/dev/null || true',
+    'chmod 0600 /opt/data/.env',
+  ].join('\n');
+}
+
+function buildHermesModelConfigWriteCommand(modelConfig = {}) {
+  const payloadJson = JSON.stringify(modelConfig || {});
+  return `
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+import yaml
+
+from hermes_cli.config import get_config_path, load_config
+
+payload = json.loads(${JSON.stringify(payloadJson)})
+config = load_config() or {}
+model = dict(config.get("model") or {})
+
+default_model = str(payload.get("defaultModel") or "").strip()
+provider = str(payload.get("provider") or "").strip()
+base_url = str(payload.get("baseUrl") or "").strip()
+
+if default_model:
+    model["default"] = default_model
+else:
+    model.pop("default", None)
+
+if provider:
+    model["provider"] = provider
+else:
+    model.pop("provider", None)
+
+if base_url:
+    model["base_url"] = base_url
+else:
+    model.pop("base_url", None)
+
+if model:
+    config["model"] = model
+else:
+    config.pop("model", None)
+
+config_path = Path(get_config_path())
+config_path.parent.mkdir(parents=True, exist_ok=True)
+
+with config_path.open("w", encoding="utf-8") as handle:
+    yaml.safe_dump(config, handle, sort_keys=False)
+
+print(json.dumps({"ok": True}))
+PY`.trim();
+}
+
+async function fetchUserLlmEnvVars(userId) {
+  if (!userId || (process.env.KEY_STORAGE || 'database') !== 'database') {
+    return {};
+  }
+
+  try {
+    const keysResult = await db.query(
+      'SELECT provider, api_key FROM llm_providers WHERE user_id = $1',
+      [userId]
+    );
+    const { decrypt } = require('./crypto');
+    const llmEnvVars = {};
+    for (const row of keysResult.rows) {
+      const envName = PROVIDER_ENV_MAP[row.provider];
+      if (!envName || !row.api_key) continue;
+      try {
+        llmEnvVars[envName] = decrypt(row.api_key);
+      } catch {
+        llmEnvVars[envName] = row.api_key;
+      }
+    }
+    return normalizeEnvValueMap(llmEnvVars);
+  } catch (error) {
+    console.warn(`[provisioner] Failed to fetch LLM keys for user ${userId}:`, error.message);
+    return {};
+  }
+}
+
+async function fetchDefaultProvider(userId) {
+  if (!userId || (process.env.KEY_STORAGE || 'database') !== 'database') {
+    return null;
+  }
+
+  try {
+    const result = await db.query(
+      'SELECT id, provider, model, config FROM llm_providers WHERE user_id = $1 AND is_default = true LIMIT 1',
+      [userId]
+    );
+    return result.rows[0] || null;
+  } catch (error) {
+    console.warn(`[provisioner] Failed to fetch default LLM provider for user ${userId}:`, error.message);
+    return null;
+  }
+}
+
+async function runRuntimeCommand(agent, command, { timeout = 30000 } = {}) {
+  const runtimeUrl = runtimeUrlForAgent(agent, '/exec');
+  if (!runtimeUrl) {
+    throw new Error('Agent runtime endpoint unavailable');
+  }
+
+  const response = await fetch(runtimeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      command,
+      timeout,
+    }),
+  });
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(payload.error || `Runtime command failed with HTTP ${response.status}`);
+  }
+
+  if ((payload.exitCode || 0) !== 0) {
+    throw new Error(payload.stderr || payload.stdout || `Runtime command exited with code ${payload.exitCode}`);
+  }
+
+  return payload;
+}
+
+async function runProvisionerExecCommand(provisioner, containerId, command, { timeout = 30000 } = {}) {
+  const execResult = await provisioner.exec(containerId, {
+    cmd: ['/bin/sh', '-lc', command],
+    tty: true,
+    env: [],
+  });
+  if (!execResult?.exec || !execResult?.stream) {
+    throw new Error('Container exec unavailable');
+  }
+
+  const output = await new Promise((resolve, reject) => {
+    const chunks = [];
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        execResult.stream.destroy();
+      } catch {
+        // Ignore stream teardown failures.
+      }
+      reject(new Error(`Container command timed out after ${timeout}ms`));
+    }, timeout);
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+
+    execResult.stream.on('data', (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    execResult.stream.on('end', finish);
+    execResult.stream.on('close', finish);
+    execResult.stream.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+
+  const inspectResult = await execResult.exec.inspect();
+  const exitCode = inspectResult?.ExitCode ?? 0;
+  if (exitCode !== 0) {
+    throw new Error(output.trim() || `Container command exited with code ${exitCode}`);
+  }
+
+  return { exitCode, output };
+}
+
+async function reconcileRuntimeLlmAuth({
+  userId,
+  runtimeFamily,
+  resolvedBackend,
+  containerId,
+  provisioner,
+  host,
+  runtimeHost,
+  runtimePort,
+  gatewayHostPort,
+  gatewayHost,
+  gatewayPort,
+} = {}) {
+  const llmEnvVars = await fetchUserLlmEnvVars(userId);
+  const defaultProvider = await fetchDefaultProvider(userId);
+  const hasLlmKeys = Object.keys(llmEnvVars).length > 0;
+  if (!hasLlmKeys && !defaultProvider) {
+    return { status: 'skipped' };
+  }
+
+  const agentRef = {
+    backend_type: resolvedBackend,
+    host,
+    runtime_host: runtimeHost,
+    runtime_port: runtimePort,
+    gateway_host_port: gatewayHostPort,
+    gateway_host: gatewayHost,
+    gateway_port: gatewayPort,
+  };
+
+  if (runtimeFamily === 'hermes') {
+    const modelConfig = buildHermesModelConfig(defaultProvider);
+    if (modelConfig) {
+      await runProvisionerExecCommand(
+        provisioner,
+        containerId,
+        buildHermesModelConfigWriteCommand(modelConfig)
+      );
+    }
+    await runProvisionerExecCommand(
+      provisioner,
+      containerId,
+      buildHermesEnvWriteCommand(llmEnvVars)
+    );
+    await provisioner.restart(containerId);
+    const readiness = await waitForAgentReadiness(
+      {
+        host,
+        runtimeHost,
+        runtimePort,
+        gatewayHostPort,
+        gatewayHost,
+        gatewayPort,
+        checkGateway: false,
+      },
+      {
+        runtime: {
+          attempts: 8,
+          intervalMs: 5000,
+          timeoutMs: 5000,
+        },
+      }
+    );
+    if (!readiness.ok) {
+      throw new Error(
+        `Hermes runtime did not recover after auth reconcile (${readiness.runtime?.error || 'unreachable'})`
+      );
+    }
+    return { status: 'synced' };
+  }
+
+  const authProfiles = buildAuthProfiles(llmEnvVars);
+  const modelCommand = buildDefaultModelCommand(defaultProvider);
+  if (Object.keys(authProfiles).length === 0 && !modelCommand) {
+    return { status: 'skipped' };
+  }
+
+  const authWriteCommand = buildAuthProfilesWriteCommand(authProfiles);
+  try {
+    await runRuntimeCommand(agentRef, authWriteCommand);
+  } catch (error) {
+    if (!DOCKER_EXEC_FALLBACK_BACKENDS.has(resolvedBackend)) {
+      throw error;
+    }
+    await runProvisionerExecCommand(provisioner, containerId, authWriteCommand);
+  }
+
+  await provisioner.restart(containerId);
+  const readiness = await waitForAgentReadiness({
+    host,
+    runtimeHost,
+    runtimePort,
+    gatewayHostPort,
+    gatewayHost,
+    gatewayPort,
+  });
+  if (!readiness.ok) {
+    throw new Error(
+      `Agent runtime did not recover after auth reconcile (${readiness.runtime?.error || readiness.gateway?.error || 'unreachable'})`
+    );
+  }
+
+  if (modelCommand) {
+    await runRuntimeCommand(agentRef, modelCommand, { timeout: 60000 });
+  }
+
+  return { status: 'synced' };
+}
+
 function buildIntegrationSyncEntry(row = {}) {
   let config = row.config || {};
   if (typeof config === 'string') {
@@ -52,6 +596,11 @@ function buildIntegrationSyncEntry(row = {}) {
     config,
     status: row.status || 'active',
   };
+}
+
+async function markDeploymentLifecycle(db, agentId, status) {
+  await db.query("UPDATE agents SET status = $2 WHERE id = $1", [agentId, status]);
+  await db.query("UPDATE deployments SET status = $2 WHERE agent_id = $1", [agentId, status]);
 }
 
 // ── Pluggable Backend ────────────────────────────────────
@@ -90,8 +639,12 @@ function loadBackend(backendId) {
 }
 
 const enabledBackends = getEnabledBackends();
+const DEPLOYMENT_WORKER_CONCURRENCY = parsePositiveInteger(
+  process.env.DEPLOYMENT_WORKER_CONCURRENCY,
+  3
+);
 console.log(
-  `Provisioner worker started [enabled backends=${enabledBackends.join(', ') || 'docker'} default backend=${getDefaultBackend()}]`
+  `Provisioner worker started [enabled backends=${enabledBackends.join(', ') || 'docker'} default backend=${getDefaultBackend()} concurrency=${DEPLOYMENT_WORKER_CONCURRENCY}]`
 );
 
 // ── Worker ───────────────────────────────────────────────
@@ -138,53 +691,12 @@ const worker = new Worker('deployments', async (job) => {
   }
 
   console.log(`Processing deployment job ${job.id}: agent=${id} name=${name} backend=${resolvedBackend} (${vcpu}vCPU/${ram_mb}MB/${disk_gb}GB)`);
+  await markDeploymentLifecycle(db, id, "deploying");
 
   // Fetch user's LLM provider keys from DB for injection into container
-  let llmEnvVars = {};
-  if (userId && (process.env.KEY_STORAGE || 'database') === 'database') {
-    try {
-      const keysResult = await db.query(
-        "SELECT provider, api_key FROM llm_providers WHERE user_id = $1",
-        [userId]
-      );
-      // Map provider names to env var names
-      const providerEnvMap = {
-        anthropic: 'ANTHROPIC_API_KEY',
-        openai: 'OPENAI_API_KEY',
-        google: 'GEMINI_API_KEY',
-        groq: 'GROQ_API_KEY',
-        mistral: 'MISTRAL_API_KEY',
-        deepseek: 'DEEPSEEK_API_KEY',
-        openrouter: 'OPENROUTER_API_KEY',
-        together: 'TOGETHER_API_KEY',
-        cohere: 'COHERE_API_KEY',
-        xai: 'XAI_API_KEY',
-        moonshot: 'MOONSHOT_API_KEY',
-        zai: 'ZAI_API_KEY',
-        ollama: 'OLLAMA_API_KEY',
-        minimax: 'MINIMAX_API_KEY',
-        'github-copilot': 'COPILOT_GITHUB_TOKEN',
-        huggingface: 'HF_TOKEN',
-        cerebras: 'CEREBRAS_API_KEY',
-        nvidia: 'NVIDIA_API_KEY',
-      };
-      for (const row of keysResult.rows) {
-        const envName = providerEnvMap[row.provider];
-        if (envName && row.api_key) {
-          try {
-            const { decrypt } = require('./crypto');
-            llmEnvVars[envName] = decrypt(row.api_key);
-          } catch {
-            llmEnvVars[envName] = row.api_key;
-          }
-        }
-      }
-      if (Object.keys(llmEnvVars).length > 0) {
-        console.log(`[provisioner] Injecting ${Object.keys(llmEnvVars).length} LLM provider key(s) for user ${userId}`);
-      }
-    } catch (e) {
-      console.warn(`[provisioner] Failed to fetch LLM keys for user ${userId}:`, e.message);
-    }
+  const llmEnvVars = await fetchUserLlmEnvVars(userId);
+  if (Object.keys(llmEnvVars).length > 0) {
+    console.log(`[provisioner] Injecting ${Object.keys(llmEnvVars).length} LLM provider key(s) for user ${userId}`);
   }
 
   // Fetch integration credentials for this agent and inject as env vars into the container
@@ -539,6 +1051,31 @@ const worker = new Worker('deployments', async (job) => {
       await persistReadinessWarning(db, { agentId: id, name, host, readiness });
     }
 
+    // Fresh deploys should land with the current control-plane LLM credentials
+    // and runtime model selection, not only the startup env captured earlier.
+    if (userId && readiness.ok) {
+      try {
+        const authSyncResult = await reconcileRuntimeLlmAuth({
+          userId,
+          runtimeFamily: resolvedRuntimeFields.runtime_family,
+          resolvedBackend,
+          containerId,
+          provisioner,
+          host,
+          runtimeHost,
+          runtimePort,
+          gatewayHostPort,
+          gatewayHost,
+          gatewayPort,
+        });
+        if (authSyncResult.status === 'synced') {
+          console.log(`[provisioner] Post-deploy LLM auth sync completed for agent ${id}`);
+        }
+      } catch (e) {
+        console.warn(`[provisioner] Failed to reconcile runtime LLM auth for agent ${id}:`, e.message);
+      }
+    }
+
     // Sync integrations to newly deployed agent container
     try {
       const intResult = await db.query(
@@ -574,7 +1111,7 @@ const worker = new Worker('deployments', async (job) => {
     console.error('Failed to update agent status:', err.message);
     throw err;
   }
-}, { connection, concurrency: 3 });
+}, { connection, concurrency: DEPLOYMENT_WORKER_CONCURRENCY });
 
 worker.on('failed', async (job, err) => {
   const attempts = job?.attemptsMade || 0;

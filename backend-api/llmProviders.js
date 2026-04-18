@@ -144,27 +144,35 @@ async function getProviderKeys(userId) {
 
 /**
  * Build the auth-profiles.json content that openclaw expects.
- * Maps provider keys to the openclaw auth store format.
+ * Maps provider keys to the persisted OpenClaw auth profile store format.
  */
 function buildAuthProfiles(providerKeys) {
   const profiles = {};
+  const order = {};
+  const lastGood = {};
   const envToProvider = {};
   for (const p of PROVIDERS) {
     envToProvider[p.envVar] = p.id;
   }
-  const envToEndpoint = {};
-  for (const p of PROVIDERS) {
-    if (p.endpoint) envToEndpoint[p.envVar] = p.endpoint;
-  }
   for (const [envVar, key] of Object.entries(providerKeys)) {
     const provider = envToProvider[envVar];
     if (provider && key) {
-      const profile = { apiKey: key };
-      if (envToEndpoint[envVar]) profile.endpoint = envToEndpoint[envVar];
-      profiles[provider] = profile;
+      const profileId = `${provider}:default`;
+      profiles[profileId] = {
+        type: "api_key",
+        provider,
+        key,
+      };
+      order[provider] = [profileId];
+      lastGood[provider] = profileId;
     }
   }
-  return profiles;
+  return {
+    version: 1,
+    profiles,
+    ...(Object.keys(order).length > 0 ? { order } : {}),
+    ...(Object.keys(lastGood).length > 0 ? { lastGood } : {}),
+  };
 }
 
 module.exports = {

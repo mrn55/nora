@@ -77,6 +77,8 @@ services:
       - ./agent-runtime:/agent-runtime:ro
       - /var/run/docker.sock:/var/run/docker.sock
     command: sh -c "npm install && node worker.js"
+    environment:
+      DEPLOYMENT_WORKER_CONCURRENCY: ${DEPLOYMENT_WORKER_CONCURRENCY:-6}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:

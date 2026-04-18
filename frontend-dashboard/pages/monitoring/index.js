@@ -38,6 +38,14 @@ const STATUS_CONFIG = {
     dot: "bg-amber-500",
     pill: "bg-amber-50 text-amber-700 border-amber-200",
   },
+  deploying: {
+    label: "Deploying Agents",
+    shortLabel: "Deploying",
+    color: "amber",
+    icon: Loader2,
+    dot: "bg-amber-500",
+    pill: "bg-amber-50 text-amber-700 border-amber-200",
+  },
   error: {
     label: "Error Agents",
     shortLabel: "Error",
@@ -77,6 +85,8 @@ function buildStatusCounts(metrics, agents) {
   return {
     running:
       metrics?.activeAgents ?? agents.filter((agent) => agent.status === "running").length,
+    deploying:
+      metrics?.deployingAgents ?? agents.filter((agent) => agent.status === "deploying").length,
     warning:
       metrics?.warningAgents ?? agents.filter((agent) => agent.status === "warning").length,
     error:
@@ -138,6 +148,12 @@ export default function Monitoring() {
       color: STATUS_CONFIG.warning.color,
     },
     {
+      name: STATUS_CONFIG.deploying.label,
+      value: statusCounts.deploying,
+      icon: STATUS_CONFIG.deploying.icon,
+      color: STATUS_CONFIG.deploying.color,
+    },
+    {
       name: STATUS_CONFIG.error.label,
       value: statusCounts.error,
       icon: STATUS_CONFIG.error.icon,
@@ -151,7 +167,7 @@ export default function Monitoring() {
     },
   ];
 
-  const statusRows = ["running", "warning", "error", "queued", "stopped"].map((key) => {
+  const statusRows = ["running", "deploying", "warning", "error", "queued", "stopped"].map((key) => {
     const config = STATUS_CONFIG[key];
     const count = statusCounts[key];
     const total = Math.max(statusCounts.total || 0, 1);
@@ -199,7 +215,7 @@ export default function Monitoring() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-6">
               {statCards.map((card) => (
                 <StatCard
                   key={card.name}

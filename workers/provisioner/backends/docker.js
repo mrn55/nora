@@ -411,11 +411,25 @@ class DockerBackend extends ProvisionerBackend {
     // This is only used for model selection — the actual auth-profiles.json on disk is
     // written dynamically at startup via authProfilesCmd below, so it stays correct
     // on every container restart without baking in stale or missing keys.
-    const authProfiles = {};
+    const authProfiles = {
+      version: 1,
+      profiles: {},
+      order: {},
+      lastGood: {},
+    };
+    const configuredProviders = [];
     if (env) {
       for (const [envKey, provider] of Object.entries(llmKeyMap)) {
         if (env[envKey]) {
-          authProfiles[provider] = { apiKey: env[envKey] };
+          const profileId = `${provider}:default`;
+          configuredProviders.push(provider);
+          authProfiles.profiles[profileId] = {
+            type: "api_key",
+            provider,
+            key: env[envKey],
+          };
+          authProfiles.order[provider] = [profileId];
+          authProfiles.lastGood[provider] = profileId;
         }
       }
     }
@@ -423,12 +437,18 @@ class DockerBackend extends ProvisionerBackend {
     // before first boot. Because it reads env vars at runtime (not creation time),
     // it stays correct on every restart — even after keys were injected post-creation.
     const buildAuthScript =
-      `var m=${JSON.stringify(llmKeyMap)},p={};` +
+      `var m=${JSON.stringify(llmKeyMap)},s={version:1,profiles:{},order:{},lastGood:{}};` +
       `Object.entries(m).forEach(function(e){` +
-        `if(process.env[e[0]])p[e[1]]={apiKey:process.env[e[0]]};` +
+        `var envKey=e[0],provider=e[1],key=process.env[envKey];` +
+        `if(!key)return;` +
+        `var profileId=provider+":default";` +
+        `s.profiles[profileId]={type:"api_key",provider:provider,key:key};` +
+        `s.order[provider]=[profileId];` +
+        `s.lastGood[provider]=profileId;` +
       `});` +
       `require("fs").mkdirSync("/root/.openclaw/agents/main/agent",{recursive:true});` +
-      `require("fs").writeFileSync("/root/.openclaw/agents/main/agent/auth-profiles.json",JSON.stringify(p));`;
+      `require("fs").writeFileSync("/root/.openclaw/agents/main/agent/auth-profiles.json",JSON.stringify(s));` +
+      `require("fs").chmodSync("/root/.openclaw/agents/main/agent/auth-profiles.json",0o600);`;
 
     // Determine default model from the first auth profile provider
     const providerModelDefaults = {
@@ -447,7 +467,7 @@ class DockerBackend extends ProvisionerBackend {
       zai: "zai/glm-5",
       minimax: "minimax/MiniMax-M2.7",
     };
-    const firstProvider = Object.keys(authProfiles)[0];
+    const firstProvider = configuredProviders[0];
     const defaultModel = firstProvider ? providerModelDefaults[firstProvider] : undefined;
 
     // Set default model in the config file BEFORE gateway starts (not via background CLI after).

@@ -43,6 +43,8 @@ services:
       context: .
       dockerfile: workers/provisioner/Dockerfile.prod
     command: ["node", "worker.js"]
+    environment:
+      DEPLOYMENT_WORKER_CONCURRENCY: ${DEPLOYMENT_WORKER_CONCURRENCY:-6}
     restart: unless-stopped
     volumes: !override
       - /var/run/docker.sock:/var/run/docker.sock

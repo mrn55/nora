@@ -1168,6 +1168,11 @@ describe("agent audit logging", () => {
     const res = await auth(request(app).post("/agents/agent-start-1/start"));
 
     expect(res.status).toBe(200);
+    expect(mockSyncAuthToUserAgents).toHaveBeenCalledWith(
+      "user-1",
+      "agent-start-1",
+      { onlyIfAuthPresent: true }
+    );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "agent_started",
       expect.stringContaining("Start Agent"),

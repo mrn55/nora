@@ -60,7 +60,7 @@ const {
   saveHermesChannel,
   testHermesChannel,
 } = require("../hermesUi");
-const { runContainerCommand } = require("../authSync");
+const { runContainerCommand, syncAuthToUserAgents } = require("../authSync");
 
 const router = express.Router();
 router.use(createMutationFailureAuditMiddleware("agent"));
@@ -1452,6 +1452,22 @@ router.post("/:id/start", async (req, res) => {
     const updated = await db.query(
       "UPDATE agents SET status = 'running' WHERE id = $1 RETURNING *", [agent.id]
     );
+    try {
+      const authSyncResults = await syncAuthToUserAgents(req.user.id, agent.id, {
+        onlyIfAuthPresent: true,
+      });
+      const failedSync = authSyncResults.find((result) => result.status === "failed");
+      if (failedSync) {
+        console.warn(
+          `[agents.start] Auth sync failed for agent ${agent.id}: ${failedSync.error || "unknown error"}`
+        );
+      }
+    } catch (syncError) {
+      console.warn(
+        `[agents.start] Auth sync errored for agent ${agent.id}: ${syncError.message}`
+      );
+    }
+
     await monitoring.logEvent(
       "agent_started",
       `Agent "${agent.name}" started`,

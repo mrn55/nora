@@ -18,6 +18,7 @@ jest.mock("../containerManager", () => ({
 jest.mock("../llmProviders", () => ({
   PROVIDERS: [
     { id: "openai", envVar: "OPENAI_API_KEY" },
+    { id: "google", envVar: "GEMINI_API_KEY" },
   ],
   getProviderKeys: mockGetProviderKeys,
   buildAuthProfiles: mockBuildAuthProfiles,
@@ -35,6 +36,7 @@ jest.mock("../healthChecks", () => ({
 const {
   buildHermesEnvWriteCommand,
   syncAuthToUserAgents,
+  writeAuthToContainer,
 } = require("../authSync");
 
 function jsonResponse(body, status = 200) {
@@ -79,7 +81,16 @@ describe("auth sync", () => {
       OPENAI_API_KEY: "sk-live-test",
     });
     mockBuildAuthProfiles.mockReset().mockReturnValue({
-      openai: { apiKey: "sk-live-test" },
+      version: 1,
+      profiles: {
+        "openai:default": {
+          type: "api_key",
+          provider: "openai",
+          key: "sk-live-test",
+        },
+      },
+      order: { openai: ["openai:default"] },
+      lastGood: { openai: "openai:default" },
     });
     mockGetIntegrationEnvVars.mockReset().mockResolvedValue({});
     mockEvictConnection.mockReset();
@@ -200,6 +211,77 @@ describe("auth sync", () => {
     ]);
   });
 
+  it("falls back to container exec when docker runtime auth writes cannot use the runtime endpoint", async () => {
+    global.fetch.mockRejectedValueOnce(new Error("runtime unavailable"));
+    mockExec.mockResolvedValueOnce(execResult());
+
+    await writeAuthToContainer(
+      {
+        id: "agent-docker-1",
+        backend_type: "docker",
+        container_id: "docker-agent-1",
+      },
+      {
+        version: 1,
+        profiles: {
+          "openai:default": {
+            type: "api_key",
+            provider: "openai",
+            key: "sk-live-test",
+          },
+        },
+        order: { openai: ["openai:default"] },
+        lastGood: { openai: "openai:default" },
+      }
+    );
+
+    expect(mockExec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "agent-docker-1",
+        backend_type: "docker",
+      }),
+      expect.objectContaining({
+        cmd: expect.arrayContaining(["/bin/sh", "-lc"]),
+      })
+    );
+  });
+
+  it("skips best-effort syncs when no auth material exists", async () => {
+    mockGetProviderKeys.mockResolvedValue({});
+    mockBuildAuthProfiles.mockReturnValue({});
+    mockGetIntegrationEnvVars.mockResolvedValue({});
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "agent-empty-1",
+            container_id: "oclaw-agent-empty",
+            backend_type: "docker",
+            host: "agent.internal",
+            runtime_host: "runtime.internal",
+            runtime_port: 9090,
+            gateway_host_port: null,
+            gateway_host: "gateway.internal",
+            gateway_port: 18789,
+          },
+        ],
+      });
+
+    const results = await syncAuthToUserAgents("user-1", null, {
+      onlyIfAuthPresent: true,
+    });
+
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(mockRestart).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      { agentId: "agent-empty-1", status: "skipped" },
+    ]);
+  });
+
   it("rewrites the Hermes model config and env file before waiting for runtime readiness", async () => {
     mockGetIntegrationEnvVars.mockResolvedValue({
       GITHUB_TOKEN: "gh-token",
@@ -245,9 +327,10 @@ describe("auth sync", () => {
     expect(mockExec).toHaveBeenCalledTimes(2);
 
     const configScript = decodeHermesScript(execSpy.mock.calls[0][1].cmd[2]);
-    expect(configScript).toContain('"provider":"custom"');
-    expect(configScript).toContain('"defaultModel":"gpt-5.4"');
-    expect(configScript).toContain('"baseUrl":"https://api.openai.com/v1"');
+    expect(configScript).toContain("payload = json.loads(");
+    expect(configScript).toContain('\\"provider\\":\\"custom\\"');
+    expect(configScript).toContain('\\"defaultModel\\":\\"gpt-5.4\\"');
+    expect(configScript).toContain('\\"baseUrl\\":\\"https://api.openai.com/v1\\"');
 
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain("/opt/data/.env");
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain("NORA MANAGED ENV");
@@ -279,6 +362,42 @@ describe("auth sync", () => {
     expect(results).toEqual([
       { agentId: "agent-hermes-1", status: "synced" },
     ]);
+  });
+
+  it("renders Hermes model config through json.loads when native providers omit base URLs", async () => {
+    mockGetProviderKeys.mockResolvedValue({
+      GEMINI_API_KEY: "gm-live-test",
+    });
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{ provider: "google", model: "gemini-3-flash-preview", config: {} }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "agent-hermes-google",
+            container_id: "hermes-agent-google",
+            backend_type: "hermes",
+            runtime_family: "hermes",
+            host: "agent.internal",
+            runtime_host: "runtime.internal",
+            runtime_port: 8642,
+            gateway_host_port: null,
+            gateway_host: null,
+            gateway_port: null,
+          },
+        ],
+      });
+
+    const execSpy = jest.fn().mockImplementation(() => Promise.resolve(execResult()));
+    mockExec.mockImplementation(execSpy);
+
+    await syncAuthToUserAgents("user-1");
+
+    const configScript = decodeHermesScript(execSpy.mock.calls[0][1].cmd[2]);
+    expect(configScript).toContain("payload = json.loads(");
+    expect(configScript).toContain('\\"provider\\":\\"gemini\\"');
+    expect(configScript).toContain('\\"baseUrl\\":null');
   });
 
   it("builds a shell-parseable Hermes env rewrite command", () => {

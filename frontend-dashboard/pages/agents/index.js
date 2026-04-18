@@ -62,6 +62,8 @@ function agentTone(status) {
   switch (status) {
     case "running":
       return "bg-emerald-50 text-emerald-600 shadow-emerald-500/10";
+    case "deploying":
+      return "bg-amber-50 text-amber-600 shadow-amber-500/10";
     case "warning":
       return "bg-amber-50 text-amber-600 shadow-amber-500/10";
     case "error":
@@ -288,6 +290,7 @@ function AgentCard({ agent, onAction }) {
   const placementLabel = formatPlacement(agent);
   const resourceSummary = formatResourceSummary(agent);
   const containerLabel = agent.container_name || agent.container_id || "Pending container assignment";
+  const isTransient = agent.status === "queued" || agent.status === "deploying";
 
   return (
     <div className="group bg-white border border-slate-200 rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:shadow-blue-500/10 hover:border-blue-500/20 transition-all duration-500 overflow-hidden flex flex-col p-1">
@@ -299,7 +302,7 @@ function AgentCard({ agent, onAction }) {
               agentTone(agent.status)
             )}
           >
-            {agent.status === "queued" ? <Loader2 size={24} className="animate-spin" /> : <Bot size={24} />}
+            {isTransient ? <Loader2 size={24} className="animate-spin" /> : <Bot size={24} />}
           </div>
           <div className="flex flex-col">
             <h3 className="text-lg font-black text-slate-900 leading-tight mb-1 hover:text-blue-600 transition-colors">{agent.name}</h3>

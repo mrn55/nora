@@ -23,6 +23,7 @@ describe("monitoring metrics", () => {
       .mockResolvedValueOnce({
         rows: [
           { status: "running", count: 3 },
+          { status: "deploying", count: 2 },
           { status: "warning", count: 2 },
           { status: "error", count: 1 },
           { status: "queued", count: 4 },
@@ -43,9 +44,10 @@ describe("monitoring metrics", () => {
 
     expect(metrics).toEqual({
       activeAgents: 3,
+      deployingAgents: 2,
       warningAgents: 2,
       errorAgents: 1,
-      totalAgents: 15,
+      totalAgents: 17,
       queuedAgents: 4,
       stoppedAgents: 5,
       totalDeployments: 9,
@@ -71,6 +73,7 @@ describe("monitoring metrics", () => {
       .mockResolvedValueOnce({
         rows: [
           { status: "running", count: 2 },
+          { status: "deploying", count: 1 },
           { status: "warning", count: 1 },
           { status: "queued", count: 3 },
           { status: "stopped", count: 4 },
@@ -82,15 +85,16 @@ describe("monitoring metrics", () => {
 
     expect(metrics).toEqual({
       activeAgents: 2,
+      deployingAgents: 1,
       warningAgents: 1,
       errorAgents: 0,
-      totalAgents: 10,
+      totalAgents: 11,
       queuedAgents: 3,
       stoppedAgents: 4,
       totalDeployments: 7,
       queue: {
         waiting: 3,
-        active: 0,
+        active: 1,
         completed: 0,
         failed: 0,
       },

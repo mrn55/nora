@@ -233,7 +233,7 @@ async function getMetrics(options = {}) {
   if (userId) {
     queueStats = {
       waiting: statusMap.queued || 0,
-      active: 0,
+      active: statusMap.deploying || 0,
       completed: 0,
       failed: 0,
     };
@@ -252,6 +252,7 @@ async function getMetrics(options = {}) {
 
   const result = {
     activeAgents: statusMap.running || 0,
+    deployingAgents: statusMap.deploying || 0,
     warningAgents: statusMap.warning || 0,
     errorAgents: statusMap.error || 0,
     totalAgents: Object.values(statusMap).reduce((a, b) => a + b, 0),

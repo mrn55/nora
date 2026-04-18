@@ -446,6 +446,7 @@ async function runHermesPythonJson(agent, script, { timeout = 30000 } = {}) {
 }
 
 async function persistHermesModelConfig(agent, modelConfig = {}) {
+  const payloadJson = JSON.stringify(modelConfig || {});
   const script = `
 import json
 from pathlib import Path
@@ -454,7 +455,7 @@ import yaml
 
 from hermes_cli.config import get_config_path, load_config
 
-payload = ${JSON.stringify(modelConfig || {})}
+payload = json.loads(${JSON.stringify(payloadJson)})
 config = load_config() or {}
 model = dict(config.get("model") or {})
 
@@ -736,12 +737,13 @@ async function restartHermesRuntime(agent) {
 }
 
 async function persistHermesChannelConfig(agent, definition, config) {
+  const payloadJson = JSON.stringify(config || {});
   const script = `
 import json
 
 from hermes_cli.config import remove_env_value, save_env_value
 
-payload = ${JSON.stringify(config)}
+payload = json.loads(${JSON.stringify(payloadJson)})
 for key, value in payload.items():
     text = "" if value is None else str(value).strip()
     if text:

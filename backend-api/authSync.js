@@ -60,6 +60,12 @@ const HERMES_CUSTOM_PROVIDER_BASE_URLS = Object.freeze({
   together: "https://api.together.xyz/v1",
 });
 
+const CONTAINER_EXEC_AUTH_FALLBACK_BACKENDS = new Set([
+  "docker",
+  "hermes",
+  "nemoclaw",
+]);
+
 function normalizeProviderConfig(config) {
   if (!config) return {};
   if (typeof config === "string") {
@@ -187,7 +193,8 @@ function buildAuthProfilesWriteCommand(authProfiles) {
   const authJsonB64 = Buffer.from(JSON.stringify(authProfiles)).toString('base64');
   return (
     `mkdir -p /root/.openclaw/agents/main/agent && ` +
-    `printf '%s' '${authJsonB64}' | base64 -d > /root/.openclaw/agents/main/agent/auth-profiles.json`
+    `printf '%s' '${authJsonB64}' | base64 -d > /root/.openclaw/agents/main/agent/auth-profiles.json && ` +
+    `chmod 0600 /root/.openclaw/agents/main/agent/auth-profiles.json`
   );
 }
 
@@ -337,7 +344,16 @@ async function runContainerCommand(agent, command, { timeout = 30000 } = {}) {
 }
 
 async function writeAuthToContainer(agent, authProfiles) {
-  return runRuntimeCommand(agent, buildAuthProfilesWriteCommand(authProfiles));
+  const command = buildAuthProfilesWriteCommand(authProfiles);
+  try {
+    return await runRuntimeCommand(agent, command);
+  } catch (error) {
+    const backendType = String(agent?.backend_type || "").trim().toLowerCase();
+    if (!CONTAINER_EXEC_AUTH_FALLBACK_BACKENDS.has(backendType)) {
+      throw error;
+    }
+    return runContainerCommand(agent, command);
+  }
 }
 
 async function writeHermesEnvToContainer(agent, envVars) {
@@ -351,7 +367,8 @@ async function writeHermesEnvToContainer(agent, envVars) {
  * Returns an array of { agentId, status, error? } results.
  * Non-blocking safe: failures per-agent are logged but do not throw.
  */
-async function syncAuthToUserAgents(userId, agentId = null) {
+async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
+  const onlyIfAuthPresent = Boolean(options?.onlyIfAuthPresent);
   const defaultRow = await db.query(
     "SELECT id, provider, model, config FROM llm_providers WHERE user_id = $1 AND is_default = true LIMIT 1",
     [userId]
@@ -395,11 +412,19 @@ async function syncAuthToUserAgents(userId, agentId = null) {
           hermesModelConfig = buildHermesModelConfig(defaultProvider);
           hasHermesModelConfig = true;
         }
+        const envVars = await buildHermesManagedEnvForAgent(userId, agent.id);
+        if (
+          onlyIfAuthPresent &&
+          Object.keys(envVars).length === 0 &&
+          !hermesModelConfig
+        ) {
+          results.push({ agentId: agent.id, status: "skipped" });
+          continue;
+        }
         if (hermesModelConfig) {
           const { persistHermesModelConfig } = require("./hermesUi");
           await persistHermesModelConfig(agent, hermesModelConfig);
         }
-        const envVars = await buildHermesManagedEnvForAgent(userId, agent.id);
         await writeHermesEnvToContainer(agent, envVars);
         await containerManager.restart(agent);
         const readiness = await waitForAgentReadiness({
@@ -423,23 +448,32 @@ async function syncAuthToUserAgents(userId, agentId = null) {
       }
 
       const authProfiles = await buildAuthProfilesForAgent(userId, agent.id);
+      if (
+        onlyIfAuthPresent &&
+        Object.keys(authProfiles).length === 0 &&
+        !modelCommand
+      ) {
+        results.push({ agentId: agent.id, status: "skipped" });
+        continue;
+      }
       await writeAuthToContainer(agent, authProfiles);
       await containerManager.restart(agent);
 
+      const readiness = await waitForAgentReadiness({
+        host: agent.host,
+        runtimeHost: agent.runtime_host,
+        runtimePort: agent.runtime_port,
+        gatewayHostPort: agent.gateway_host_port,
+        gatewayHost: agent.gateway_host,
+        gatewayPort: agent.gateway_port,
+      });
+      if (!readiness.ok) {
+        throw new Error(
+          `Agent runtime did not recover after auth sync restart (${readiness.runtime?.error || readiness.gateway?.error || "unreachable"})`
+        );
+      }
+
       if (modelCommand) {
-        const readiness = await waitForAgentReadiness({
-          host: agent.host,
-          runtimeHost: agent.runtime_host,
-          runtimePort: agent.runtime_port,
-          gatewayHostPort: agent.gateway_host_port,
-          gatewayHost: agent.gateway_host,
-          gatewayPort: agent.gateway_port,
-        });
-        if (!readiness.ok) {
-          throw new Error(
-            `Agent runtime did not recover after auth sync restart (${readiness.runtime?.error || readiness.gateway?.error || "unreachable"})`
-          );
-        }
         await runRuntimeCommand(agent, modelCommand, { timeout: 60000 });
       }
 

@@ -1,7 +1,8 @@
 <p align="center">
   <h1 align="center">Nora</h1>
-  <p align="center"><strong>The open-source control plane for AI agent operations.</strong></p>
-  <p align="center">Deploy, observe, and operate agent runtimes across Docker, Proxmox, Kubernetes, and NemoClaw — from a single self-hosted surface.</p>
+  <p align="center"><strong>The self-hosted control plane for Hermes and OpenClaw fleets.</strong></p>
+  <p align="center">
+Nora is an open-source, runtime-neutral operations platform for autonomous agent fleets. Deploy Hermes and OpenClaw agents from the same surface, migrate between them, and operate production fleets across Docker, Proxmox, Kubernetes, and NemoClaw — self-hosted, commercially usable, no vendor lock-in.</p>
 </p>
 
 <p align="center">

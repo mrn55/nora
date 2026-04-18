@@ -259,21 +259,32 @@ class NemoClawBackend extends ProvisionerBackend {
       CEREBRAS_API_KEY: "cerebras",
       NVIDIA_API_KEY: "nvidia",
     };
-    const authProfiles = {};
+    const authProfiles = {
+      version: 1,
+      profiles: {},
+      order: {},
+      lastGood: {},
+    };
     if (env) {
       for (const [envKey, provider] of Object.entries(llmKeyMap)) {
         if (env[envKey]) {
-          const profile = { apiKey: env[envKey] };
-          if (envKey === "NVIDIA_API_KEY") {
-            profile.endpoint = "https://integrate.api.nvidia.com/v1";
-          }
-          authProfiles[provider] = profile;
+          const profileId = `${provider}:default`;
+          authProfiles.profiles[profileId] = {
+            type: "api_key",
+            provider,
+            key: env[envKey],
+            ...(envKey === "NVIDIA_API_KEY"
+              ? { endpoint: "https://integrate.api.nvidia.com/v1" }
+              : {}),
+          };
+          authProfiles.order[provider] = [profileId];
+          authProfiles.lastGood[provider] = profileId;
         }
       }
     }
-    const hasAuthProfiles = Object.keys(authProfiles).length > 0;
+    const hasAuthProfiles = Object.keys(authProfiles.profiles).length > 0;
     const authProfilesCmd = hasAuthProfiles
-      ? `mkdir -p /root/.openclaw/agents/main/agent && echo '${JSON.stringify(authProfiles).replace(/'/g, "'\\''")}' > /root/.openclaw/agents/main/agent/auth-profiles.json && `
+      ? `mkdir -p /root/.openclaw/agents/main/agent && echo '${JSON.stringify(authProfiles).replace(/'/g, "'\\''")}' > /root/.openclaw/agents/main/agent/auth-profiles.json && chmod 0600 /root/.openclaw/agents/main/agent/auth-profiles.json && `
       : "";
 
     // Write baseline policy file

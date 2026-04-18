@@ -91,7 +91,7 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
           <AlertTriangle size={18} className="text-yellow-600 shrink-0" />
           <div>
             <p className="text-sm font-bold text-yellow-800">Deployment is taking longer than expected</p>
-            <p className="text-xs text-yellow-600">The system will retry automatically. Check the Logs tab for details.</p>
+            <p className="text-xs text-yellow-600">This agent is still waiting for a worker slot. Check the Logs tab for details.</p>
           </div>
         </div>
       )}
@@ -100,8 +100,18 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3">
           <Loader2 size={18} className="text-blue-600 animate-spin shrink-0" />
           <div>
-            <p className="text-sm font-bold text-blue-800">Deploying agent...</p>
-            <p className="text-xs text-blue-600">Your agent is being provisioned. This usually takes 30-60 seconds.</p>
+            <p className="text-sm font-bold text-blue-800">Deployment queued</p>
+            <p className="text-xs text-blue-600">A provisioner worker will pick this up shortly.</p>
+          </div>
+        </div>
+      )}
+
+      {agent.status === "deploying" && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
+          <Loader2 size={18} className="text-amber-600 animate-spin shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-amber-800">Provisioning in progress</p>
+            <p className="text-xs text-amber-600">A worker has started the deployment. Image pull, bootstrap, and readiness checks are running now.</p>
           </div>
         </div>
       )}
