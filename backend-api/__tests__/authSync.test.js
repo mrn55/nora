@@ -251,6 +251,14 @@ describe("auth sync", () => {
 
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain("/opt/data/.env");
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain("NORA MANAGED ENV");
+    expect(execSpy.mock.calls[1][1].cmd[2]).toContain(
+      'chown hermes:hermes "$tmp_file" 2>/dev/null || true'
+    );
+    expect(execSpy.mock.calls[1][1].cmd[2]).toContain('chmod 0600 "$tmp_file"');
+    expect(execSpy.mock.calls[1][1].cmd[2]).toContain(
+      "chown hermes:hermes /opt/data/.env 2>/dev/null || true"
+    );
+    expect(execSpy.mock.calls[1][1].cmd[2]).toContain("chmod 0600 /opt/data/.env");
     expect(execSpy.mock.calls[1][1].cmd[2]).not.toContain("then;");
     expect(execSpy.mock.calls[1][1].cmd[2]).not.toContain("else;");
     expect(mockRestart).toHaveBeenCalledWith(
@@ -287,6 +295,10 @@ describe("auth sync", () => {
     expect(parse.status).toBe(0);
     expect(decodedBlock).toContain('OPENAI_API_KEY="sk-live-test"');
     expect(decodedBlock).toContain('GITHUB_TOKEN="gh-token"');
+    expect(command).toContain('chown hermes:hermes "$tmp_file" 2>/dev/null || true');
+    expect(command).toContain('chmod 0600 "$tmp_file"');
+    expect(command).toContain("chown hermes:hermes /opt/data/.env 2>/dev/null || true");
+    expect(command).toContain("chmod 0600 /opt/data/.env");
     expect(command).not.toContain("then;");
     expect(command).not.toContain("else;");
   });

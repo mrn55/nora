@@ -242,7 +242,11 @@ function buildHermesEnvWriteCommand(envVars = {}) {
     `printf '%s' '${blockB64}' | base64 -d >> "$tmp_file"`,
     "printf '\\n' >> \"$tmp_file\"",
     "printf '%s\\n' \"$end_marker\" >> \"$tmp_file\"",
+    'chown hermes:hermes "$tmp_file" 2>/dev/null || true',
+    'chmod 0600 "$tmp_file"',
     "mv \"$tmp_file\" /opt/data/.env",
+    "chown hermes:hermes /opt/data/.env 2>/dev/null || true",
+    "chmod 0600 /opt/data/.env",
   ].join("\n");
 }
 
