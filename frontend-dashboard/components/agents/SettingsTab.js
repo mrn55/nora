@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Settings, Trash2, Loader2, Save, Copy, Share2 } from "lucide-react";
+import {
+  Settings,
+  Trash2,
+  Loader2,
+  Save,
+  Copy,
+  Share2,
+  Download,
+} from "lucide-react";
 import ConfirmDialog from "../ConfirmDialog";
 import { useToast } from "../Toast";
 import {
@@ -11,7 +19,15 @@ import {
   resolveAgentSandboxProfile,
 } from "../../lib/runtime";
 
-export default function SettingsTab({ agent, onDelete, onRename, onDuplicate, onPublish, actionLoading }) {
+export default function SettingsTab({
+  agent,
+  onDelete,
+  onRename,
+  onDuplicate,
+  onPublish,
+  onExport,
+  actionLoading,
+}) {
   const [envVars, setEnvVars] = useState("");
   const [agentName, setAgentName] = useState(agent.name || "");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -121,6 +137,27 @@ export default function SettingsTab({ agent, onDelete, onRename, onDuplicate, on
           <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Agent ID</label>
           <p className="text-sm text-slate-500 font-mono">{agent.id}</p>
         </div>
+      </section>
+
+      <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <h3 className="text-sm font-bold text-slate-700">Migration & Backup</h3>
+        <p className="text-sm text-slate-500 leading-relaxed">
+          Export this Nora-managed agent as a migration bundle when you need to recreate it on another Nora control plane.
+          Use the Files tab when you need live access to the runtime filesystem itself.
+        </p>
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={!!actionLoading}
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl hover:bg-blue-100 transition-all disabled:opacity-50"
+        >
+          {actionLoading === "export" ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Download size={14} />
+          )}
+          Export Nora Bundle
+        </button>
       </section>
 
       {/* Environment Variables */}

@@ -35,6 +35,24 @@ const mockReadHermesRuntimeSnapshot = jest.fn().mockResolvedValue({
     baseUrl: null,
   },
 });
+const mockGetOwnedMigrationDraft = jest.fn();
+const mockAttachDraftToAgent = jest.fn();
+const mockMaterializeManagedMigrationState = jest.fn();
+const mockBuildMigrationManifestFromAgent = jest.fn();
+const mockPackMigrationBundle = jest.fn();
+const mockRootsForAgent = jest.fn();
+const mockListFiles = jest.fn();
+const mockReadFile = jest.fn();
+const mockWriteFile = jest.fn();
+const mockDownloadPath = jest.fn();
+const mockCreateDirectory = jest.fn();
+const mockMovePath = jest.fn();
+const mockDeletePath = jest.fn();
+const mockNormalizeRelativePath = jest.fn((input, { allowEmpty = true } = {}) => {
+  const raw = String(input || "").trim();
+  if (!raw) return allowEmpty ? "" : null;
+  return raw.replace(/^\/+/, "");
+});
 const mockGetDeploymentDefaults = jest.fn().mockResolvedValue({
   vcpu: 1,
   ram_mb: 1024,
@@ -170,6 +188,28 @@ jest.mock("../hermesUi", () => ({
   testHermesChannel: mockTestHermesChannel,
   readHermesRuntimeSnapshot: mockReadHermesRuntimeSnapshot,
 }));
+jest.mock("../agentMigrations", () => ({
+  attachDraftToAgent: mockAttachDraftToAgent,
+  buildLiveMigrationManifest: jest.fn(),
+  buildMigrationManifestFromAgent: mockBuildMigrationManifestFromAgent,
+  createMigrationDraft: jest.fn(),
+  deleteOwnedMigrationDraft: jest.fn(),
+  getOwnedMigrationDraft: mockGetOwnedMigrationDraft,
+  materializeManagedMigrationState: mockMaterializeManagedMigrationState,
+  packMigrationBundle: mockPackMigrationBundle,
+  parseUploadedMigrationBuffer: jest.fn(),
+}));
+jest.mock("../agentFiles", () => ({
+  createDirectory: mockCreateDirectory,
+  deletePath: mockDeletePath,
+  downloadPath: mockDownloadPath,
+  listFiles: mockListFiles,
+  movePath: mockMovePath,
+  normalizeRelativePath: mockNormalizeRelativePath,
+  readFile: mockReadFile,
+  rootsForAgent: mockRootsForAgent,
+  writeFile: mockWriteFile,
+}));
 
 const app = require("../server");
 
@@ -233,6 +273,22 @@ beforeEach(() => {
       baseUrl: null,
     },
   });
+  mockGetOwnedMigrationDraft.mockReset();
+  mockAttachDraftToAgent.mockReset();
+  mockMaterializeManagedMigrationState.mockReset();
+  mockBuildMigrationManifestFromAgent.mockReset();
+  mockPackMigrationBundle.mockReset();
+  mockRootsForAgent.mockReset();
+  mockListFiles.mockReset();
+  mockReadFile.mockReset();
+  mockWriteFile.mockReset();
+  mockDownloadPath.mockReset();
+  mockCreateDirectory.mockReset();
+  mockMovePath.mockReset();
+  mockDeletePath.mockReset();
+  mockNormalizeRelativePath.mockClear();
+  mockPackMigrationBundle.mockResolvedValue(Buffer.from("bundle"));
+  mockRootsForAgent.mockReturnValue([]);
   mockGetDeploymentDefaults.mockReset().mockResolvedValue({
     vcpu: 1,
     ram_mb: 1024,
@@ -1500,6 +1556,101 @@ describe("POST /agents/deploy", () => {
     }));
   });
 
+  it("deploys from a migration draft and attaches the draft to the new agent", async () => {
+    mockGetOwnedMigrationDraft.mockResolvedValueOnce({
+      id: "draft-openclaw-1",
+      manifest: {
+        runtimeFamily: "openclaw",
+        name: "Imported Support Agent",
+        templatePayload: {
+          version: 1,
+          files: [{ path: "README.md", contentBase64: "" }],
+          memoryFiles: [],
+          wiring: { channels: [], integrations: [] },
+          metadata: { source: "migration-test" },
+        },
+        managed: {
+          llmProviders: [{ provider: "openai", apiKey: "secret" }],
+          integrations: [],
+          channels: [],
+          agentSecretOverrides: [{ key: "OPENAI_API_KEY", value: "secret" }],
+        },
+      },
+    });
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "a-migrated",
+          name: "Imported Support Agent",
+          status: "queued",
+          user_id: "user-1",
+          runtime_family: "openclaw",
+          deploy_target: "docker",
+          sandbox_profile: "standard",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await auth(
+      request(app).post("/agents/deploy").send({
+        migration_draft_id: "draft-openclaw-1",
+        deploy_target: "docker",
+      })
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockGetOwnedMigrationDraft).toHaveBeenCalledWith(
+      "draft-openclaw-1",
+      "user-1"
+    );
+    expect(mockMaterializeManagedMigrationState).toHaveBeenCalledWith(
+      "user-1",
+      "a-migrated",
+      expect.objectContaining({
+        runtimeFamily: "openclaw",
+      })
+    );
+    expect(mockAttachDraftToAgent).toHaveBeenCalledWith(
+      "draft-openclaw-1",
+      "a-migrated"
+    );
+    expect(JSON.parse(mockDb.query.mock.calls[0][1][10])).toEqual(
+      expect.objectContaining({
+        files: [{ path: "README.md", contentBase64: "" }],
+      })
+    );
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-migrated",
+        migration_draft_id: "draft-openclaw-1",
+        backend: "docker",
+      })
+    );
+  });
+
+  it("rejects deploys when the migration draft runtime family does not match the requested runtime family", async () => {
+    mockGetOwnedMigrationDraft.mockResolvedValueOnce({
+      id: "draft-hermes-1",
+      manifest: {
+        runtimeFamily: "hermes",
+        name: "Imported Hermes Agent",
+      },
+    });
+
+    const res = await auth(
+      request(app).post("/agents/deploy").send({
+        name: "Mismatch",
+        runtime_family: "openclaw",
+        migration_draft_id: "draft-hermes-1",
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cannot be deployed as openclaw/i);
+    expect(mockDb.query).not.toHaveBeenCalled();
+    expect(mockAddDeploymentJob).not.toHaveBeenCalled();
+  });
+
   it("uses a Hermes-specific container prefix for Hermes runtime deploys", async () => {
     process.env.ENABLED_BACKENDS = "docker,hermes";
 
@@ -1798,6 +1949,184 @@ describe("POST /agents/deploy", () => {
     );
 
     billing.IS_PAAS = false;
+  });
+});
+
+describe("Agent file and export routes", () => {
+  const binaryParser = (res, callback) => {
+    const chunks = [];
+    res.on("data", (chunk) => chunks.push(chunk));
+    res.on("end", () => callback(null, Buffer.concat(chunks)));
+  };
+
+  function mockOwnedAgent(overrides = {}) {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{
+        id: "agent-files-1",
+        user_id: "user-1",
+        name: "Files Agent",
+        runtime_family: "openclaw",
+        status: "running",
+        ...overrides,
+      }],
+    });
+  }
+
+  it("returns the allowed filesystem roots for an owned agent", async () => {
+    mockOwnedAgent();
+    mockRootsForAgent.mockReturnValueOnce([
+      {
+        id: "workspace",
+        label: "Workspace",
+        path: "/root/.openclaw/workspace",
+        access: "rw",
+      },
+    ]);
+
+    const res = await auth(request(app).get("/agents/agent-files-1/files/roots"));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      roots: [
+        expect.objectContaining({
+          id: "workspace",
+          access: "rw",
+        }),
+      ],
+    });
+    expect(mockRootsForAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-files-1" })
+    );
+  });
+
+  it("returns a live file tree payload", async () => {
+    mockOwnedAgent();
+    mockListFiles.mockResolvedValueOnce({
+      root: { id: "workspace", label: "Workspace", access: "rw" },
+      path: "project",
+      entries: [
+        { name: "index.js", path: "project/index.js", type: "file", size: 42 },
+      ],
+    });
+
+    const res = await auth(
+      request(app).get("/agents/agent-files-1/files/tree?root=workspace&path=project")
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        path: "project",
+        entries: [expect.objectContaining({ path: "project/index.js" })],
+      })
+    );
+    expect(mockListFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-files-1" }),
+      "workspace",
+      "project"
+    );
+  });
+
+  it("returns inline file content for the inspector", async () => {
+    mockOwnedAgent();
+    mockReadFile.mockResolvedValueOnce({
+      root: "workspace",
+      path: "project/index.js",
+      size: 5,
+      mode: "644",
+      contentBase64: Buffer.from("hello").toString("base64"),
+      writable: true,
+    });
+
+    const res = await auth(
+      request(app).get("/agents/agent-files-1/files/content?root=workspace&path=project/index.js")
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        path: "project/index.js",
+        writable: true,
+      })
+    );
+    expect(mockReadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-files-1" }),
+      "workspace",
+      "project/index.js"
+    );
+  });
+
+  it("writes file content through the files API", async () => {
+    mockOwnedAgent();
+    mockWriteFile.mockResolvedValueOnce({ success: true });
+
+    const res = await auth(
+      request(app)
+        .put("/agents/agent-files-1/files/content")
+        .send({
+          root: "workspace",
+          path: "project/index.js",
+          contentBase64: Buffer.from("hello").toString("base64"),
+        })
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    expect(mockWriteFile).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-files-1" }),
+      "workspace",
+      "project/index.js",
+      Buffer.from("hello").toString("base64"),
+      0o644
+    );
+  });
+
+  it("streams file downloads with attachment headers", async () => {
+    mockOwnedAgent();
+    mockDownloadPath.mockResolvedValueOnce({
+      kind: "file",
+      filename: "notes.txt",
+      contentType: "application/octet-stream",
+      contentBase64: Buffer.from("hello world").toString("base64"),
+    });
+
+    const res = await auth(
+      request(app)
+        .get("/agents/agent-files-1/files/download?root=workspace&path=notes.txt")
+        .buffer(true)
+        .parse(binaryParser)
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toContain('filename="notes.txt"');
+    expect(res.headers["content-type"]).toMatch(/application\/octet-stream/);
+    expect(Buffer.from(res.body)).toEqual(Buffer.from("hello world"));
+  });
+
+  it("exports an owned agent as a Nora migration bundle", async () => {
+    const manifest = { format: "nora-migration-bundle/v1", version: 1 };
+    mockOwnedAgent();
+    mockBuildMigrationManifestFromAgent.mockResolvedValueOnce(manifest);
+    mockPackMigrationBundle.mockResolvedValueOnce(Buffer.from("bundle-data"));
+
+    const res = await auth(
+      request(app)
+        .get("/agents/agent-files-1/export")
+        .buffer(true)
+        .parse(binaryParser)
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/application\/gzip/);
+    expect(res.headers["content-disposition"]).toContain(
+      'filename="files-agent.nora-migration.tgz"'
+    );
+    expect(mockBuildMigrationManifestFromAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-files-1" }),
+      { userId: "user-1" }
+    );
+    expect(mockPackMigrationBundle).toHaveBeenCalledWith(manifest);
+    expect(Buffer.from(res.body)).toEqual(Buffer.from("bundle-data"));
   });
 });
 

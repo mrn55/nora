@@ -11,6 +11,17 @@ const {
   sandboxForBackend,
 } = require('../../agent-runtime/lib/backendCatalog');
 const { buildAgentRuntimeFields } = require('../../agent-runtime/lib/agentRuntimeFields');
+const {
+  getAgentSecretEnvVars,
+} = require('../../backend-api/agentSecretOverrides');
+const {
+  buildHermesSeedArchive,
+  getMigrationManifestForAgent,
+} = require('../../backend-api/agentMigrations');
+const {
+  applyPersistedHermesState,
+  getPersistedHermesState,
+} = require('../../backend-api/hermesUi');
 const { waitForAgentReadiness } = require('./healthChecks');
 const { buildReadinessWarningDetail, persistReadinessWarning } = require('./readinessWarning');
 
@@ -251,6 +262,14 @@ function buildHermesModelConfig(defaultProvider = null) {
   };
 }
 
+function hasMeaningfulHermesModelConfig(modelConfig = {}) {
+  return Boolean(
+    String(modelConfig?.defaultModel || '').trim() ||
+    String(modelConfig?.provider || '').trim() ||
+    String(modelConfig?.baseUrl || '').trim()
+  );
+}
+
 function escapeDotenvValue(value) {
   return `"${String(value ?? '')
     .replace(/\\/g, '\\\\')
@@ -470,6 +489,7 @@ async function runProvisionerExecCommand(provisioner, containerId, command, { ti
 }
 
 async function reconcileRuntimeLlmAuth({
+  agentId,
   userId,
   runtimeFamily,
   resolvedBackend,
@@ -500,7 +520,19 @@ async function reconcileRuntimeLlmAuth({
   };
 
   if (runtimeFamily === 'hermes') {
-    const modelConfig = buildHermesModelConfig(defaultProvider);
+    let persistedModelConfig = null;
+    if (agentId) {
+      try {
+        const persistedState = await getPersistedHermesState(agentId);
+        if (hasMeaningfulHermesModelConfig(persistedState?.modelConfig)) {
+          persistedModelConfig = persistedState.modelConfig;
+        }
+      } catch {
+        persistedModelConfig = null;
+      }
+    }
+
+    const modelConfig = persistedModelConfig || buildHermesModelConfig(defaultProvider);
     if (modelConfig) {
       await runProvisionerExecCommand(
         provisioner,
@@ -887,6 +919,20 @@ const worker = new Worker('deployments', async (job) => {
   } catch (e) {
     console.warn(`[provisioner] Failed to fetch integration credentials for agent ${id}:`, e.message);
   }
+  let agentSecretEnvVars = {};
+  try {
+    agentSecretEnvVars = normalizeEnvValueMap(await getAgentSecretEnvVars(id));
+    if (Object.keys(agentSecretEnvVars).length > 0) {
+      console.log(
+        `[provisioner] Injecting ${Object.keys(agentSecretEnvVars).length} imported env override(s) for agent ${id}`
+      );
+    }
+  } catch (e) {
+    console.warn(
+      `[provisioner] Failed to fetch agent secret overrides for agent ${id}:`,
+      e.message
+    );
+  }
 
   const configuredProvisionTimeout = parseTimeoutMs(
     process.env.PROVISION_TIMEOUT_MS,
@@ -916,8 +962,9 @@ const worker = new Worker('deployments', async (job) => {
           AGENT_ID: String(id),
           AGENT_NAME: name || '',
           ...(resolvedBackend === 'nemoclaw' && model ? { NEMOCLAW_MODEL: model } : {}),
-          ...llmEnvVars,
+          ...agentSecretEnvVars,
           ...integrationEnvVars,
+          ...llmEnvVars,
         },
       });
     const timeoutPromise = new Promise((_, reject) => {
@@ -974,8 +1021,55 @@ const worker = new Worker('deployments', async (job) => {
     if (!runtimeHost || runtimeHost === "localhost") {
       runtimeHost = host;
     }
+
+    if (resolvedRuntimeFields.runtime_family === 'hermes') {
+      const [migrationManifest, persistedHermesState] = await Promise.all([
+        getMigrationManifestForAgent(id).catch(() => null),
+        getPersistedHermesState(id).catch(() => ({ modelConfig: {}, channels: [] })),
+      ]);
+
+      const seedArchive = migrationManifest
+        ? await buildHermesSeedArchive(migrationManifest).catch(() => null)
+        : null;
+      if (seedArchive && provisioner?.docker) {
+        await provisioner.docker.getContainer(containerId).putArchive(seedArchive, {
+          path: '/',
+        });
+      }
+
+      if (
+        hasMeaningfulHermesModelConfig(persistedHermesState?.modelConfig) ||
+        (persistedHermesState?.channels || []).length > 0
+      ) {
+        await applyPersistedHermesState(
+          {
+            id,
+            container_id: containerId,
+            backend_type: resolvedBackend,
+            runtime_family: 'hermes',
+            deploy_target: 'docker',
+            sandbox_profile: 'standard',
+            host,
+            runtime_host: runtimeHost,
+            runtime_port: runtimePort,
+            gateway_host_port: gatewayHostPort,
+            gateway_host: gatewayHost,
+            gateway_port: gatewayPort,
+          },
+          persistedHermesState,
+          { restart: true }
+        );
+      }
+    }
   } catch (err) {
     console.error(`[${resolvedBackend}] Provisioning failed for agent ${id} (attempt ${job.attemptsMade + 1}/${job.opts?.attempts || 1}):`, err.message);
+    if (containerId) {
+      try {
+        await provisioner.destroy(containerId);
+      } catch {
+        // Best-effort cleanup only.
+      }
+    }
     // Mark as failed in DB
     await db.query("UPDATE agents SET status = 'error' WHERE id = $1", [id]);
     await db.query("UPDATE deployments SET status = 'failed' WHERE agent_id = $1", [id]);
@@ -1056,6 +1150,7 @@ const worker = new Worker('deployments', async (job) => {
     if (userId && readiness.ok) {
       try {
         const authSyncResult = await reconcileRuntimeLlmAuth({
+          agentId: id,
           userId,
           runtimeFamily: resolvedRuntimeFields.runtime_family,
           resolvedBackend,

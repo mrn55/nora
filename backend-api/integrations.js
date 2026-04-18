@@ -1092,6 +1092,7 @@ module.exports = {
   getCatalog,
   getCatalogItem,
   connectIntegration,
+  decryptSensitiveConfig,
   listIntegrations,
   removeIntegration,
   testIntegration,

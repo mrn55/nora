@@ -1,4 +1,10 @@
+process.env.ENCRYPTION_KEY =
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+const mockDb = { query: jest.fn() };
 const mockRunContainerCommand = jest.fn();
+
+jest.mock("../db", () => mockDb);
 
 jest.mock("../authSync", () => ({
   runContainerCommand: mockRunContainerCommand,
@@ -12,11 +18,17 @@ jest.mock("../healthChecks", () => ({
   waitForAgentReadiness: jest.fn(),
 }));
 
-const { readHermesRuntimeSnapshot } = require("../hermesUi");
+const {
+  getPersistedHermesState,
+  readHermesRuntimeSnapshot,
+  replacePersistedHermesState,
+  snapshotToPersistedHermesState,
+} = require("../hermesUi");
 
 describe("Hermes helper execution", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDb.query.mockReset();
     mockRunContainerCommand.mockReset().mockResolvedValue({
       output: JSON.stringify({
         runtimeStatus: {},
@@ -52,5 +64,108 @@ describe("Hermes helper execution", () => {
       'PYTHONPATH="$HERMES_ROOT${PYTHONPATH:+:$PYTHONPATH}" exec "$HERMES_PYTHON" - <<\'PY\''
     );
     expect(command).not.toContain("python3 - <<'PY'");
+  });
+});
+
+describe("Hermes persisted runtime state", () => {
+  beforeEach(() => {
+    mockDb.query.mockReset();
+  });
+
+  it("stores sensitive channel config encrypted and reads it back decrypted", async () => {
+    await replacePersistedHermesState("agent-hermes-1", {
+      modelConfig: {
+        defaultModel: "gpt-5.4",
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+      },
+      channels: [
+        {
+          type: "telegram",
+          config: {
+            TELEGRAM_BOT_TOKEN: "telegram-secret",
+            TELEGRAM_HOME_CHANNEL: "12345",
+          },
+        },
+      ],
+    });
+
+    expect(mockDb.query).toHaveBeenCalledTimes(1);
+    const replaceParams = mockDb.query.mock.calls[0][1];
+    const storedModelConfig = replaceParams[1];
+    const storedChannelConfigs = replaceParams[2];
+    const parsedStoredChannels = JSON.parse(storedChannelConfigs);
+
+    expect(parsedStoredChannels.telegram.TELEGRAM_BOT_TOKEN).not.toBe(
+      "telegram-secret"
+    );
+    expect(parsedStoredChannels.telegram.TELEGRAM_HOME_CHANNEL).toBe("12345");
+
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          model_config: storedModelConfig,
+          channel_configs: storedChannelConfigs,
+        },
+      ],
+    });
+
+    const state = await getPersistedHermesState("agent-hermes-1");
+
+    expect(state).toEqual({
+      modelConfig: {
+        defaultModel: "gpt-5.4",
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+      },
+      channels: [
+        {
+          type: "telegram",
+          config: {
+            TELEGRAM_BOT_TOKEN: "telegram-secret",
+            TELEGRAM_ALLOWED_USERS: "",
+            TELEGRAM_HOME_CHANNEL: "12345",
+            TELEGRAM_HOME_CHANNEL_NAME: "",
+          },
+        },
+      ],
+    });
+  });
+
+  it("derives persisted state from a live snapshot and skips empty channel payloads", () => {
+    const state = snapshotToPersistedHermesState({
+      modelConfig: {
+        defaultModel: "gpt-5.4",
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+      },
+      envValues: {
+        telegram: {
+          TELEGRAM_BOT_TOKEN: "telegram-secret",
+          TELEGRAM_HOME_CHANNEL: "12345",
+        },
+        slack: {
+          SLACK_BOT_TOKEN: "",
+          SLACK_APP_TOKEN: "",
+        },
+      },
+    });
+
+    expect(state).toEqual({
+      modelConfig: {
+        defaultModel: "gpt-5.4",
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+      },
+      channels: [
+        {
+          type: "telegram",
+          config: {
+            TELEGRAM_BOT_TOKEN: "telegram-secret",
+            TELEGRAM_HOME_CHANNEL: "12345",
+          },
+        },
+      ],
+    });
   });
 });

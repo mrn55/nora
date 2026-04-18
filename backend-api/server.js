@@ -792,8 +792,10 @@ app.use(createGatewayRouter());
 
 // ─── Protected Routes ─────────────────────────────────────────────
 app.use("/agents",        require("./routes/agents"));
+app.use("/agents",        require("./routes/agentFiles"));
 app.use("/agents",        require("./routes/channels"));
 app.use("/agents",        require("./routes/nemoclaw"));
+app.use("/agent-migrations", require("./routes/agentMigrations"));
 app.use("/",              require("./routes/integrations"));   // handles /agents/:id/integrations + /integrations/catalog
 app.use("/",              require("./routes/monitoring"));     // handles /monitoring/* + /agents/:id/metrics
 app.use("/llm-providers", require("./routes/llmProviders"));
@@ -1000,6 +1002,43 @@ async function migrateDB() {
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN image TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE agents ADD COLUMN template_payload JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `UPDATE agents SET template_payload = '{}'::jsonb WHERE template_payload IS NULL`,
+    `CREATE TABLE IF NOT EXISTS agent_migrations (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+       deployed_agent_id UUID REFERENCES agents(id) ON DELETE SET NULL,
+       name TEXT NOT NULL,
+       runtime_family VARCHAR(20) NOT NULL DEFAULT 'openclaw',
+       source_kind TEXT NOT NULL DEFAULT 'upload',
+       source_transport TEXT,
+       status TEXT NOT NULL DEFAULT 'ready',
+       summary JSONB DEFAULT '{}',
+       warnings JSONB DEFAULT '[]',
+       encrypted_manifest TEXT NOT NULL,
+       created_at TIMESTAMPTZ DEFAULT NOW(),
+       expires_at TIMESTAMPTZ
+     )`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_migrations_user_created
+       ON agent_migrations(user_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_migrations_agent
+       ON agent_migrations(deployed_agent_id)`,
+    `CREATE TABLE IF NOT EXISTS agent_secret_overrides (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
+       env_key TEXT NOT NULL,
+       env_value TEXT NOT NULL,
+       created_at TIMESTAMPTZ DEFAULT NOW(),
+       updated_at TIMESTAMPTZ DEFAULT NOW(),
+       UNIQUE(agent_id, env_key)
+     )`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_secret_overrides_agent
+       ON agent_secret_overrides(agent_id, env_key)`,
+    `CREATE TABLE IF NOT EXISTS hermes_runtime_state (
+       agent_id UUID PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+       model_config JSONB DEFAULT '{}',
+       channel_configs JSONB DEFAULT '{}',
+       created_at TIMESTAMPTZ DEFAULT NOW(),
+       updated_at TIMESTAMPTZ DEFAULT NOW()
+     )`,
     `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN kind TEXT DEFAULT 'snapshot'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN template_key TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN built_in BOOLEAN DEFAULT false; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,

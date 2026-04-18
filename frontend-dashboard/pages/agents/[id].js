@@ -11,6 +11,7 @@ import OpenClawTab from "../../components/agents/OpenClawTab";
 import HermesWebUITab from "../../components/agents/HermesWebUITab";
 import SettingsTab from "../../components/agents/SettingsTab";
 import NemoClawTab from "../../components/agents/NemoClawTab";
+import AgentFilesTab from "../../components/agents/AgentFilesTab";
 import StatusBadge from "../../components/agents/StatusBadge";
 import { useToast } from "../../components/Toast";
 import { fetchWithAuth } from "../../lib/api";
@@ -27,7 +28,17 @@ import {
   resolveAgentSandboxProfile,
 } from "../../lib/runtime";
 import {
-  Bot, Loader2, ArrowLeft, Terminal, MessagesSquare, ScrollText, Zap, X, Copy, Share2
+  Bot,
+  Loader2,
+  ArrowLeft,
+  Terminal,
+  MessagesSquare,
+  ScrollText,
+  Zap,
+  X,
+  Copy,
+  Share2,
+  FolderTree,
 } from "lucide-react";
 
 const AgentTerminal = dynamic(() => import("../../components/AgentTerminal"), { ssr: false });
@@ -349,6 +360,36 @@ export default function AgentDetail() {
     setActionLoading("");
   }
 
+  async function handleExport() {
+    setActionLoading("export");
+    try {
+      const res = await fetchWithAuth(`/api/agents/${id}/export`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to export agent");
+      }
+
+      const disposition = res.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const filename = match?.[1] || `${agent?.name || "nora-agent"}.nora-migration.tgz`;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Export ready");
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || "Failed to export agent");
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   async function handlePublish() {
     const trimmedName = publishName.trim();
     const trimmedDescription = publishDescription.trim();
@@ -532,6 +573,10 @@ export default function AgentDetail() {
               <ScrollText size={14} />
               Logs
             </button>
+            <button onClick={() => setActiveTab("files")} className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 hover:bg-slate-50 transition-all">
+              <FolderTree size={14} />
+              Files
+            </button>
             <button
               onClick={() =>
                 setActiveTab(
@@ -574,6 +619,10 @@ export default function AgentDetail() {
           )}
 
           {activeTab === "metrics" && <MetricsTab agentId={id} />}
+
+          {activeTab === "files" && (
+            <AgentFilesTab agentId={id} agentStatus={agent.status} />
+          )}
 
           {/* Terminal — always mounted when agent is running, hidden via CSS when not active */}
           {agent.status === "running" ? (
@@ -641,6 +690,7 @@ export default function AgentDetail() {
               actionLoading={actionLoading}
               onDelete={handleDelete}
               onDuplicate={openDuplicateDialog}
+              onExport={handleExport}
               onPublish={openPublishDialog}
               onRename={handleRename}
             />

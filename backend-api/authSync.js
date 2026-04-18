@@ -144,6 +144,14 @@ function buildHermesModelConfig(defaultProvider = null) {
   };
 }
 
+function hasMeaningfulHermesModelConfig(modelConfig = {}) {
+  return Boolean(
+    String(modelConfig?.defaultModel || "").trim() ||
+    String(modelConfig?.provider || "").trim() ||
+    String(modelConfig?.baseUrl || "").trim()
+  );
+}
+
 /**
  * Build auth-profiles.json content for a specific agent.
  * Merges per-user LLM provider keys with per-agent integration tokens
@@ -408,7 +416,18 @@ async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
         evictConnection(agent);
       }
       if (runtimeFamily === "hermes") {
-        if (!hasHermesModelConfig) {
+        let persistedModelConfig = null;
+        try {
+          const { getPersistedHermesState } = require("./hermesUi");
+          const persistedState = await getPersistedHermesState(agent.id);
+          if (hasMeaningfulHermesModelConfig(persistedState?.modelConfig)) {
+            persistedModelConfig = persistedState.modelConfig;
+          }
+        } catch {
+          persistedModelConfig = null;
+        }
+
+        if (!persistedModelConfig && !hasHermesModelConfig) {
           hermesModelConfig = buildHermesModelConfig(defaultProvider);
           hasHermesModelConfig = true;
         }
@@ -416,14 +435,15 @@ async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
         if (
           onlyIfAuthPresent &&
           Object.keys(envVars).length === 0 &&
+          !persistedModelConfig &&
           !hermesModelConfig
         ) {
           results.push({ agentId: agent.id, status: "skipped" });
           continue;
         }
-        if (hermesModelConfig) {
+        if (persistedModelConfig || hermesModelConfig) {
           const { persistHermesModelConfig } = require("./hermesUi");
-          await persistHermesModelConfig(agent, hermesModelConfig);
+          await persistHermesModelConfig(agent, persistedModelConfig || hermesModelConfig);
         }
         await writeHermesEnvToContainer(agent, envVars);
         await containerManager.restart(agent);

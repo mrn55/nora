@@ -7,6 +7,7 @@ import {
   Settings,
   ShieldCheck,
   BarChart3,
+  FolderTree,
 } from "lucide-react";
 import { runtimeSupportsGateway } from "../../lib/runtime";
 
@@ -18,6 +19,7 @@ const baseTabs = [
   { id: "openclaw", label: "OpenClaw", icon: Zap },
   { id: "hermes-webui", label: "Hermes WebUI", icon: Bot, hermesOnly: true },
   { id: "nemoclaw", label: "NemoClaw", icon: ShieldCheck, needsNemoClaw: true },
+  { id: "files", label: "Files", icon: FolderTree },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

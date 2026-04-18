@@ -19,6 +19,11 @@ const {
   sanitizeAgentName,
   serializeAgent,
 } = require("../agentPayloads");
+const {
+  attachDraftToAgent,
+  getOwnedMigrationDraft,
+  materializeManagedMigrationState,
+} = require("../agentMigrations");
 const { isGatewayAvailableStatus, reconcileAgentStatus } = require("../agentStatus");
 const { OPENCLAW_GATEWAY_PORT } = require("../../agent-runtime/lib/contracts");
 const {
@@ -1160,13 +1165,34 @@ router.post("/deploy", async (req, res) => {
     if (!limits.allowed) return res.status(402).json({ error: limits.error, subscription: limits.subscription });
 
     const sub = limits.subscription;
-    const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
+    let migrationDraft = null;
+    if (req.body?.migration_draft_id) {
+      migrationDraft = await getOwnedMigrationDraft(
+        req.body.migration_draft_id,
+        req.user.id
+      );
+      if (!migrationDraft) {
+        return res.status(404).json({ error: "Migration draft not found" });
+      }
+    }
+
+    const requestedRuntimeFamily =
+      req.body.runtime_family != null
+        ? req.body.runtime_family
+        : migrationDraft?.manifest?.runtimeFamily;
+    const runtimeFamily = normalizeRequestedRuntimeFamily(requestedRuntimeFamily);
     if (req.body.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
         error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
       });
     }
-    const name = sanitizeAgentName(req.body.name, "OpenClaw-Agent");
+    const name = sanitizeAgentName(
+      req.body.name,
+      migrationDraft?.manifest?.name ||
+        (migrationDraft?.manifest?.runtimeFamily === "hermes"
+          ? "Hermes-Agent"
+          : "OpenClaw-Agent")
+    );
     if (name.length > 100) return res.status(400).json({ error: "Agent name must be 100 characters or less" });
     const runtimeFields = resolveRequestedRuntimeFields({
       request: {
@@ -1180,6 +1206,14 @@ router.post("/deploy", async (req, res) => {
       runtimeSelection: runtimeFields,
     });
     assertSupportedRuntimeSelection(runtimeFields);
+    if (
+      migrationDraft &&
+      runtimeFields.runtime_family !== migrationDraft.manifest.runtimeFamily
+    ) {
+      return res.status(400).json({
+        error: `Migration draft targets the ${migrationDraft.manifest.runtimeFamily} runtime family and cannot be deployed as ${runtimeFields.runtime_family}.`,
+      });
+    }
     const backendStatus = assertBackendAvailable(runtimeFields.backend_type);
     const node = await scheduler.selectNode({ fallback: runtimeFields.deploy_target });
     const nodeName = node ? node.name : runtimeFields.deploy_target;
@@ -1202,9 +1236,18 @@ router.post("/deploy", async (req, res) => {
       requestedImage: req.body.image,
       runtimeFields,
     });
-    const templatePayload = createEmptyTemplatePayload({
-      source: "blank-deploy",
-    });
+    const templatePayload = migrationDraft
+      ? migrationDraft.manifest.runtimeFamily === "openclaw"
+        ? migrationDraft.manifest.templatePayload || createEmptyTemplatePayload({
+            source: "migration-draft",
+          })
+        : createEmptyTemplatePayload({
+            source: "migration-draft",
+            migrationDraftId: migrationDraft.id,
+          })
+      : createEmptyTemplatePayload({
+          source: "blank-deploy",
+        });
 
     const result = await db.query(
       `INSERT INTO agents(
@@ -1231,6 +1274,24 @@ router.post("/deploy", async (req, res) => {
     );
     const agent = result.rows[0];
 
+    if (migrationDraft) {
+      await materializeManagedMigrationState(req.user.id, agent.id, migrationDraft.manifest);
+
+      const hasTemplateWiring =
+        migrationDraft.manifest.runtimeFamily === "openclaw" &&
+        ((migrationDraft.manifest.templatePayload?.wiring?.channels || []).length > 0 ||
+          (migrationDraft.manifest.templatePayload?.wiring?.integrations || []).length > 0);
+      const hasManagedWiring =
+        (migrationDraft.manifest.managed?.channels || []).length > 0 ||
+        (migrationDraft.manifest.managed?.integrations || []).length > 0;
+
+      if (hasTemplateWiring && !hasManagedWiring) {
+        await materializeTemplateWiring(agent.id, migrationDraft.manifest.templatePayload);
+      }
+
+      await attachDraftToAgent(migrationDraft.id, agent.id);
+    }
+
     await db.query(
       "INSERT INTO deployments(agent_id, status) VALUES($1, 'queued')",
       [agent.id]
@@ -1247,6 +1308,7 @@ router.post("/deploy", async (req, res) => {
       container_name: containerName,
       image,
       model: runtimeFields.sandbox_profile === "nemoclaw" ? req.body.model || null : null,
+      migration_draft_id: migrationDraft?.id || null,
     });
 
     const deployType = backendStatus.label;
@@ -1263,6 +1325,7 @@ router.post("/deploy", async (req, res) => {
           specs,
           image,
           containerName,
+          migrationDraftId: migrationDraft?.id || null,
         },
       })
     );

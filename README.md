@@ -42,8 +42,10 @@ Most teams running agents in production eventually rebuild the same layer around
 Nora gives technical teams one place to:
 
 - deploy OpenClaw and Hermes runtimes into isolated environments
+- migrate existing OpenClaw or Hermes runtimes into Nora through uploaded bundles or live Docker/SSH inspection
 - manage provider keys and sync them to running runtimes
 - validate agents through runtime-specific surfaces, logs, and terminal access
+- browse the live runtime filesystem, edit the writable workspace, and export Nora-managed agents as migration bundles
 - install built-in starter templates or publish marketplace listings
 - review account-scoped event history and monitoring
 - connect channels and integrations from the same control plane
@@ -96,7 +98,13 @@ The public repo does not present every runtime path at the same maturity. The cu
 
 Nora is designed so teams can run OpenClaw and Hermes side by side without rebuilding the control plane around a single runtime bet.
 
-Fleet migration tooling is an active roadmap item, not a shipped feature in the current public repo. The current codebase focuses on keeping runtime adapters, operator flows, and provisioning contracts clean enough that runtime transitions can be added without re-architecting the platform.
+The public repo now includes a shipped migration path for both runtime families:
+
+- import an existing runtime through an uploaded Nora migration bundle or a live Docker / SSH inspection
+- recreate the imported runtime as a new Nora-managed agent instead of adopting the old runtime in place
+- export Nora-managed agents back into a reusable migration bundle for recreation on another Nora control plane
+
+The current public contract is intentionally explicit. Nora imports supported files, managed state, and runtime configuration it understands, then recreates that workload under Nora control.
 
 ## Deployment Footprint
 
@@ -300,6 +308,7 @@ docker compose up -d
 3. **Deploy your first agent**
 
    - open **Deploy**
+   - choose **Blank Deploy** for a fresh agent or **Migrate Existing** for an imported runtime
    - choose a runtime family
    - choose the deployment backend or execution path
    - set CPU, RAM, and disk
@@ -312,6 +321,7 @@ docker compose up -d
    - open the agent detail page
    - verify the agent is running
    - test the runtime-specific surface such as the OpenClaw UI or Hermes WebUI
+   - inspect the **Files** tab to browse the live runtime filesystem
    - inspect **Logs**
    - open **Terminal**
 
@@ -332,9 +342,17 @@ docker compose up -d
 
 Create agents on supported runtime families, choose the deploy backend, define resource limits, and manage lifecycle operations from the dashboard.
 
+### Migrate Existing OpenClaw And Hermes Runtimes
+
+Use the deploy flow to inspect an existing runtime through bundle upload or live Docker / SSH access, preview what Nora can import, and recreate that runtime as a Nora-managed agent.
+
 ### Runtime Validation, Logs, And Terminal
 
 Use Nora as the control plane around the runtime: OpenClaw gateway-oriented flows, Hermes WebUI, live logs, and terminal access all stay under the same operator surface.
+
+### Browse Live Files And Export Nora Bundles
+
+Use the Files tab to work against the actual runtime filesystem with a writable workspace and curated read-only system roots, then export a Nora-managed agent as a migration bundle when you need to recreate it elsewhere.
 
 ### Manage Provider Keys, Channels, And Integrations
 
@@ -371,9 +389,9 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 ### Core Components
 
 - `frontend-marketing/` — landing page, login, signup, and the public OSS / license / PaaS explanation
-- `frontend-dashboard/` — operator dashboard for agents, marketplace, logs, monitoring, settings, and runtime interaction
+- `frontend-dashboard/` — operator dashboard for agents, migration/import, live filesystem access, marketplace, logs, monitoring, settings, and runtime interaction
 - `admin-dashboard/` — admin surfaces for fleet, queue, audit, users, and marketplace moderation
-- `backend-api/` — auth, provisioning, key management, monitoring, marketplace logic, runtime coordination, and proxy routes
+- `backend-api/` — auth, provisioning, migration draft import/export, live filesystem routes, key management, monitoring, marketplace logic, runtime coordination, and proxy routes
 - `agent-runtime/` — shared runtime contracts, endpoint conventions, bootstrap files, and backend catalog metadata
 - `workers/provisioner/` — deployment workers for Docker, Kubernetes, Proxmox, NemoClaw, and Hermes-backed paths
 - `e2e/` — Playwright end-to-end and smoke coverage

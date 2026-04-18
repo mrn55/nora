@@ -1,4 +1,6 @@
+const db = require("./db");
 const containerManager = require("./containerManager");
+const { decrypt, encrypt, ensureEncryptionConfigured } = require("./crypto");
 const { runContainerCommand } = require("./authSync");
 const { waitForAgentReadiness } = require("./healthChecks");
 
@@ -400,6 +402,196 @@ const HERMES_CHANNEL_TYPES = Object.freeze(
   Object.keys(HERMES_CHANNEL_DEFINITIONS)
 );
 
+function decodeMaybeJson(value, fallback = {}) {
+  if (!value) return fallback;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return typeof value === "object" ? value : fallback;
+}
+
+function sensitiveKeysForHermesChannel(definition) {
+  return new Set(
+    (definition?.fields || [])
+      .filter((field) => field?.type === "password")
+      .map((field) => field.key)
+  );
+}
+
+function encryptHermesStoredChannelConfig(definition, config = {}) {
+  const normalized = { ...(config || {}) };
+  const sensitiveKeys = sensitiveKeysForHermesChannel(definition);
+  let hasSensitiveMaterial = false;
+
+  for (const key of Object.keys(normalized)) {
+    const value = normalized[key];
+    if (!value) continue;
+    if (sensitiveKeys.has(key)) {
+      hasSensitiveMaterial = true;
+      normalized[key] = encrypt(String(value));
+    }
+  }
+
+  return { config: normalized, hasSensitiveMaterial };
+}
+
+function decryptHermesStoredChannelConfig(definition, config = {}) {
+  const normalized = { ...(config || {}) };
+  const sensitiveKeys = sensitiveKeysForHermesChannel(definition);
+
+  for (const key of Object.keys(normalized)) {
+    const value = normalized[key];
+    if (!value) continue;
+    if (sensitiveKeys.has(key)) {
+      normalized[key] = decrypt(String(value));
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeHermesModelConfig(modelConfig = {}) {
+  if (!modelConfig || typeof modelConfig !== "object") return {};
+  return {
+    defaultModel:
+      typeof modelConfig.defaultModel === "string" && modelConfig.defaultModel.trim()
+        ? modelConfig.defaultModel.trim()
+        : "",
+    provider:
+      typeof modelConfig.provider === "string" && modelConfig.provider.trim()
+        ? modelConfig.provider.trim()
+        : "",
+    baseUrl:
+      typeof modelConfig.baseUrl === "string" && modelConfig.baseUrl.trim()
+        ? modelConfig.baseUrl.trim()
+        : "",
+  };
+}
+
+function normalizeHermesChannelStateList(rawChannels = []) {
+  return (Array.isArray(rawChannels) ? rawChannels : [])
+    .map((entry) => {
+      const definition = definitionForChannelType(entry?.type);
+      if (!definition) return null;
+      return {
+        type: definition.type,
+        config: normalizeHermesChannelInput(definition, entry?.config || {}, {}),
+      };
+    })
+    .filter(Boolean);
+}
+
+async function getPersistedHermesState(agentId) {
+  const result = await db.query(
+    `SELECT model_config, channel_configs
+       FROM hermes_runtime_state
+      WHERE agent_id = $1
+      LIMIT 1`,
+    [agentId]
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return {
+      modelConfig: {},
+      channels: [],
+    };
+  }
+
+  const rawChannels = decodeMaybeJson(row.channel_configs, {});
+  return {
+    modelConfig: normalizeHermesModelConfig(decodeMaybeJson(row.model_config, {})),
+    channels: Object.entries(rawChannels)
+      .map(([type, config]) => {
+        const definition = definitionForChannelType(type);
+        if (!definition) return null;
+        return {
+          type: definition.type,
+          config: decryptHermesStoredChannelConfig(definition, config),
+        };
+      })
+      .filter(Boolean),
+  };
+}
+
+async function replacePersistedHermesState(agentId, state = {}) {
+  const normalizedModelConfig = normalizeHermesModelConfig(state.modelConfig || {});
+  const normalizedChannels = normalizeHermesChannelStateList(state.channels || []);
+
+  let hasSensitiveMaterial = false;
+  const securedChannels = normalizedChannels.reduce((acc, entry) => {
+    const definition = definitionForChannelType(entry.type);
+    if (!definition) return acc;
+
+    const secured = encryptHermesStoredChannelConfig(definition, entry.config || {});
+    if (secured.hasSensitiveMaterial) {
+      hasSensitiveMaterial = true;
+    }
+    acc[entry.type] = secured.config;
+    return acc;
+  }, {});
+
+  if (hasSensitiveMaterial) {
+    ensureEncryptionConfigured("Hermes channel credential storage");
+  }
+
+  await db.query(
+    `INSERT INTO hermes_runtime_state(agent_id, model_config, channel_configs)
+     VALUES($1, $2, $3)
+     ON CONFLICT (agent_id)
+     DO UPDATE SET
+       model_config = EXCLUDED.model_config,
+       channel_configs = EXCLUDED.channel_configs,
+       updated_at = NOW()`,
+    [
+      agentId,
+      JSON.stringify(normalizedModelConfig),
+      JSON.stringify(securedChannels),
+    ]
+  );
+
+  return {
+    modelConfig: normalizedModelConfig,
+    channels: normalizedChannels,
+  };
+}
+
+async function persistHermesChannelState(agentId, type, config) {
+  const current = await getPersistedHermesState(agentId);
+  const channels = [
+    ...current.channels.filter((entry) => entry.type !== type),
+    { type, config },
+  ].sort((left, right) => left.type.localeCompare(right.type));
+
+  return replacePersistedHermesState(agentId, {
+    modelConfig: current.modelConfig,
+    channels,
+  });
+}
+
+async function deletePersistedHermesChannelState(agentId, type) {
+  const current = await getPersistedHermesState(agentId);
+  return replacePersistedHermesState(agentId, {
+    modelConfig: current.modelConfig,
+    channels: current.channels.filter((entry) => entry.type !== type),
+  });
+}
+
+function snapshotToPersistedHermesState(snapshot = {}) {
+  return {
+    modelConfig: normalizeHermesModelConfig(snapshot?.modelConfig || {}),
+    channels: HERMES_CHANNEL_TYPES.map((type) => ({
+      type,
+      config: snapshot?.envValues?.[type] || {},
+    })).filter((entry) =>
+      Object.values(entry.config || {}).some((value) => String(value || "").trim())
+    ),
+  };
+}
+
 function humanizeHermesChannelType(value) {
   return String(value || "")
     .split(/[_-]+/)
@@ -501,6 +693,40 @@ print(json.dumps({
 `;
 
   return runHermesPythonJson(agent, script, { timeout: 30000 });
+}
+
+async function applyPersistedHermesState(agent, persistedState = null, { restart = true } = {}) {
+  const state = persistedState || (await getPersistedHermesState(agent.id));
+  const modelConfig = normalizeHermesModelConfig(state?.modelConfig || {});
+  const channels = normalizeHermesChannelStateList(state?.channels || []);
+  let mutated = false;
+
+  if (
+    modelConfig.defaultModel ||
+    modelConfig.provider ||
+    modelConfig.baseUrl
+  ) {
+    await persistHermesModelConfig(agent, modelConfig);
+    mutated = true;
+  }
+
+  for (const entry of channels) {
+    const definition = definitionForChannelType(entry.type);
+    if (!definition) continue;
+    const normalized = normalizeHermesChannelInput(definition, entry.config || {}, {});
+    await persistHermesChannelConfig(agent, definition, normalized);
+    mutated = true;
+  }
+
+  if (mutated && restart) {
+    await restartHermesRuntime(agent);
+  }
+
+  return {
+    modelConfig,
+    channels,
+    mutated,
+  };
 }
 
 function serializeHermesChannelCatalog() {
@@ -864,6 +1090,7 @@ async function saveHermesChannel(agent, type, inputConfig = {}, { create = false
     existingEnv
   );
 
+  await persistHermesChannelState(agent.id, definition.type, normalized);
   await persistHermesChannelConfig(agent, definition, normalized);
   await restartHermesRuntime(agent);
 
@@ -883,6 +1110,7 @@ async function deleteHermesChannel(agent, type) {
     throw error;
   }
 
+  await deletePersistedHermesChannelState(agent.id, definition.type);
   await removeHermesChannelConfig(agent, definition);
   await restartHermesRuntime(agent);
   return listHermesChannels(agent);
@@ -942,11 +1170,16 @@ module.exports = {
   HERMES_CHANNEL_REDACTED,
   HERMES_CHANNEL_DEFINITIONS,
   HERMES_CHANNEL_TYPES,
+  applyPersistedHermesState,
+  buildHermesPythonCommand,
   definitionForChannelType,
+  getPersistedHermesState,
   listHermesChannels,
   persistHermesModelConfig,
   readHermesRuntimeSnapshot,
+  replacePersistedHermesState,
   saveHermesChannel,
+  snapshotToPersistedHermesState,
   deleteHermesChannel,
   testHermesChannel,
 };
