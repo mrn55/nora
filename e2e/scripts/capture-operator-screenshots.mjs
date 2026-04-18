@@ -13,6 +13,12 @@ const SCREENSHOT_DIR =
   path.resolve(__dirname, "../../.github/readme-assets");
 const DB_CONTAINER =
   process.env.NORA_SCREENSHOT_DB_CONTAINER || "nora-postgres-1";
+const DB_USER = process.env.NORA_SCREENSHOT_DB_USER || process.env.DB_USER || "nora";
+const DB_NAME = process.env.NORA_SCREENSHOT_DB_NAME || process.env.DB_NAME || "nora";
+const REAL_HERMES_AGENT_ID =
+  process.env.NORA_SCREENSHOT_REAL_HERMES_AGENT_ID || "";
+const REAL_HERMES_TOKEN =
+  process.env.NORA_SCREENSHOT_REAL_HERMES_TOKEN || "";
 const ALLOW_LOCAL_HTTPS_ERRORS = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(
   BASE_URL
 );
@@ -126,11 +132,14 @@ const HERMES_README_RUNTIME = {
   ],
   defaultModel: "anthropic/claude-sonnet-4-5",
   dashboard: {
-    ready: false,
+    ready: true,
     url: "http://hermes-runtime.internal:9119",
     port: 9119,
-    health: null,
-    error: "Official dashboard disabled for README capture.",
+    health: {
+      ok: true,
+      status: "ok",
+    },
+    error: null,
   },
   gateway: {
     state: "running",
@@ -159,6 +168,747 @@ const HERMES_README_RUNTIME = {
   },
   directoryUpdatedAt: "2026-04-12T16:55:00.000Z",
 };
+
+function buildHermesReadmeDashboardHtml() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hermes Official Dashboard</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07111f;
+        --panel: rgba(13, 23, 42, 0.9);
+        --panel-strong: #0f1d35;
+        --panel-soft: rgba(15, 23, 42, 0.72);
+        --border: rgba(148, 163, 184, 0.16);
+        --text: #e5eefc;
+        --muted: #8fa4c7;
+        --accent: #67e8f9;
+        --accent-strong: #22d3ee;
+        --success: #4ade80;
+        --warning: #fbbf24;
+        --shadow: 0 28px 80px rgba(2, 6, 23, 0.38);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 32%),
+          linear-gradient(180deg, #081120 0%, #0c1730 100%);
+        color: var(--text);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 236px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        padding: 26px 20px;
+        background: linear-gradient(180deg, rgba(8, 15, 30, 0.96), rgba(7, 13, 25, 0.92));
+        border-right: 1px solid var(--border);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 26px;
+      }
+
+      .brand-mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(14, 165, 233, 0.9));
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.14);
+      }
+
+      .brand-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .brand-copy strong {
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .brand-copy span {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .sidebar-section {
+        margin-top: 20px;
+      }
+
+      .sidebar-label {
+        margin: 0 0 10px;
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: rgba(191, 219, 254, 0.54);
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+        margin: 0 0 8px;
+        padding: 12px 14px;
+        border-radius: 18px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .nav-item.active {
+        background: linear-gradient(135deg, rgba(34, 211, 238, 0.18), rgba(37, 99, 235, 0.18));
+        border-color: rgba(103, 232, 249, 0.28);
+      }
+
+      .nav-item span {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .nav-badge {
+        padding: 5px 8px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.78);
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .sidebar-card {
+        margin-top: 20px;
+        padding: 16px;
+        border-radius: 22px;
+        background: rgba(15, 23, 42, 0.76);
+        border: 1px solid var(--border);
+      }
+
+      .sidebar-card strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+
+      .sidebar-card p {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+
+      .sidebar-card .chip-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(8, 15, 30, 0.94);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      main {
+        padding: 28px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 22px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgba(191, 219, 254, 0.64);
+      }
+
+      .topbar h1 {
+        margin: 0;
+        font-size: 30px;
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+      }
+
+      .topbar p {
+        margin: 8px 0 0;
+        max-width: 620px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(74, 222, 128, 0.22);
+        background: rgba(20, 83, 45, 0.26);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .status-pill::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--success);
+        box-shadow: 0 0 0 6px rgba(74, 222, 128, 0.12);
+      }
+
+      .status-meta {
+        padding: 9px 12px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.78);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .hero-panel,
+      .card,
+      .list-card,
+      .activity-card {
+        border-radius: 28px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .hero-panel {
+        padding: 24px 24px 20px;
+        background:
+          linear-gradient(135deg, rgba(34, 211, 238, 0.18), rgba(96, 165, 250, 0.08)),
+          var(--panel-strong);
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .hero-stat {
+        padding: 14px;
+        border-radius: 20px;
+        background: rgba(7, 13, 25, 0.38);
+        border: 1px solid rgba(125, 211, 252, 0.12);
+      }
+
+      .hero-stat small,
+      .metric-card small,
+      .section-label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 10px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: rgba(191, 219, 254, 0.62);
+      }
+
+      .hero-stat strong,
+      .metric-card strong {
+        display: block;
+        font-size: 21px;
+        line-height: 1.1;
+      }
+
+      .hero-stat span,
+      .metric-card span {
+        display: block;
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .hero-side {
+        padding: 22px;
+      }
+
+      .hero-side h2,
+      .card h2,
+      .list-card h2,
+      .activity-card h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .hero-side p {
+        margin: 12px 0 16px;
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+
+      .timeline {
+        display: grid;
+        gap: 12px;
+      }
+
+      .timeline-item {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .timeline-dot {
+        width: 12px;
+        height: 12px;
+        margin-top: 5px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent), #2563eb);
+        box-shadow: 0 0 0 5px rgba(34, 211, 238, 0.12);
+      }
+
+      .timeline-copy strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
+
+      .timeline-copy span {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      .metric-card {
+        padding: 16px;
+        border-radius: 24px;
+        background: var(--panel-soft);
+        border: 1px solid var(--border);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.95fr);
+        gap: 18px;
+      }
+
+      .card-header,
+      .list-header,
+      .activity-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 20px 0;
+      }
+
+      .card-body,
+      .list-body,
+      .activity-body {
+        padding: 18px 20px 20px;
+      }
+
+      .workspace-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .workspace-tile {
+        padding: 16px;
+        border-radius: 22px;
+        background: rgba(8, 15, 30, 0.6);
+        border: 1px solid var(--border);
+      }
+
+      .workspace-tile strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .workspace-tile p {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .pill-row span {
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.78);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text);
+      }
+
+      .list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 20px;
+        background: rgba(8, 15, 30, 0.58);
+        border: 1px solid var(--border);
+      }
+
+      .list-item strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
+
+      .list-item span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .list-status {
+        padding: 6px 9px;
+        border-radius: 999px;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        background: rgba(20, 83, 45, 0.3);
+        border: 1px solid rgba(74, 222, 128, 0.24);
+      }
+
+      .list-status.warning {
+        color: #fde68a;
+        background: rgba(120, 53, 15, 0.3);
+        border-color: rgba(251, 191, 36, 0.24);
+      }
+
+      .activity-card {
+        background:
+          radial-gradient(circle at top right, rgba(103, 232, 249, 0.12), transparent 34%),
+          var(--panel);
+      }
+
+      .activity-list {
+        display: grid;
+        gap: 14px;
+      }
+
+      .activity-item {
+        padding: 14px 16px;
+        border-radius: 22px;
+        background: rgba(8, 15, 30, 0.58);
+        border: 1px solid var(--border);
+      }
+
+      .activity-item strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+
+      .activity-item span {
+        display: block;
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">H</div>
+          <div class="brand-copy">
+            <strong>Hermes</strong>
+            <span>Official dashboard</span>
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <p class="sidebar-label">Operator</p>
+          <button class="nav-item active" type="button">
+            <span>Command center</span>
+            <span class="nav-badge">live</span>
+          </button>
+          <button class="nav-item" type="button">
+            <span>Channels</span>
+            <span class="nav-badge">4</span>
+          </button>
+          <button class="nav-item" type="button">
+            <span>Cron jobs</span>
+            <span class="nav-badge">3</span>
+          </button>
+          <button class="nav-item" type="button">
+            <span>Models</span>
+            <span class="nav-badge">2</span>
+          </button>
+        </div>
+
+        <div class="sidebar-card">
+          <strong>Runtime summary</strong>
+          <p>Healthy gateway, 12 discovered targets, and the default model already synced from Nora.</p>
+          <div class="chip-row">
+            <span class="chip">Port 9119</span>
+            <span class="chip">Docker</span>
+          </div>
+        </div>
+      </aside>
+
+      <main>
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">Official Hermes dashboard</p>
+            <h1>Hermes Ops Coordinator</h1>
+            <p>Operate channels, automations, and runtime health from the embedded dashboard while Nora keeps deployment and infrastructure control.</p>
+          </div>
+          <div class="status-row">
+            <span class="status-pill">Runtime healthy</span>
+            <span class="status-meta">Default model: anthropic/claude-sonnet-4-5</span>
+          </div>
+        </div>
+
+        <section class="hero">
+          <div class="hero-panel">
+            <span class="section-label">Deployment overview</span>
+            <h2>Gateway activity is stable across live channels.</h2>
+            <div class="hero-grid">
+              <div class="hero-stat">
+                <small>Configured platforms</small>
+                <strong>4</strong>
+                <span>Slack, Discord, Telegram, Email</span>
+              </div>
+              <div class="hero-stat">
+                <small>Discovered targets</small>
+                <strong>12</strong>
+                <span>Ready for routing and follow-up</span>
+              </div>
+              <div class="hero-stat">
+                <small>Cron jobs</small>
+                <strong>3</strong>
+                <span>Morning digest, weekly sync, backlog sweep</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-side">
+            <h2>Recent automation flow</h2>
+            <p>Hermes is serving the official dashboard while Nora continues to own runtime lifecycle, logs, and terminal access.</p>
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-copy">
+                  <strong>Dashboard session established</strong>
+                  <span>Embedded access proxied through Nora with a fresh session token.</span>
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-copy">
+                  <strong>LLM defaults synced</strong>
+                  <span>anthropic/claude-sonnet-4-5 is active for prompts and scheduled jobs.</span>
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-copy">
+                  <strong>Outbound channels ready</strong>
+                  <span>Slack and Discord are connected, email is waiting on SMTP confirmation.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="metrics">
+          <div class="metric-card">
+            <small>Published models</small>
+            <strong>2</strong>
+            <span>hermes-agent, hermes-agent-fast</span>
+          </div>
+          <div class="metric-card">
+            <small>Runtime API</small>
+            <strong>8642</strong>
+            <span>OpenAI-compatible endpoint online</span>
+          </div>
+          <div class="metric-card">
+            <small>Dashboard port</small>
+            <strong>9119</strong>
+            <span>Embedded through Nora</span>
+          </div>
+          <div class="metric-card">
+            <small>Active agents</small>
+            <strong>1</strong>
+            <span>Gateway currently serving a single runtime</span>
+          </div>
+        </section>
+
+        <section class="layout">
+          <div class="card">
+            <div class="card-header">
+              <h2>Workspace controls</h2>
+              <span class="nav-badge">Official view</span>
+            </div>
+            <div class="card-body">
+              <div class="workspace-grid">
+                <div class="workspace-tile">
+                  <strong>Channels</strong>
+                  <p>Inspect connected platforms, discovered targets, and routing state from one place.</p>
+                </div>
+                <div class="workspace-tile">
+                  <strong>Automations</strong>
+                  <p>Keep cron-driven prompts, queue handoffs, and escalation logic visible to operators.</p>
+                </div>
+                <div class="workspace-tile">
+                  <strong>Model settings</strong>
+                  <p>Review the default provider sync that Nora applied to the running Hermes runtime.</p>
+                </div>
+                <div class="workspace-tile">
+                  <strong>Operator audit</strong>
+                  <p>Pair this surface with Nora logs and terminal access when runtime changes need validation.</p>
+                </div>
+              </div>
+              <div class="pill-row">
+                <span>Runtime Ready</span>
+                <span>Config synced</span>
+                <span>Operator embed active</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="list-card">
+            <div class="list-header">
+              <h2>Channel health</h2>
+              <span class="nav-badge">Gateway</span>
+            </div>
+            <div class="list-body">
+              <div class="list">
+                <div class="list-item">
+                  <div>
+                    <strong>Slack</strong>
+                    <span>Connected and receiving routed prompts</span>
+                  </div>
+                  <span class="list-status">connected</span>
+                </div>
+                <div class="list-item">
+                  <div>
+                    <strong>Discord</strong>
+                    <span>Connected with healthy event delivery</span>
+                  </div>
+                  <span class="list-status">connected</span>
+                </div>
+                <div class="list-item">
+                  <div>
+                    <strong>Telegram</strong>
+                    <span>Idle until the next scheduled digest</span>
+                  </div>
+                  <span class="list-status">idle</span>
+                </div>
+                <div class="list-item">
+                  <div>
+                    <strong>Email</strong>
+                    <span>SMTP auth pending confirmation from the provider</span>
+                  </div>
+                  <span class="list-status warning">warning</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="activity-card" style="margin-top: 18px;">
+          <div class="activity-header">
+            <h2>Operator activity</h2>
+            <span class="nav-badge">Last 30 min</span>
+          </div>
+          <div class="activity-body">
+            <div class="activity-list">
+              <div class="activity-item">
+                <strong>16:56 UTC</strong>
+                <span>Gateway snapshot refreshed with 4 configured platforms and 12 discovered targets.</span>
+              </div>
+              <div class="activity-item">
+                <strong>16:53 UTC</strong>
+                <span>Default model sync completed from Nora settings into the running Hermes runtime.</span>
+              </div>
+              <div class="activity-item">
+                <strong>16:48 UTC</strong>
+                <span>Official dashboard health probe passed and embed access was enabled for operators.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>`;
+}
 
 function encodeContentBase64(value) {
   return Buffer.from(String(value || ""), "utf8").toString("base64");
@@ -1337,7 +2087,9 @@ function runSeedSql(sql) {
     execSync(
       `docker exec ${shellQuote(
         DB_CONTAINER
-      )} psql -U platform -d platform -f /tmp/nora-readme-screenshots.sql`,
+      )} psql -U ${shellQuote(DB_USER)} -d ${shellQuote(
+        DB_NAME
+      )} -f /tmp/nora-readme-screenshots.sql`,
       { stdio: "inherit" }
     );
   } finally {
@@ -1374,53 +2126,105 @@ async function gotoHeading(page, pathname, headingText) {
 }
 
 async function captureHermesReadmeScreenshot(browser, token) {
-  const hermes = await newAuthedPage(browser, token);
+  const useRealHermes = Boolean(REAL_HERMES_AGENT_ID);
+  const hermesAgentId = useRealHermes ? REAL_HERMES_AGENT_ID : IDS.agents.hermes;
+  const hermesToken = useRealHermes && REAL_HERMES_TOKEN ? REAL_HERMES_TOKEN : token;
+  const hermes = await newAuthedPage(browser, hermesToken);
 
-  await hermes.context.route(
-    `**/api/agents/${IDS.agents.hermes}/hermes-ui`,
-    async (route) => {
+  if (!useRealHermes) {
+    await hermes.context.route(
+      `**/api/agents/${hermesAgentId}/hermes-ui/embed*`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/html; charset=utf-8",
+          body: buildHermesReadmeDashboardHtml(),
+        });
+      }
+    );
+
+    await hermes.context.route(
+      `**/api/agents/${hermesAgentId}/hermes-ui`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(HERMES_README_RUNTIME),
+        });
+      }
+    );
+
+    await hermes.context.route(`**/api/agents/${hermesAgentId}`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(HERMES_README_RUNTIME),
+        body: JSON.stringify(HERMES_README_AGENT),
       });
-    }
-  );
-
-  await hermes.context.route(`**/api/agents/${IDS.agents.hermes}`, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(HERMES_README_AGENT),
     });
-  });
+  }
 
   try {
-    await gotoHeading(
-      hermes.page,
-      `/app/agents/${IDS.agents.hermes}`,
-      HERMES_README_AGENT.name
-    );
+    if (useRealHermes) {
+      await hermes.page.goto(`${BASE_URL}/app/agents/${hermesAgentId}`, {
+        waitUntil: "networkidle",
+      });
+      await hermes.page
+        .getByRole("button", { name: "Hermes WebUI" })
+        .first()
+        .waitFor({ state: "visible", timeout: 15000 });
+      await hermes.page.waitForTimeout(700);
+    } else {
+      await gotoHeading(
+        hermes.page,
+        `/app/agents/${hermesAgentId}`,
+        HERMES_README_AGENT.name
+      );
+    }
+
     await hermes.page.getByRole("button", { name: "Hermes WebUI" }).first().click();
-    await hermes.page.getByRole("button", { name: "Status" }).first().click();
-    await hermes.page.getByText("Hermes Status", { exact: true }).waitFor({
+    await hermes.page
+      .getByRole("button", { name: "Official Dashboard" })
+      .first()
+      .click();
+    const iframeSelector = `iframe[title="Hermes Dashboard ${hermesAgentId}"]`;
+    const iframe = hermes.page.locator(iframeSelector);
+
+    await iframe.waitFor({ state: "visible", timeout: 15000 });
+    if (useRealHermes) {
+      await hermes.page.waitForFunction(
+        (selector) => {
+          const frame = document.querySelector(selector);
+          const doc = frame?.contentDocument;
+          return Boolean(doc?.body && doc.body.innerText.trim().length > 80);
+        },
+        iframeSelector,
+        { timeout: 20000 }
+      );
+    } else {
+      await hermes.page
+        .frameLocator(iframeSelector)
+        .getByText("Official Hermes dashboard", { exact: true })
+        .waitFor({
+          state: "visible",
+          timeout: 15000,
+        });
+    }
+    await hermes.page.getByRole("button", { name: "New Window" }).waitFor({
       state: "visible",
       timeout: 15000,
     });
-    await hermes.page.waitForTimeout(400);
-    const mainContent = hermes.page.locator("main");
-    await mainContent.waitFor({ state: "visible", timeout: 15000 });
-    const mainBox = await mainContent.boundingBox();
-    if (!mainBox) {
-      throw new Error("Failed to locate main content area for Hermes README screenshot");
+    await hermes.page.waitForTimeout(700);
+    const iframeBox = await iframe.boundingBox();
+    if (!iframeBox) {
+      throw new Error("Failed to locate Hermes dashboard iframe for README screenshot");
     }
     await hermes.page.screenshot({
       path: path.join(SCREENSHOT_DIR, "proof-operator-hermes-webui-tab.png"),
       clip: {
-        x: Math.round(mainBox.x),
-        y: Math.round(mainBox.y),
-        width: Math.min(1256, Math.round(mainBox.width)),
-        height: Math.min(1000, Math.round(mainBox.height)),
+        x: Math.max(0, Math.round(iframeBox.x)),
+        y: Math.max(0, Math.round(iframeBox.y - 38)),
+        width: Math.min(1256, Math.round(iframeBox.width)),
+        height: Math.min(1000, Math.round(iframeBox.height + 38)),
       },
     });
   } finally {

@@ -18,8 +18,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: backend-api/package-lock.json
+          cache-dependency-path: |
+            backend-api/package-lock.json
+            workers/provisioner/package-lock.json
       - run: npm ci
+      - run: npm ci
+        working-directory: workers/provisioner
       - run: npm test
 
   e2e-smoke:

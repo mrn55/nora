@@ -27,7 +27,7 @@
 
 | | |
 |---|---|
-| ![OpenClaw UI tab in Nora](.github/readme-assets/proof-operator-openclaw-ui-tab.png) **OpenClaw UI tab** | ![Hermes WebUI tab in Nora](.github/readme-assets/proof-operator-hermes-webui-tab.png) **Hermes WebUI tab** |
+| ![OpenClaw UI tab in Nora](.github/readme-assets/proof-operator-openclaw-ui-tab.png) **OpenClaw UI tab** | ![Hermes official dashboard in Nora](.github/readme-assets/proof-operator-hermes-webui-tab.png) **Hermes official dashboard** |
 
 ## Why Nora?
 
