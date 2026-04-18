@@ -133,9 +133,14 @@ function buildForwardedSearch(req) {
   return str ? `?${str}` : "";
 }
 
-function buildEmbedBootstrapScript({ agentId, relayToken, requestHost, requestScheme, gatewayToken }) {
+function buildEmbedBootstrapScript({ agentId, requestHost, requestScheme, gatewayToken }) {
   const wsProto = requestScheme === "https" ? "wss" : "ws";
-  const wsRelayUrl = `${wsProto}://${requestHost}/api/ws/gateway/${agentId}?token=${encodeURIComponent(relayToken)}`;
+  // Intentionally no `?token=` — the WebSocket upgrade is authenticated via
+  // the HttpOnly embed session cookie (`__nora_gateway_embed_<agentId>`) that
+  // the browser sends automatically on same-origin upgrade requests. Keeping
+  // the JWT out of the URL prevents it from surfacing in nginx/access logs,
+  // browser history, and DevTools network panels.
+  const wsRelayUrl = `${wsProto}://${requestHost}/api/ws/gateway/${agentId}`;
   return `(function(){
   var R=${JSON.stringify(wsRelayUrl)};
   var P=${JSON.stringify(gatewayToken)};
@@ -375,6 +380,14 @@ async function resolveEmbedAccess(
       res.status(401).send("invalid token");
       return null;
     }
+    // Only full user bearer JWTs (no `scope`) may be used here to mint a new
+    // embed session. Embed-scoped JWTs must flow through the cookie path,
+    // where scope + agentId are validated; accepting them here would let a
+    // leaked embed-scoped token mint fresh sessions for sibling agents.
+    if (payload.scope && (payload.scope !== scope || payload.agentId !== agentId)) {
+      res.status(401).send("invalid token for this embed");
+      return null;
+    }
     userId = payload.id;
   } else if (cookieToken) {
     let payload;
@@ -584,7 +597,6 @@ gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed/bootstrap.js", async (re
     res.setHeader("Vary", "Cookie");
     res.send(buildEmbedBootstrapScript({
       agentId: access.agentId,
-      relayToken: access.relayToken,
       requestHost: req.headers.host,
       requestScheme: requestProtocol(req),
       gatewayToken: access.agent.gateway_token,
@@ -668,9 +680,11 @@ async function proxyEmbeddedHermes(req, res) {
       Accept: req.headers.accept || "*/*",
       "Accept-Encoding": "identity",
     };
-    if (req.headers.authorization) {
-      headers.Authorization = req.headers.authorization;
-    }
+    // Intentionally do NOT forward the client's Authorization header to the
+    // tenant-owned Hermes container. The embed session cookie already
+    // authenticates this request at the proxy boundary; forwarding the
+    // platform JWT upstream would expose it to a process whose image may be
+    // operator-supplied and should be treated as untrusted.
 
     const method = req.method.toUpperCase();
     let body;

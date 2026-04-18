@@ -45,6 +45,12 @@ function buildRuntimeBootstrapFiles() {
   return RUNTIME_FILES.map(({ relPath, source }) => ({ relPath, source }));
 }
 
+// Allowlist: alphanumerics, dot, underscore, dash, and forward slash only.
+// Blocks shell metacharacters ($, `, \, ", ', ;, newline, whitespace, etc.)
+// so bootstrap paths cannot break out of their quoted context and execute
+// command substitution when interpolated into `sh -c` strings.
+const SAFE_TEMPLATE_PATH_RE = /^[A-Za-z0-9._/-]+$/;
+
 function normalizeTemplateEntry(entry, baseDir) {
   if (!entry || typeof entry !== "object") return null;
   const rawPath = String(entry.path || "").trim().replace(/\\/g, "/");
@@ -52,6 +58,9 @@ function normalizeTemplateEntry(entry, baseDir) {
 
   const normalizedPath = path.posix.normalize(rawPath).replace(/^\/+/, "");
   if (!normalizedPath || normalizedPath === "." || normalizedPath.startsWith("../")) {
+    return null;
+  }
+  if (!SAFE_TEMPLATE_PATH_RE.test(normalizedPath)) {
     return null;
   }
 
@@ -102,16 +111,25 @@ function buildTemplatePayloadBootstrapFiles(templatePayload = {}) {
   }));
 }
 
+function shellSingleQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
 function buildTemplatePayloadBootstrapCommand(templatePayload = {}) {
   const entries = normalizeTemplatePayloadEntries(templatePayload);
   if (entries.length === 0) return "";
 
   return entries
     .map(
-      ({ targetPath, contentBuffer, mode }) =>
-        `mkdir -p ${JSON.stringify(path.posix.dirname(targetPath))} && ` +
-        `printf '%s' '${contentBuffer.toString("base64")}' | base64 -d > ${JSON.stringify(targetPath)} && ` +
-        `chmod ${mode.toString(8)} ${JSON.stringify(targetPath)} && `
+      ({ targetPath, contentBuffer, mode }) => {
+        const quotedDir = shellSingleQuote(path.posix.dirname(targetPath));
+        const quotedPath = shellSingleQuote(targetPath);
+        return (
+          `mkdir -p ${quotedDir} && ` +
+          `printf '%s' '${contentBuffer.toString("base64")}' | base64 -d > ${quotedPath} && ` +
+          `chmod ${mode.toString(8)} ${quotedPath} && `
+        );
+      }
     )
     .join("");
 }

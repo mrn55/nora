@@ -4,6 +4,7 @@ const monitoring = require("../monitoring");
 const metricsModule = require("../metrics");
 const { asyncHandler } = require("../middleware/errorHandler");
 const { findOwnedAgent, requireOwnedAgent } = require("../middleware/ownership");
+const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -130,10 +131,7 @@ router.get("/monitoring/events", asyncHandler(async (req, res) => {
   );
 }));
 
-router.get("/monitoring/performance", asyncHandler(async (req, res) => {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ error: "Admin access required" });
-  }
+router.get("/monitoring/performance", requireAdmin, asyncHandler(async (req, res) => {
   const since = req.query.since || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const result = await db.query(
     "SELECT value, metadata, recorded_at FROM usage_metrics WHERE metric_type = 'api_performance' AND recorded_at >= $1 ORDER BY recorded_at",

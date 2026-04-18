@@ -748,6 +748,26 @@ function createGatewayRouter() {
 // Clients connect to: ws://<host>/ws/gateway/<agentId>?token=<jwt>
 // The server performs the Gateway handshake, then relays bidirectionally.
 
+function parseCookieHeader(cookieHeader) {
+  if (!cookieHeader) return {};
+  return cookieHeader
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .reduce((cookies, entry) => {
+      const sep = entry.indexOf("=");
+      if (sep === -1) return cookies;
+      const key = entry.slice(0, sep).trim();
+      const value = entry.slice(sep + 1).trim();
+      try {
+        cookies[key] = decodeURIComponent(value);
+      } catch {
+        cookies[key] = value;
+      }
+      return cookies;
+    }, {});
+}
+
 function attachGatewayWS(server) {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -756,18 +776,36 @@ function attachGatewayWS(server) {
     const match = url.pathname.match(/^\/ws\/gateway\/([a-zA-Z0-9_-]+)$/);
     if (!match) return; // not ours — let other handlers process
 
-    const token = url.searchParams.get("token");
+    const agentId = match[1];
+    // Authenticate via the HttpOnly embed session cookie (scoped+agentId-bound
+    // JWT). The browser sends this cookie automatically on same-origin WS
+    // upgrades, so the token never appears in the URL/query-string and isn't
+    // captured by request-logging layers or browser history.
+    const cookies = parseCookieHeader(request.headers.cookie || "");
+    const cookieName = `__nora_gateway_embed_${agentId}`;
+    const cookieToken = cookies[cookieName];
+    if (!cookieToken) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
     let payload;
     try {
-      payload = jwt.verify(token, process.env.JWT_SECRET);
+      payload = jwt.verify(cookieToken, process.env.JWT_SECRET);
     } catch {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    if (payload.scope !== "gateway-embed" || payload.agentId !== agentId) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }
 
     wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit("connection", ws, request, match[1], payload);
+      wss.emit("connection", ws, request, agentId, payload);
     });
   });
 

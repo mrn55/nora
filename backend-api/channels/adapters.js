@@ -3,6 +3,55 @@
  * (send messages, verify config, format inbound webhooks).
  */
 
+// ── SSRF Protection ──────────────────────────────────────
+// Block user-supplied webhook URLs from targeting internal/private network
+// addresses so that a malicious channel config cannot pivot into cluster-
+// internal services (postgres, redis, worker-provisioner, cloud metadata).
+// Keep in sync with PRIVATE_IP_RE / assertSafeUrl in integrations.js.
+const PRIVATE_IP_RE = /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|::1|fc00:|fe80:)/i;
+
+function assertSafeWebhookUrl(rawUrl, label = "Webhook URL") {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`${label} is not a valid URL`);
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(`${label} must use http or https`);
+  }
+  if (PRIVATE_IP_RE.test(parsed.hostname)) {
+    throw new Error(`${label} must not target internal or private network addresses`);
+  }
+  return parsed.toString();
+}
+
+// Safe header allowlist for the generic outbound webhook adapter. Custom
+// headers supplied in channel config are filtered against this set so an
+// attacker cannot forge Host/Authorization/etc. against internal services.
+const WEBHOOK_CUSTOM_HEADER_ALLOWLIST = new Set([
+  "x-webhook-secret",
+  "x-signature",
+  "x-hub-signature",
+  "x-hub-signature-256",
+  "x-api-key",
+  "x-request-id",
+  "x-correlation-id",
+  "user-agent",
+]);
+
+function filterWebhookHeaders(customHeaders) {
+  const filtered = {};
+  if (!customHeaders || typeof customHeaders !== "object") return filtered;
+  for (const [key, value] of Object.entries(customHeaders)) {
+    if (typeof key !== "string" || typeof value !== "string") continue;
+    if (WEBHOOK_CUSTOM_HEADER_ALLOWLIST.has(key.toLowerCase())) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
 // ── Slack Adapter ────────────────────────────────────────
 
 const slack = {
@@ -17,8 +66,9 @@ const slack = {
   ],
 
   async send(channel, message) {
-    const url = channel.config.webhook_url;
-    if (!url) throw new Error("Slack webhook URL not configured");
+    const rawUrl = channel.config.webhook_url;
+    if (!rawUrl) throw new Error("Slack webhook URL not configured");
+    const url = assertSafeWebhookUrl(rawUrl, "Slack webhook URL");
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -30,6 +80,11 @@ const slack = {
 
   async verify(config) {
     if (!config.webhook_url) return { valid: false, error: "Webhook URL required" };
+    try {
+      assertSafeWebhookUrl(config.webhook_url, "Slack webhook URL");
+    } catch (e) {
+      return { valid: false, error: e.message };
+    }
     return { valid: true };
   },
 
@@ -55,8 +110,9 @@ const discord = {
   ],
 
   async send(channel, message) {
-    const url = channel.config.webhook_url;
-    if (!url) throw new Error("Discord webhook URL not configured");
+    const rawUrl = channel.config.webhook_url;
+    if (!rawUrl) throw new Error("Discord webhook URL not configured");
+    const url = assertSafeWebhookUrl(rawUrl, "Discord webhook URL");
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -68,6 +124,11 @@ const discord = {
 
   async verify(config) {
     if (!config.webhook_url) return { valid: false, error: "Webhook URL required" };
+    try {
+      assertSafeWebhookUrl(config.webhook_url, "Discord webhook URL");
+    } catch (e) {
+      return { valid: false, error: e.message };
+    }
     return { valid: true };
   },
 
@@ -147,13 +208,14 @@ const webhook = {
   ],
 
   async send(channel, message) {
-    const url = channel.config.url;
-    if (!url) throw new Error("Webhook URL not configured");
+    const rawUrl = channel.config.url;
+    if (!rawUrl) throw new Error("Webhook URL not configured");
+    const url = assertSafeWebhookUrl(rawUrl, "Webhook URL");
     const method = channel.config.method || "POST";
     let headers = { "Content-Type": "application/json" };
     if (channel.config.headers) {
       try {
-        headers = { ...headers, ...JSON.parse(channel.config.headers) };
+        headers = { ...headers, ...filterWebhookHeaders(JSON.parse(channel.config.headers)) };
       } catch { /* ignore parse errors */ }
     }
     const res = await fetch(url, {
@@ -167,6 +229,11 @@ const webhook = {
 
   async verify(config) {
     if (!config.url) return { valid: false, error: "URL required" };
+    try {
+      assertSafeWebhookUrl(config.url, "Webhook URL");
+    } catch (e) {
+      return { valid: false, error: e.message };
+    }
     return { valid: true };
   },
 
@@ -191,8 +258,9 @@ const teams = {
   ],
 
   async send(channel, message) {
-    const url = channel.config.webhook_url;
-    if (!url) throw new Error("Teams webhook URL not configured");
+    const rawUrl = channel.config.webhook_url;
+    if (!rawUrl) throw new Error("Teams webhook URL not configured");
+    const url = assertSafeWebhookUrl(rawUrl, "Teams webhook URL");
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -204,6 +272,11 @@ const teams = {
 
   async verify(config) {
     if (!config.webhook_url) return { valid: false, error: "Webhook URL required" };
+    try {
+      assertSafeWebhookUrl(config.webhook_url, "Teams webhook URL");
+    } catch (e) {
+      return { valid: false, error: e.message };
+    }
     return { valid: true };
   },
 

@@ -783,7 +783,8 @@ async function testIntegration(integrationId, agentId) {
       const email = config.email;
       if (!baseUrl) throw new Error("Confluence URL not configured");
       if (!email) throw new Error("Confluence email not configured");
-      const url = baseUrl.includes("://") ? baseUrl : `https://${baseUrl}`;
+      const rawUrl = baseUrl.includes("://") ? baseUrl : `https://${baseUrl}`;
+      const url = assertSafeUrl(rawUrl, "Confluence base URL");
       const res = await fetch(`${url}/wiki/rest/api/user/current`, {
         headers: { Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}` },
       });
@@ -801,8 +802,9 @@ async function testIntegration(integrationId, agentId) {
     },
     supabase: async () => {
       const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});
-      const url = config.url;
-      if (!url) throw new Error("Supabase project URL not configured");
+      const rawUrl = config.url;
+      if (!rawUrl) throw new Error("Supabase project URL not configured");
+      const url = assertSafeUrl(rawUrl, "Supabase URL");
       const res = await fetch(`${url}/rest/v1/`, {
         headers: { apikey: token, Authorization: `Bearer ${token}` },
       });
@@ -844,8 +846,9 @@ async function testIntegration(integrationId, agentId) {
     },
     elasticsearch: async () => {
       const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});
-      const nodeUrl = config.node_url;
-      if (!nodeUrl) throw new Error("Elasticsearch node URL not configured");
+      const rawUrl = config.node_url;
+      if (!rawUrl) throw new Error("Elasticsearch node URL not configured");
+      const nodeUrl = assertSafeUrl(rawUrl, "Elasticsearch node URL");
       const headers = {};
       if (config.username) {
         headers.Authorization = `Basic ${Buffer.from(`${config.username}:${token}`).toString("base64")}`;
@@ -898,8 +901,9 @@ async function testIntegration(integrationId, agentId) {
     },
     grafana: async () => {
       const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});
-      const url = config.url;
-      if (!url) throw new Error("Grafana URL not configured");
+      const rawUrl = config.url;
+      if (!rawUrl) throw new Error("Grafana URL not configured");
+      const url = assertSafeUrl(rawUrl, "Grafana URL");
       const res = await fetch(`${url}/api/org`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -917,10 +921,11 @@ async function testIntegration(integrationId, agentId) {
     },
     jenkins: async () => {
       const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});
-      const url = config.url;
+      const rawUrl = config.url;
       const username = config.username;
-      if (!url) throw new Error("Jenkins URL not configured");
+      if (!rawUrl) throw new Error("Jenkins URL not configured");
       if (!username) throw new Error("Jenkins username not configured");
+      const url = assertSafeUrl(rawUrl, "Jenkins URL");
       const res = await fetch(`${url}/api/json`, {
         headers: { Authorization: `Basic ${Buffer.from(`${username}:${token}`).toString("base64")}` },
       });
@@ -964,7 +969,7 @@ async function testIntegration(integrationId, agentId) {
       const consumerKey = config.consumer_key;
       if (!siteUrl) throw new Error("WooCommerce site URL not configured");
       if (!consumerKey) throw new Error("WooCommerce consumer key not configured");
-      const url = siteUrl.replace(/\/+$/, "");
+      const url = assertSafeUrl(siteUrl, "WooCommerce site URL");
       const res = await fetch(`${url}/wp-json/wc/v3/system_status`, {
         headers: { Authorization: `Basic ${Buffer.from(`${consumerKey}:${token}`).toString("base64")}` },
       });
@@ -999,8 +1004,9 @@ async function testIntegration(integrationId, agentId) {
     },
     salesforce: async () => {
       const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});
-      const instanceUrl = config.instance_url;
-      if (!instanceUrl) throw new Error("Salesforce instance URL not configured");
+      const rawUrl = config.instance_url;
+      if (!rawUrl) throw new Error("Salesforce instance URL not configured");
+      const instanceUrl = assertSafeUrl(rawUrl, "Salesforce instance URL");
       const res = await fetch(`${instanceUrl}/services/data/v59.0/`, {
         headers: { Authorization: `Bearer ${token}` },
       });

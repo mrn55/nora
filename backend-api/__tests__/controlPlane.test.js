@@ -579,7 +579,10 @@ describe("gateway control-plane embed", () => {
       .set("X-Forwarded-Proto", "https");
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain("wss://nora.test/api/ws/gateway/agent-1?token=");
+    // Relay WS URL must NOT carry the JWT as a query parameter; the embed
+    // session cookie authenticates the WS upgrade server-side.
+    expect(res.text).toContain('"wss://nora.test/api/ws/gateway/agent-1"');
+    expect(res.text).not.toContain("?token=");
     expect(res.text).toContain('var nextHash = "password=" + encodeURIComponent(P)');
     expect(res.text).toContain("window.__NORA_EMBED_AUTO_LOGIN__ = true");
     expect(res.text).toContain("function startAutoLogin()");
@@ -1103,15 +1106,12 @@ describe("Hermes dashboard embed", () => {
     expect(apiRes.status).toBe(200);
     expect(apiRes.text).toBe('{"ok":true}');
     expect(apiRes.headers["cache-control"]).toBe("no-store");
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      4,
-      "http://10.0.0.40:9119/api/env",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer hermes-session-token",
-        }),
-      })
-    );
+    // The platform JWT must NOT be forwarded to the tenant-owned Hermes
+    // container — the embed session cookie already authenticates the
+    // proxy boundary, and the upstream image may be operator-supplied.
+    const envCall = global.fetch.mock.calls[3];
+    expect(envCall[0]).toBe("http://10.0.0.40:9119/api/env");
+    expect(envCall[1].headers).not.toHaveProperty("Authorization");
   });
 
   it("forwards protected dashboard writes through the embed session cookie", async () => {
@@ -1166,18 +1166,15 @@ describe("Hermes dashboard embed", () => {
 
     expect(apiRes.status).toBe(200);
     expect(apiRes.text).toBe('{"ok":true}');
-    expect(global.fetch).toHaveBeenNthCalledWith(
-      2,
-      "http://10.0.0.41:9119/api/config",
-      expect.objectContaining({
-        method: "PUT",
-        headers: expect.objectContaining({
-          Authorization: "Bearer hermes-session-token",
-          "Content-Type": "application/json",
-        }),
-        body: JSON.stringify({ config: { model: "gpt-5.4" } }),
-      })
-    );
+    // The Authorization header from the browser must NOT be forwarded to the
+    // tenant Hermes container; only the proxy-level embed session cookie
+    // authenticates this request.
+    const configCall = global.fetch.mock.calls[1];
+    expect(configCall[0]).toBe("http://10.0.0.41:9119/api/config");
+    expect(configCall[1].method).toBe("PUT");
+    expect(configCall[1].headers["Content-Type"]).toBe("application/json");
+    expect(configCall[1].headers).not.toHaveProperty("Authorization");
+    expect(configCall[1].body).toBe(JSON.stringify({ config: { model: "gpt-5.4" } }));
   });
 
   it("rejects embed requests for stopped Hermes agents", async () => {

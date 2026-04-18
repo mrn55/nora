@@ -55,12 +55,20 @@ function decodeMaybeString(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+// Allowlist to ensure paths are safe when interpolated into shell bootstrap
+// commands downstream. Keep in sync with SAFE_TEMPLATE_PATH_RE in
+// agent-runtime/lib/runtimeBootstrap.js.
+const SAFE_PAYLOAD_PATH_RE = /^[A-Za-z0-9._/-]+$/;
+
 function normalizeRelativePath(value) {
   const rawValue = String(value || "").trim().replace(/\\/g, "/");
   if (!rawValue) return null;
 
   const normalized = path.posix.normalize(rawValue).replace(/^\/+/, "");
   if (!normalized || normalized === "." || normalized.startsWith("../")) {
+    return null;
+  }
+  if (!SAFE_PAYLOAD_PATH_RE.test(normalized)) {
     return null;
   }
 

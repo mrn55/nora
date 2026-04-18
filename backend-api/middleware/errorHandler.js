@@ -52,6 +52,11 @@ function errorHandler(err, req, res, _next) {
 
   if (res.headersSent) return;
 
+  // 4xx messages are intentionally exposed — routes set statusCode<500 only
+  // on errors whose messages are meant for the client (validation, conflict,
+  // not-found). 5xx messages are always replaced with a generic string so
+  // unexpected server-side errors (pg detail, file paths, stack info) don't
+  // leak through.
   res.status(status).json({
     error: status >= 500 ? 'Internal server error' : err.message,
     code,
