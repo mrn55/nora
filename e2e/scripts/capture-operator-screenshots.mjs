@@ -2214,17 +2214,19 @@ async function captureHermesReadmeScreenshot(browser, token) {
       timeout: 15000,
     });
     await hermes.page.waitForTimeout(700);
-    const iframeBox = await iframe.boundingBox();
-    if (!iframeBox) {
-      throw new Error("Failed to locate Hermes dashboard iframe for README screenshot");
+    const mainContent = hermes.page.locator("main");
+    await mainContent.waitFor({ state: "visible", timeout: 15000 });
+    const mainBox = await mainContent.boundingBox();
+    if (!mainBox) {
+      throw new Error("Failed to locate main content area for Hermes README screenshot");
     }
     await hermes.page.screenshot({
       path: path.join(SCREENSHOT_DIR, "proof-operator-hermes-webui-tab.png"),
       clip: {
-        x: Math.max(0, Math.round(iframeBox.x)),
-        y: Math.max(0, Math.round(iframeBox.y - 38)),
-        width: Math.min(1256, Math.round(iframeBox.width)),
-        height: Math.min(1000, Math.round(iframeBox.height + 38)),
+        x: Math.round(mainBox.x),
+        y: Math.round(mainBox.y),
+        width: Math.min(1256, Math.round(mainBox.width)),
+        height: Math.min(1000, Math.round(mainBox.height)),
       },
     });
   } finally {
