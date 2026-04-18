@@ -7,6 +7,7 @@ coverage/
 *.log
 **/playwright-report/
 **/test-results/
+*.swp
 
 # Local environment files
 .env
