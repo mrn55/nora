@@ -72,7 +72,7 @@ flowchart TB
 
 ### API Responsibilities
 
-`backend-api/server.js` is the control-plane integration hub. It wires together:
+`backend-api/server.ts` is the control-plane integration hub. It wires together:
 
 - security middleware such as Helmet, CORS, rate limiting, and request correlation
 - public health and configuration endpoints
@@ -100,7 +100,7 @@ Nora now ships a control-plane-managed migration path for both `openclaw` and `h
    - an uploaded Nora migration bundle or legacy OpenClaw template JSON
    - a live Docker source
    - a live SSH source
-2. `backend-api/agentMigrations.js` normalizes the imported data and stores an encrypted manifest in PostgreSQL.
+2. `backend-api/agentMigrations.ts` normalizes the imported data and stores an encrypted manifest in PostgreSQL.
 3. The operator deploys a new Nora-managed agent using that draft.
 4. The provisioning worker recreates the runtime under Nora control instead of adopting the original runtime in place.
 
@@ -119,7 +119,7 @@ Unsupported runtime-specific state is surfaced as draft warnings instead of bein
 ### Export And Live Files
 
 - Nora-managed agents can be exported as `nora-migration-bundle/v1` bundles for recreation on another Nora control plane.
-- The agent detail Files tab reads the actual runtime filesystem through `backend-api/agentFiles.js`.
+- The agent detail Files tab reads the actual runtime filesystem through `backend-api/agentFiles.ts`.
 - Filesystem access is root-allowlisted:
   - writable workspace root
   - curated read-only system roots for inspection and download
@@ -137,7 +137,7 @@ Nora chooses a concrete backend through three layers of intent:
 | Deploy target | `docker`, `k8s`, `proxmox` | Where the runtime should be scheduled. |
 | Sandbox profile | `standard`, `nemoclaw` | Which isolation profile should wrap the runtime. |
 
-The worker resolves the final backend through shared metadata in `agent-runtime/lib/backendCatalog.js`.
+The worker resolves the final backend through shared metadata in `agent-runtime/lib/backendCatalog.ts`.
 
 ### Current Runtime Paths
 

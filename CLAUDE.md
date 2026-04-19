@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-Nora is a self-hosted control plane for AI agent runtimes. It manages, deploys, monitors, and operates agent runtimes across multiple backends (Docker, Kubernetes, Proxmox, NemoClaw, Hermes). Node 22 across all services.
+Nora is a self-hosted control plane for AI agent runtimes. It manages, deploys, monitors, and operates agent runtimes across multiple backends (Docker, Kubernetes, Proxmox, NemoClaw, Hermes). Node 24 LTS across all services.
 
 ## Development Commands
 
@@ -32,7 +32,7 @@ One-liner installer: `./setup.sh` (macOS/Linux/WSL2) or `./setup.ps1` (Windows).
 cd backend-api && npm install && npm start
 
 # Worker provisioner (health on 4001)
-cd workers/provisioner && npm install && node worker.js
+cd workers/provisioner && npm install && npm start
 
 # Any frontend (port 3000)
 cd frontend-dashboard && npm install && npm run dev
@@ -56,7 +56,7 @@ cd e2e && npm run smoke:runtime-path        # Runtime resolution
 cd e2e && npm run capture:operator-readme   # Regenerate README screenshots
 ```
 
-CI (`.github/workflows/ci.yml`) runs backend tests + E2E smoke on every PR and push to master under Node 22.
+CI (`.github/workflows/ci.yml`) runs backend tests + E2E smoke on every PR and push to master under Node 24.
 
 ## Architecture
 
@@ -64,9 +64,9 @@ CI (`.github/workflows/ci.yml`) runs backend tests + E2E smoke on every PR and p
 Browsers
   ↓
 nginx (8080 local / 80|443 public)
-  ├── /           frontend-marketing   (Next.js 14, public site + auth)
-  ├── /app        frontend-dashboard   (Next.js 14, operator workspace)
-  ├── /admin      admin-dashboard      (Next.js 14, platform admin)
+  ├── /           frontend-marketing   (Next.js 16, public site + auth)
+  ├── /app        frontend-dashboard   (Next.js 16, operator workspace)
+  ├── /admin      admin-dashboard      (Next.js 16, platform admin)
   └── /api        backend-api          (Express, container port 4000, host 127.0.0.1:4100)
                     ├── PostgreSQL 15      (state: users, agents, deployments, marketplace, audit)
                     ├── Redis 7 + BullMQ   (async job queue)
@@ -84,7 +84,7 @@ nginx (8080 local / 80|443 public)
 
 ### Runtime selection (three-dimensional)
 
-Resolved in `agent-runtime/lib/backendCatalog.js`:
+Resolved in `agent-runtime/lib/backendCatalog.ts`:
 
 1. **Runtime family** (`ENABLED_RUNTIME_FAMILIES`): `openclaw` (default) or `hermes`
 2. **Deploy target** (`ENABLED_BACKENDS`): `docker`, `k8s`, `proxmox`
@@ -94,10 +94,10 @@ Resolved in `agent-runtime/lib/backendCatalog.js`:
 
 `agent-runtime/` is **not deployed alone** — it is mounted read-only at `/agent-runtime` into both backend-api and worker-provisioner. Control-plane and workers import from it rather than embedding backend assumptions. Key files:
 
-- `lib/backendCatalog.js` — backend selection, maturity status, metadata
-- `lib/agentEndpoints.js` — gateway/dashboard URL helpers, endpoint checks
-- `runtimeBootstrap.js` — bootstrap file/env injection shared across adapters
-- `integrationTools.js` — LLM provider + integration tool CLI definitions
+- `lib/backendCatalog.ts` — backend selection, maturity status, metadata
+- `lib/agentEndpoints.ts` — gateway/dashboard URL helpers, endpoint checks
+- `runtimeBootstrap.ts` — bootstrap file/env injection shared across adapters
+- `integrationTools.ts` — LLM provider + integration tool CLI definitions
 
 ### Backend adapter code sharing
 
@@ -105,9 +105,9 @@ Compose mounts `./workers/provisioner/backends` into `backend-api` at `/app/back
 
 ### Key backend modules
 
-`backend-api/server.js` wires: helmet, rate limiting, CORS, auth middleware (`middleware/auth.js`), correlation IDs (`middleware/errorHandler.js`), route modules under `routes/` (auth, agents, billing, channels, integrations, llmProviders, marketplace, monitoring, nemoclaw, workspaces, admin), gateway proxy (`gatewayProxy.js` — exposes `createGatewayRouter` + `attachGatewayWS` for WebSocket upgrade), and background telemetry (`backgroundTasks.js`, `scheduler.js`).
+`backend-api/server.ts` wires: helmet, rate limiting, CORS, auth middleware (`middleware/auth.ts`), correlation IDs (`middleware/errorHandler.ts`), route modules under `routes/` (auth, agents, billing, channels, integrations, llmProviders, marketplace, monitoring, nemoclaw, workspaces, admin), gateway proxy (`gatewayProxy.ts` — exposes `createGatewayRouter` + `attachGatewayWS` for WebSocket upgrade), and background telemetry (`backgroundTasks.ts`, `scheduler.ts`).
 
-**API keys** are stored AES-256-GCM encrypted (`crypto.js`) in PostgreSQL; JWT handles session auth.
+**API keys** are stored AES-256-GCM encrypted (`crypto.ts`) in PostgreSQL; JWT handles session auth.
 
 ## Subtree Ownership
 

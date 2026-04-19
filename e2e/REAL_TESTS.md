@@ -2,18 +2,18 @@
 
 These specs run the real lifecycle — deploy, chat against a real LLM, connect
 real integrations, send real messages through real channels — and verify the
-security fixes shipped in integrations.js / channels/adapters.js.
+security fixes shipped in integrations.ts / channels/adapters.ts.
 
 ## Files
 
-- `specs/real-deploy-matrix.spec.js` — §3 test-plan L1-L10 across the
+- `specs/real-deploy-matrix.spec.ts` — §3 test-plan L1-L10 across the
   OpenClaw/Hermes × Docker/K8s/NemoClaw matrix.
-- `specs/real-integrations.spec.js` — §4 GitHub + Slack + URL-based integration
+- `specs/real-integrations.spec.ts` — §4 GitHub + Slack + URL-based integration
   with real-cred success and SSRF-guard refusal.
-- `specs/real-channels.spec.js` — §5 Telegram + Discord delivery with real
+- `specs/real-channels.spec.ts` — §5 Telegram + Discord delivery with real
   creds and SSRF-guard refusal.
-- `specs/support/realConfig.js` — `.env.real` loader and skip gates.
-- `specs/support/agents.js` — API helpers.
+- `specs/support/realConfig.ts` — `.env.real` loader and skip gates.
+- `specs/support/agents.ts` — API helpers.
 - `.env.real.example` — fill in and copy to `.env.real`.
 
 ## Prerequisites
@@ -43,25 +43,25 @@ cd e2e
 
 # All three specs against the main compose stack on :8080
 BASE_URL=http://localhost:8080 npx playwright test \
-  specs/real-deploy-matrix.spec.js \
-  specs/real-integrations.spec.js \
-  specs/real-channels.spec.js
+  specs/real-deploy-matrix.spec.ts \
+  specs/real-integrations.spec.ts \
+  specs/real-channels.spec.ts
 
 # Just the deploy matrix
-BASE_URL=http://localhost:8080 npx playwright test specs/real-deploy-matrix.spec.js
+BASE_URL=http://localhost:8080 npx playwright test specs/real-deploy-matrix.spec.ts
 
 # Headed (watch the browser during L3 embed checks)
-BASE_URL=http://localhost:8080 npx playwright test --headed specs/real-deploy-matrix.spec.js
+BASE_URL=http://localhost:8080 npx playwright test --headed specs/real-deploy-matrix.spec.ts
 
 # One cell only — set the other REAL_ENABLE_* flags to 0 in .env.real, or
 # override inline:
 REAL_ENABLE_HERMES_DOCKER=1 REAL_ENABLE_OPENCLAW_DOCKER=0 \
   BASE_URL=http://localhost:8080 \
-  npx playwright test specs/real-deploy-matrix.spec.js
+  npx playwright test specs/real-deploy-matrix.spec.ts
 ```
 
 Setting `BASE_URL` disables the auto-managed `docker-compose.e2e.yml` stack in
-`playwright.config.js`, so the specs talk to whichever stack you already have
+`playwright.config.ts`, so the specs talk to whichever stack you already have
 up.
 
 ## What each cell expects

@@ -402,8 +402,8 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 | Layer | Technology |
 |---|---|
 | Reverse proxy | Nginx |
-| Frontends | Next.js 14, React 18, Tailwind CSS |
-| Backend API | Express.js 4, Node.js 20 |
+| Frontends | Next.js 16, React 19, Tailwind CSS |
+| Backend API | Express.js 4, Node.js 24 LTS |
 | Auth | NextAuth.js, JWT, bcryptjs |
 | Database | PostgreSQL 15 |
 | Queue | BullMQ + Redis 7 |
