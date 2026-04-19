@@ -89,6 +89,7 @@ services:
     volumes:
       - ./workers/provisioner:/app
       - ./agent-runtime:/agent-runtime:ro
+      - ./backend-api:/backend-api:ro
       - ./tsconfig.base.json:/tsconfig.base.json:ro
       - /var/run/docker.sock:/var/run/docker.sock
     command: sh -c "npm install && npm start"

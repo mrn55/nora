@@ -689,18 +689,31 @@ function createGatewayRouter() {
   //   /agents/:id/gateway/assets/* → gateway /assets/* (JS, CSS)
   //   /agents/:id/gateway/favicon* → gateway /favicon* (icons)
   //   /agents/:id/gateway/__openclaw__/* → gateway internal paths
-  router.get("/agents/:agentId/gateway/ui", proxyGatewayPath(""));
-  router.get("/agents/:agentId/gateway/ui/*", proxyGatewayPath("ui/"));
-  router.get("/agents/:agentId/gateway/assets/*", proxyGatewayPath("assets/"));
-  router.get("/agents/:agentId/gateway/favicon*", proxyGatewayFavicon);
-  router.get("/agents/:agentId/gateway/__openclaw__/*", proxyGatewayPath("__openclaw__/"));
-  router.post("/agents/:agentId/gateway/__openclaw__/*", proxyGatewayPath("__openclaw__/"));
+  const proxyGatewayUiRoot = createGatewayPathProxy("");
+  const proxyGatewayUiChild = createGatewayPathProxy("ui");
+  const proxyGatewayAssetPath = createGatewayPathProxy("assets");
+  const proxyGatewayInternalPath = createGatewayPathProxy("__openclaw__");
 
-  function proxyGatewayPath(prefix) {
+  router.get("/agents/:agentId/gateway/ui", proxyGatewayUiRoot);
+  router.use("/agents/:agentId/gateway", (req, res, next) => {
+    if (req.path.startsWith("/ui/")) return proxyGatewayUiChild(req, res);
+    if (req.path === "/assets" || req.path.startsWith("/assets/")) {
+      return proxyGatewayAssetPath(req, res);
+    }
+    if (req.path.startsWith("/favicon")) return proxyGatewayFavicon(req, res);
+    if (
+      (req.method === "GET" || req.method === "POST") &&
+      (req.path === "/__openclaw__" || req.path.startsWith("/__openclaw__/"))
+    ) {
+      return proxyGatewayInternalPath(req, res);
+    }
+    return next();
+  });
+
+  function createGatewayPathProxy(prefix) {
     return async (req, res) => {
       try {
-        const subPath = req.params[0] || "";
-        const gatewayPath = prefix + subPath;
+        const gatewayPath = buildGatewayProxyPath(req, prefix);
         const addr = resolveGatewayAddress(req.agent);
         const targetUrl = `http://${addr.host}:${addr.port}/${gatewayPath}${req._parsedUrl?.search || ""}`;
 
@@ -728,7 +741,7 @@ function createGatewayRouter() {
 
   async function proxyGatewayFavicon(req, res) {
     try {
-      const fullPath = req.path.split("/gateway/")[1] || "favicon.svg";
+      const fullPath = req.path.replace(/^\/+/, "") || "favicon.svg";
       const addr = resolveGatewayAddress(req.agent);
       const targetUrl = `http://${addr.host}:${addr.port}/${fullPath}`;
       const resp = await fetch(targetUrl, { signal: AbortSignal.timeout(5000) });
@@ -740,6 +753,14 @@ function createGatewayRouter() {
     } catch {
       res.status(404).end();
     }
+  }
+
+  function buildGatewayProxyPath(req, prefix) {
+    if (!prefix) return "";
+    const normalizedPath = String(req.path || "").replace(/^\/+/, "");
+    if (!normalizedPath || normalizedPath === prefix) return prefix;
+    if (normalizedPath.startsWith(`${prefix}/`)) return normalizedPath;
+    return `${prefix}/${normalizedPath}`;
   }
 
   return router;

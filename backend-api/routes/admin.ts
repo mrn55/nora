@@ -832,6 +832,7 @@ router.post(
 router.post(
   "/agents/:id/redeploy",
   asyncHandler(async (req, res) => {
+    const requestBody = req.body || {};
     const agent = await findAdminAgent(req.params.id, { includeOwner: true });
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     res.locals.auditContext = buildAgentContext(agent);
@@ -842,8 +843,8 @@ router.post(
       });
     }
 
-    const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
-    if (req.body.runtime_family != null && runtimeFamily == null) {
+    const runtimeFamily = normalizeRequestedRuntimeFamily(requestBody.runtime_family);
+    if (requestBody.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
         error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
       });
@@ -852,7 +853,7 @@ router.post(
     const currentRuntimeFields = buildAgentRuntimeFields(agent);
     const runtimeFields = resolveRequestedRuntimeFields({
       request: {
-        ...req.body,
+        ...requestBody,
         runtime_family: runtimeFamily || currentRuntimeFields.runtime_family,
       },
       fallback: currentRuntimeFields,
@@ -860,13 +861,13 @@ router.post(
     assertSupportedRuntimeSelection(runtimeFields);
     assertBackendAvailable(runtimeFields.backend_type);
     const containerName = resolveContainerName({
-      requestedName: req.body.container_name,
+      requestedName: requestBody.container_name,
       currentName: agent.container_name,
       agentName: agent.name,
       runtimeSelection: runtimeFields,
     });
     const image = resolveRequestedImage({
-      requestedImage: req.body.image,
+      requestedImage: requestBody.image,
       runtimeFields,
       fallbackImage: agent.image || null,
       fallbackRuntimeFields: currentRuntimeFields,

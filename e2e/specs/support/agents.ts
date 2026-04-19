@@ -282,7 +282,7 @@ async function chatHermes(request: APIRequestContext, token: string, agentId: st
     {
       method: "POST",
       token,
-      data: { message },
+      data: { messages: [{ role: "user", content: message }] },
     }
   );
   return body;
@@ -303,7 +303,7 @@ async function saveProviderKey(
   const { body } = await apiJson(request, "/api/llm-providers", {
     method: "POST",
     token,
-    data: { provider, api_key: apiKey, model },
+    data: { provider, apiKey, model },
   });
   return body;
 }

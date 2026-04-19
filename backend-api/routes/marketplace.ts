@@ -439,10 +439,11 @@ router.post(
       return res
         .status(400)
         .json({ error: "Agent name must be 100 characters or less" });
-    }
+  }
 
-    const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
-    if (req.body.runtime_family != null && runtimeFamily == null) {
+    const requestBody = req.body || {};
+    const runtimeFamily = normalizeRequestedRuntimeFamily(requestBody.runtime_family);
+    if (requestBody.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
         error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
       });
@@ -450,7 +451,7 @@ router.post(
     const defaults = extractTemplateDefaultsFromSnapshot(snap);
     const runtimeFields = resolveRequestedRuntimeFields({
       request: {
-        ...req.body,
+        ...requestBody,
         runtime_family: runtimeFamily || DEFAULT_RUNTIME_FAMILY,
       },
       fallback: {
@@ -467,7 +468,7 @@ router.post(
 
     const specs = resolveTemplateSpecs(defaults, limits.subscription || {});
     const image = resolveRequestedImage({
-      requestedImage: req.body.image,
+      requestedImage: requestBody.image,
       runtimeFields,
       fallbackImage: defaults.image,
       fallbackRuntimeFields,
@@ -479,7 +480,7 @@ router.post(
       fallback: runtimeFields.deploy_target,
     });
     const containerName = resolveContainerName({
-      requestedName: req.body.container_name,
+      requestedName: requestBody.container_name,
       agentName: name,
       runtimeSelection: runtimeFields,
     });

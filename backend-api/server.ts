@@ -434,14 +434,16 @@ async function resolveEmbedAccess(
 }
 
 function getEmbeddedGatewayPath(req) {
-  const prefix = `/agents/${req.params.agentId}/gateway/embed`;
-  const suffix = req.path.startsWith(prefix) ? req.path.slice(prefix.length) : "";
+  const fullPath = `${req.baseUrl || ""}${req.path || ""}`;
+  const prefix = `${req.baseUrl || `/agents/${req.params.agentId}/gateway`}/embed`;
+  const suffix = fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : "";
   return suffix.replace(/^\/+/, "");
 }
 
 function getEmbeddedHermesPath(req) {
-  const prefix = `/agents/${req.params.agentId}/hermes-ui/embed`;
-  const suffix = req.path.startsWith(prefix) ? req.path.slice(prefix.length) : "";
+  const fullPath = `${req.baseUrl || ""}${req.path || ""}`;
+  const prefix = `${req.baseUrl || `/agents/${req.params.agentId}/hermes-ui`}/embed`;
+  const suffix = fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : "";
   return suffix.replace(/^\/+/, "");
 }
 
@@ -578,8 +580,28 @@ app.use("/auth", require("./routes/auth"));
 // Only opaque static files (JS bundles, CSS, favicons) are exempted — not HTML or
 // internal gateway API/config endpoints.
 const gatewayUIAssetProxy = require("express").Router();
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/assets/*", proxyGatewayAsset);
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/favicon*", proxyGatewayAsset);
+const PREAUTH_ASSET_METHODS = new Set(["GET", "HEAD"]);
+const EMBED_PROXY_METHODS = new Set([
+  "DELETE",
+  "GET",
+  "HEAD",
+  "OPTIONS",
+  "PATCH",
+  "POST",
+  "PUT",
+]);
+
+gatewayUIAssetProxy.use("/agents/:agentId/gateway", (req, res, next) => {
+  if (!PREAUTH_ASSET_METHODS.has(req.method)) return next();
+  if (
+    req.path === "/assets" ||
+    req.path.startsWith("/assets/") ||
+    req.path.startsWith("/favicon")
+  ) {
+    return proxyGatewayAsset(req, res);
+  }
+  return next();
+});
 
 // ─── Gateway UI Embed (pre-auth) ────────────────────────────────────────────────
 // The first HTML request authenticates via ?token= and mints a short-lived
@@ -662,9 +684,13 @@ async function proxyEmbeddedGateway(req, res) {
   }
 }
 
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed", proxyEmbeddedGateway);
-gatewayUIAssetProxy.get("/agents/:agentId/gateway/embed/*", proxyEmbeddedGateway);
-gatewayUIAssetProxy.post("/agents/:agentId/gateway/embed/*", proxyEmbeddedGateway);
+gatewayUIAssetProxy.use("/agents/:agentId/gateway", (req, res, next) => {
+  if (!EMBED_PROXY_METHODS.has(req.method)) return next();
+  if (req.path === "/embed" || req.path.startsWith("/embed/")) {
+    return proxyEmbeddedGateway(req, res);
+  }
+  return next();
+});
 
 async function proxyEmbeddedHermes(req, res) {
   try {
@@ -753,8 +779,13 @@ async function proxyEmbeddedHermes(req, res) {
   }
 }
 
-gatewayUIAssetProxy.all("/agents/:agentId/hermes-ui/embed", proxyEmbeddedHermes);
-gatewayUIAssetProxy.all("/agents/:agentId/hermes-ui/embed/*", proxyEmbeddedHermes);
+gatewayUIAssetProxy.use("/agents/:agentId/hermes-ui", (req, res, next) => {
+  if (!EMBED_PROXY_METHODS.has(req.method)) return next();
+  if (req.path === "/embed" || req.path.startsWith("/embed/")) {
+    return proxyEmbeddedHermes(req, res);
+  }
+  return next();
+});
 
 async function proxyGatewayAsset(req, res) {
   try {
@@ -769,9 +800,10 @@ async function proxyGatewayAsset(req, res) {
     if (!result.rows[0] || !isGatewayAvailableStatus(result.rows[0].status) || !hasGatewayEndpoint(result.rows[0])) {
       return res.status(404).end();
     }
-    const gatewayPath = req.path.split("/gateway/")[1] || "";
-    const targetUrl = gatewayUrlForAgent(result.rows[0], gatewayPath);
+    const gatewayPath = req.path || "/";
+    const targetUrl = `${gatewayUrlForAgent(result.rows[0], gatewayPath)}${req._parsedUrl?.search || ""}`;
     const resp = await fetch(targetUrl, {
+      method: req.method,
       headers: { "Accept": req.headers.accept || "*/*", "Accept-Encoding": "identity" },
       signal: AbortSignal.timeout(10000),
     });

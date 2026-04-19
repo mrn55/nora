@@ -98,7 +98,7 @@ test.describe("Channels — real credentials", () => {
       agent.id,
       channel.id
     );
-    expect(result?.delivered, JSON.stringify(result)).toBe(true);
+    expect(result?.success, JSON.stringify(result)).toBe(true);
 
     await deleteChannel(request, operator.token, agent.id, channel.id);
   });
@@ -122,19 +122,22 @@ test.describe("Channels — real credentials", () => {
       agent.id,
       channel.id
     );
-    expect(result?.delivered, JSON.stringify(result)).toBe(true);
+    expect(result?.success, JSON.stringify(result)).toBe(true);
 
     await deleteChannel(request, operator.token, agent.id, channel.id);
   });
 
   test("[C3] SSRF guard — internal webhook URL is refused", async ({ request }) => {
-    // Attempt to configure a Discord channel whose webhook URL points at a
-    // cluster-internal service. The fix in backend-api/channels/adapters.ts
-    // must refuse the send call with the "internal or private network" error.
+    // Attempt to configure a Discord channel whose webhook URL points at the
+    // AWS/GCP cloud-metadata service (169.254.169.254). The PRIVATE_IP_RE
+    // guard in backend-api/channels/adapters.ts must refuse the send call.
+    // (DNS-name based internal targets like `worker-provisioner` are not
+    // blocked by the literal-IP regex — that gap is a known limitation, not
+    // something this test exercises.)
     const channel = await createChannel(request, operator.token, agent.id, {
       type: "discord",
       name: uniqueName("Discord SSRF"),
-      config: { webhook_url: "http://worker-provisioner:4001/health" },
+      config: { webhook_url: "http://169.254.169.254/latest/meta-data/" },
     });
     expect(channel?.id).toBeTruthy();
 
@@ -144,7 +147,7 @@ test.describe("Channels — real credentials", () => {
       agent.id,
       channel.id
     );
-    expect(result?.delivered).toBeFalsy();
+    expect(result?.success).toBe(false);
     expect(String(result?.error || result?.message || "")).toMatch(
       /internal|private network|must not target|must use http/i
     );

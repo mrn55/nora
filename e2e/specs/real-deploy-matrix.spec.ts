@@ -137,9 +137,13 @@ test.describe("Deploy matrix — real credentials", () => {
 
       test(`[L3] gateway reachable`, async ({ page }) => {
         test.skip(!agent, "no agent from [L1]");
-        // Authenticate the browser session, then hit the embed route. A healthy
-        // gateway returns 2xx on the HTML proxy. This also mints the embed
-        // cookie as a side effect, which the subsequent chat test can reuse.
+        test.setTimeout(real.provisionTimeoutMs + 60000);
+        // Authenticate the browser session, then hit the embed route. The
+        // agent row flips to `running` as soon as the container is up, but
+        // the OpenClaw/Hermes gateway *inside* it can take several minutes
+        // to finish booting (fresh installs pull openclaw + tsx from npm),
+        // so we poll until the embed endpoint returns 2xx or the provision
+        // deadline hits.
         await page.addInitScript((t) => {
           window.localStorage.setItem("token", t);
         }, operator.token);
@@ -153,10 +157,21 @@ test.describe("Deploy matrix — real credentials", () => {
                 operator.token
               )}`;
 
-        const response = await page.request.get(embedPath, {
-          headers: { Accept: "text/html" },
-        });
-        expect(response.status(), `Expected 2xx from ${embedPath}`).toBeLessThan(400);
+        const deadline = Date.now() + real.provisionTimeoutMs;
+        let lastStatus = 0;
+        while (Date.now() < deadline) {
+          const response = await page.request.get(embedPath, {
+            headers: { Accept: "text/html" },
+          });
+          lastStatus = response.status();
+          if (lastStatus < 400) return;
+          await new Promise((r) => setTimeout(r, 10000));
+        }
+        throw new Error(
+          `Gateway embed never returned 2xx within ${Math.round(
+            real.provisionTimeoutMs / 1000
+          )}s; last status: ${lastStatus}`
+        );
       });
 
       test(`[L4] chat roundtrip (real LLM)`, async ({ request }) => {
@@ -196,24 +211,43 @@ test.describe("Deploy matrix — real credentials", () => {
         expect(touchesAgent, "expected a monitoring event touching this agent").toBe(true);
       });
 
-      test(`[L7] metrics populate`, async ({ request }) => {
+      test(`[L7] metrics summary endpoint`, async ({ request }) => {
         test.skip(!agent, "no agent from [L1]");
-        // Metrics may take up to 60s after running — poll briefly.
-        const deadline = Date.now() + 90000;
-        let latest = null;
+
+        // OpenClaw chat increments `messages_sent` in usage_metrics, so we
+        // expect the summary to have at least one key after a successful L4
+        // chat. Hermes routes chat through its container's WebUI and does
+        // not populate control-plane usage_metrics at all, so the endpoint
+        // stays empty — the useful signal there is that it returns a valid
+        // JSON object without erroring.
+        const expectData = agent.runtime_family !== "hermes";
+        const deadline = Date.now() + (expectData ? 300000 : 15000);
+        let lastBody: unknown = null;
         while (Date.now() < deadline) {
-          const { body } = await apiJson(
+          const { response, body } = await apiJson(
             request,
-            `/api/agents/${agent.id}/metrics?type=cpu&limit=1`,
+            `/api/agents/${agent.id}/metrics/summary`,
             { token: operator.token, failOnStatus: false }
           );
-          if (Array.isArray(body) && body.length > 0) {
-            latest = body[0];
-            break;
+          lastBody = body;
+          if (!response.ok()) {
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
           }
+          const keys =
+            body && typeof body === "object" && !Array.isArray(body)
+              ? Object.keys(body)
+              : [];
+          if (!expectData) {
+            expect(body && typeof body === "object" && !Array.isArray(body)).toBe(true);
+            return;
+          }
+          if (keys.length > 0) return;
           await new Promise((r) => setTimeout(r, 5000));
         }
-        expect(latest, "expected at least one CPU sample").toBeTruthy();
+        throw new Error(
+          `Timed out waiting for agent metrics summary; last body: ${JSON.stringify(lastBody)}`
+        );
       });
 
       test(`[L8] stop then start`, async ({ request }) => {

@@ -1161,15 +1161,16 @@ router.get("/:id/stats", asyncHandler(async (req, res) => {
 
 router.post("/deploy", async (req, res) => {
   try {
+    const requestBody = req.body || {};
     // Enforce billing limits
     const limits = await billing.enforceLimits(req.user.id);
     if (!limits.allowed) return res.status(402).json({ error: limits.error, subscription: limits.subscription });
 
     const sub = limits.subscription;
     let migrationDraft = null;
-    if (req.body?.migration_draft_id) {
+    if (requestBody.migration_draft_id) {
       migrationDraft = await getOwnedMigrationDraft(
-        req.body.migration_draft_id,
+        requestBody.migration_draft_id,
         req.user.id
       );
       if (!migrationDraft) {
@@ -1178,17 +1179,17 @@ router.post("/deploy", async (req, res) => {
     }
 
     const requestedRuntimeFamily =
-      req.body.runtime_family != null
-        ? req.body.runtime_family
+      requestBody.runtime_family != null
+        ? requestBody.runtime_family
         : migrationDraft?.manifest?.runtimeFamily;
     const runtimeFamily = normalizeRequestedRuntimeFamily(requestedRuntimeFamily);
-    if (req.body.runtime_family != null && runtimeFamily == null) {
+    if (requestBody.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
         error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
       });
     }
     const name = sanitizeAgentName(
-      req.body.name,
+      requestBody.name,
       migrationDraft?.manifest?.name ||
         (migrationDraft?.manifest?.runtimeFamily === "hermes"
           ? "Hermes-Agent"
@@ -1197,12 +1198,12 @@ router.post("/deploy", async (req, res) => {
     if (name.length > 100) return res.status(400).json({ error: "Agent name must be 100 characters or less" });
     const runtimeFields = resolveRequestedRuntimeFields({
       request: {
-        ...req.body,
+        ...requestBody,
         runtime_family: runtimeFamily || DEFAULT_RUNTIME_FAMILY,
       },
     });
     const containerName = resolveContainerName({
-      requestedName: req.body.container_name,
+      requestedName: requestBody.container_name,
       agentName: name,
       runtimeSelection: runtimeFields,
     });
@@ -1226,7 +1227,7 @@ router.post("/deploy", async (req, res) => {
     if (!billing.IS_PAAS) {
       // Self-hosted: accept user-chosen values clamped to operator limits
       specs = clampDeploymentDefaults(
-        normalizeDeploymentDefaults(req.body, deploymentDefaults),
+        normalizeDeploymentDefaults(requestBody, deploymentDefaults),
         billing.SELFHOSTED_LIMITS
       );
     } else {
@@ -1234,7 +1235,7 @@ router.post("/deploy", async (req, res) => {
       specs = deploymentDefaults;
     }
     const image = resolveRequestedImage({
-      requestedImage: req.body.image,
+      requestedImage: requestBody.image,
       runtimeFields,
     });
     const templatePayload = migrationDraft
@@ -1368,6 +1369,7 @@ router.patch("/:id", asyncHandler(async (req, res) => {
 }));
 
 router.post("/:id/duplicate", asyncHandler(async (req, res) => {
+  const requestBody = req.body || {};
   const limits = await billing.enforceLimits(req.user.id);
   if (!limits.allowed) {
     return res.status(402).json({ error: limits.error, subscription: limits.subscription });
@@ -1384,17 +1386,17 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
     ownerEmail: req.user.email || null,
   });
 
-  const cloneMode = CLONE_MODES.has(req.body.clone_mode)
-    ? req.body.clone_mode
+  const cloneMode = CLONE_MODES.has(requestBody.clone_mode)
+    ? requestBody.clone_mode
     : "files_only";
-  const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
-  if (req.body.runtime_family != null && runtimeFamily == null) {
+  const runtimeFamily = normalizeRequestedRuntimeFamily(requestBody.runtime_family);
+  if (requestBody.runtime_family != null && runtimeFamily == null) {
     return res.status(400).json({
       error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
     });
   }
   const name = sanitizeAgentName(
-    req.body.name,
+    requestBody.name,
     `${sourceAgent.name || "OpenClaw-Agent"} Copy`
   );
   if (name.length > 100) {
@@ -1403,7 +1405,7 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
 
   const runtimeFields = resolveRequestedRuntimeFields({
     request: {
-      ...req.body,
+      ...requestBody,
       runtime_family: runtimeFamily || sourceRuntime.runtime_family,
     },
     fallback: sourceRuntime,
@@ -1419,13 +1421,13 @@ router.post("/:id/duplicate", asyncHandler(async (req, res) => {
     disk_gb: sourceAgent.disk_gb || 20,
   };
   const image = resolveRequestedImage({
-    requestedImage: req.body.image,
+    requestedImage: requestBody.image,
     runtimeFields,
     fallbackImage: sourceAgent.image || null,
     fallbackRuntimeFields: sourceRuntime,
   });
   const containerName = resolveContainerName({
-    requestedName: req.body.container_name,
+    requestedName: requestBody.container_name,
     agentName: name,
     runtimeSelection: runtimeFields,
   });
@@ -1660,6 +1662,7 @@ router.post("/:id/restart", async (req, res) => {
 
 router.post("/:id/redeploy", async (req, res) => {
   try {
+    const requestBody = req.body || {};
     const result = await db.query(
       "SELECT * FROM agents WHERE id = $1 AND user_id = $2",
       [req.params.id, req.user.id]
@@ -1673,8 +1676,8 @@ router.post("/:id/redeploy", async (req, res) => {
       return res.status(400).json({ error: "Agent must be in warning, error, or stopped state to redeploy" });
     }
 
-    const runtimeFamily = normalizeRequestedRuntimeFamily(req.body.runtime_family);
-    if (req.body.runtime_family != null && runtimeFamily == null) {
+    const runtimeFamily = normalizeRequestedRuntimeFamily(requestBody.runtime_family);
+    if (requestBody.runtime_family != null && runtimeFamily == null) {
       return res.status(400).json({
         error: `Unsupported runtime_family. Nora currently supports: ${KNOWN_RUNTIME_FAMILIES.map((value) => `"${value}"`).join(", ")}.`,
       });
@@ -1683,7 +1686,7 @@ router.post("/:id/redeploy", async (req, res) => {
     const currentRuntimeFields = buildAgentRuntimeFields(agent);
     const runtimeFields = resolveRequestedRuntimeFields({
       request: {
-        ...req.body,
+        ...requestBody,
         runtime_family: runtimeFamily || currentRuntimeFields.runtime_family,
       },
       fallback: currentRuntimeFields,
@@ -1691,13 +1694,13 @@ router.post("/:id/redeploy", async (req, res) => {
     assertSupportedRuntimeSelection(runtimeFields);
     assertBackendAvailable(runtimeFields.backend_type);
     const containerName = resolveContainerName({
-      requestedName: req.body.container_name,
+      requestedName: requestBody.container_name,
       currentName: agent.container_name,
       agentName: agent.name,
       runtimeSelection: runtimeFields,
     });
     const image = resolveRequestedImage({
-      requestedImage: req.body.image,
+      requestedImage: requestBody.image,
       runtimeFields,
       fallbackImage: agent.image || null,
       fallbackRuntimeFields: currentRuntimeFields,
