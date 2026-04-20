@@ -532,7 +532,13 @@ class DockerBackend extends ProvisionerBackend {
       buildAuthScript,
       templatePayload,
     });
-    const startCmd = ["/bin/sh", "/opt/openclaw-runtime/start.sh"];
+    // Pin Entrypoint + Cmd so a future base-image that adds ENTRYPOINT can't
+    // prepend a second interpreter (see agent-runtime/lib/containerCommand.ts
+    // for the nemoclaw/k8s/hermes variants of the same contract).
+    const launch = {
+      Entrypoint: ["/bin/sh"],
+      Cmd: ["/opt/openclaw-runtime/start.sh"],
+    };
 
     // Docker agents now boot through an injected startup script instead of a
     // giant inline shell string. That keeps bootstrap semantics predictable and
@@ -562,7 +568,7 @@ class DockerBackend extends ProvisionerBackend {
         name: containerName,
         Hostname: safeHostname,
         Env: envArray,
-        Cmd: startCmd,
+        ...launch,
         WorkingDir: "/root",
         ExposedPorts: { "18789/tcp": {}, "9090/tcp": {} },
         HostConfig: {

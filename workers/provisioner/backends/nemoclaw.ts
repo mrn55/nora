@@ -14,6 +14,10 @@ const {
 } = require("../../../agent-runtime/lib/runtimeBootstrap");
 const { OPENCLAW_GATEWAY_PORT, AGENT_RUNTIME_PORT } = require("../../../agent-runtime/lib/contracts");
 const {
+  buildContainerBootstrap,
+  toDockerLaunch,
+} = require("../../../agent-runtime/lib/containerCommand");
+const {
   buildDockerTelemetry,
   buildUnavailableTelemetry,
   DOCKER_CAPABILITIES,
@@ -305,26 +309,27 @@ class NemoClawBackend extends ProvisionerBackend {
 
     // Startup command: install openclaw + nemoclaw, configure everything, start the
     // runtime sidecar, then launch the gateway.
-    const startCmd = [
-      "sh",
-      "-c",
+    // The OpenShell sandbox image ships with ENTRYPOINT ["/bin/bash"], so we
+    // route through buildContainerBootstrap which explicitly pins both
+    // Entrypoint and Cmd — see agent-runtime/lib/containerCommand.ts.
+    const startScript =
       ensureOpenClawCmd +
-        "mkdir -p ~/.openclaw/devices && " +
-        "echo '" +
-        JSON.stringify({
-          gateway: { port: 18789, bind: "lan", mode: "local" },
-        }).replace(/'/g, "'\\''") +
-        "' > ~/.openclaw/openclaw.json && " +
-        "echo '" +
-        pairedJson.replace(/'/g, "'\\''") +
-        "' > ~/.openclaw/devices/paired.json && " +
-        "echo '{}' > ~/.openclaw/devices/pending.json && " +
-        policyCmd +
-        templateBootstrapCmd +
-        runtimeBootstrapCmd +
-        authProfilesCmd +
-        '"$OPENCLAW_BIN" gateway --port ' + OPENCLAW_GATEWAY_PORT + ` --password ${gatewayToken}`,
-    ];
+      "mkdir -p ~/.openclaw/devices && " +
+      "echo '" +
+      JSON.stringify({
+        gateway: { port: 18789, bind: "lan", mode: "local" },
+      }).replace(/'/g, "'\\''") +
+      "' > ~/.openclaw/openclaw.json && " +
+      "echo '" +
+      pairedJson.replace(/'/g, "'\\''") +
+      "' > ~/.openclaw/devices/paired.json && " +
+      "echo '{}' > ~/.openclaw/devices/pending.json && " +
+      policyCmd +
+      templateBootstrapCmd +
+      runtimeBootstrapCmd +
+      authProfilesCmd +
+      '"$OPENCLAW_BIN" gateway --port ' + OPENCLAW_GATEWAY_PORT + ` --password ${gatewayToken}`;
+    const bootstrap = buildContainerBootstrap(startScript);
 
     // Resolve compose network
     const composeNetwork = await this._findComposeNetwork();
@@ -346,7 +351,7 @@ class NemoClawBackend extends ProvisionerBackend {
       name: containerName,
       Hostname: safeHostname,
       Env: envArray,
-      Cmd: startCmd,
+      ...toDockerLaunch(bootstrap),
       WorkingDir: "/sandbox",
       ExposedPorts: { "18789/tcp": {}, "9090/tcp": {} },
       HostConfig: {
