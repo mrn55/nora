@@ -382,9 +382,15 @@ class DockerBackend extends ProvisionerBackend {
     });
 
     // Convert env object to array of KEY=VALUE + inject runtime/gateway contract vars.
+    // Dockerode's `Env:` replaces the image's ENV rather than merging, so we
+    // always declare the openclaw + tsx binary paths explicitly — the bootstrap
+    // fast-path check won't find them otherwise. The Nora OpenClaw agent image
+    // installs under `/usr/local/bin` (npm global prefix of node:24-slim).
     const envArray = Object.entries({
       ...(env || {}),
       ...buildRuntimeEnv(),
+      OPENCLAW_CLI_PATH: "/usr/local/bin/openclaw",
+      OPENCLAW_TSX_BIN: "/usr/local/bin/tsx",
       OPENCLAW_GATEWAY_TOKEN: gatewayToken,
     }).map(([k, v]) => `${k}=${v}`);
 

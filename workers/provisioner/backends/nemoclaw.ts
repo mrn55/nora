@@ -24,9 +24,13 @@ const {
   uptimeFromContainerInfo,
 } = require("./telemetry");
 
+// Default to the Nora-built NemoClaw image (OpenShell sandbox base +
+// tsx prebaked so the bootstrap's install fast-path check passes under
+// the non-root UID-998 + Landlock restrictions). Build it with
+// `docker build -f agent-runtime/Dockerfile.nemoclaw-agent -t nora-nemoclaw-agent:local agent-runtime/`
+// or set NEMOCLAW_SANDBOX_IMAGE to pin a different tag.
 const SANDBOX_IMAGE =
-  process.env.NEMOCLAW_SANDBOX_IMAGE ||
-  "ghcr.io/nvidia/openshell-community/sandboxes/openclaw";
+  process.env.NEMOCLAW_SANDBOX_IMAGE || "nora-nemoclaw-agent:local";
 
 const DEFAULT_MODEL =
   process.env.NEMOCLAW_DEFAULT_MODEL ||
@@ -230,9 +234,16 @@ class NemoClawBackend extends ProvisionerBackend {
     });
 
     // Build env array — inject runtime/gateway contract vars + NemoClaw model.
+    // The OpenShell sandbox image installs openclaw + tsx under /usr/bin (npm
+    // global prefix is `/usr`, not `/usr/local`). Dockerode's Env: replaces
+    // the image's ENV rather than merging, so the bootstrap's fast-path check
+    // can't rely on the image-level ENV alone — we must re-declare the paths
+    // here so `$OPENCLAW_CLI_PATH` / `$OPENCLAW_TSX_BIN` resolve correctly.
     const envArray = Object.entries({
       ...(env || {}),
       ...buildRuntimeEnv(),
+      OPENCLAW_CLI_PATH: "/usr/bin/openclaw",
+      OPENCLAW_TSX_BIN: "/usr/bin/tsx",
       OPENCLAW_GATEWAY_TOKEN: gatewayToken,
       NEMOCLAW_MODEL: model,
     }).map(([k, v]) => `${k}=${v}`);
