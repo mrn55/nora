@@ -53,15 +53,26 @@ RUN mkdir -p \
       /opt/openclaw \
       /opt/openclaw-runtime/lib \
       /var/log \
-      /root/.openclaw/devices \
-      /root/.openclaw/agents/main/agent \
-      /root/.openclaw/workspace \
  && touch /var/log/openclaw-agent.log \
+ && touch /usr/local/bin/nora-integration-tool \
  && chown -R sandbox:sandbox \
       /opt/openclaw \
       /opt/openclaw-runtime \
       /var/log/openclaw-agent.log \
-      /root
+ && chown sandbox:sandbox /usr/local/bin/nora-integration-tool \
+ && chmod 0755 /usr/local/bin/nora-integration-tool \
+ # Bootstrap has a handful of hardcoded `/root/.openclaw/...` paths (template
+ # payloads, auth-profiles.json). The nemoclaw adapter mounts a fresh tmpfs
+ # at /sandbox at runtime (see workers/provisioner/backends/nemoclaw.ts
+ # HostConfig.Tmpfs) which wipes any /sandbox state baked here — so we
+ # redirect /root/.openclaw to /sandbox/.openclaw via a symlink, and the
+ # adapter's tmpfs mount uid=998 ensures the sandbox user can mkdir under
+ # /sandbox/.openclaw at container start. /root itself must be 0755 so the
+ # sandbox user can traverse it and dereference the symlink.
+ && rm -rf /root/.openclaw \
+ && ln -s /sandbox/.openclaw /root/.openclaw \
+ && chmod 0755 /root \
+ && chown -R sandbox:sandbox /root
 
 # Set the env vars the bootstrap fast-path check reads so even a narrow
 # `env -i` at runtime finds the binaries without shelling out to

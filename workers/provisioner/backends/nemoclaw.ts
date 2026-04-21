@@ -239,9 +239,15 @@ class NemoClawBackend extends ProvisionerBackend {
     // the image's ENV rather than merging, so the bootstrap's fast-path check
     // can't rely on the image-level ENV alone — we must re-declare the paths
     // here so `$OPENCLAW_CLI_PATH` / `$OPENCLAW_TSX_BIN` resolve correctly.
+    //
+    // HOME is likewise derived at container-start from /etc/passwd, but only
+    // when Env is empty; a non-empty Env list disables that derivation, so we
+    // set it explicitly to the sandbox user's home. OpenClaw's gateway reads
+    // $HOME to locate ~/.openclaw for its setup files.
     const envArray = Object.entries({
       ...(env || {}),
       ...buildRuntimeEnv(),
+      HOME: "/sandbox",
       OPENCLAW_CLI_PATH: "/usr/bin/openclaw",
       OPENCLAW_TSX_BIN: "/usr/bin/tsx",
       OPENCLAW_GATEWAY_TOKEN: gatewayToken,
@@ -375,10 +381,15 @@ class NemoClawBackend extends ProvisionerBackend {
         CapDrop: ["ALL"],
         CapAdd: ["NET_BIND_SERVICE"],
         SecurityOpt: ["no-new-privileges:true"],
-        // Tmpfs mounts for sandbox writable dirs
+        // Tmpfs mounts for sandbox writable dirs. The OpenShell sandbox user
+        // is UID 998 (gid 998) — we must set uid/gid on the tmpfs mount or
+        // the fresh empty tmpfs comes up root-owned and the sandbox user
+        // can't mkdir `~/.openclaw` in its own home. `mode=0755` keeps it
+        // sandbox-owned but world-readable so openclaw's log forwarders can
+        // still peek if needed.
         Tmpfs: {
-          "/sandbox": "rw,noexec,nosuid,size=512m",
-          "/tmp": "rw,noexec,nosuid,size=256m",
+          "/sandbox": "rw,noexec,nosuid,size=512m,uid=998,gid=998,mode=0755",
+          "/tmp": "rw,noexec,nosuid,size=256m,mode=1777",
         },
       },
       NetworkingConfig: composeNetwork
