@@ -94,7 +94,7 @@ jobs:
 
           {
             echo "any_changed=true"
-            echo "files<<'EOF'"
+            echo "files<<EOF"
             printf '%s\n' "${files[@]}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
