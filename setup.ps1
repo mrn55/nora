@@ -13,6 +13,7 @@
 $ErrorActionPreference = "Stop"
 
 $ENV_FILE = ".env"
+$ENV_BACKUP_FILE = $null
 $PUBLIC_NGINX_TEMPLATE = "infra/nginx_public.conf.template"
 $TLS_NGINX_TEMPLATE = "infra/nginx_tls.conf"
 $PUBLIC_PROD_COMPOSE_OVERRIDE_TEMPLATE = "infra/docker-compose.public-prod.yml"
@@ -43,6 +44,25 @@ function Write-ComposeOverride {
 function Clear-PublicAccessArtifacts {
     if (Test-Path $PUBLIC_NGINX_CONF) { Remove-Item $PUBLIC_NGINX_CONF -Force }
     if (Test-Path $COMPOSE_OVERRIDE_FILE) { Remove-Item $COMPOSE_OVERRIDE_FILE -Force }
+}
+
+function Backup-ExistingEnvFile {
+    param([string]$EnvPath)
+
+    $resolvedEnvPath = (Resolve-Path -LiteralPath $EnvPath).Path
+    $envDirectory = Split-Path -Parent $resolvedEnvPath
+    $envName = Split-Path -Leaf $resolvedEnvPath
+    $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmssZ")
+    $candidate = Join-Path $envDirectory "$envName.backup-$timestamp"
+    $suffix = 1
+
+    while (Test-Path -LiteralPath $candidate) {
+        $candidate = Join-Path $envDirectory "$envName.backup-$timestamp.$suffix"
+        $suffix += 1
+    }
+
+    Copy-Item -LiteralPath $resolvedEnvPath -Destination $candidate -Force
+    return $candidate
 }
 
 # ── Helper: generate random hex ─────────────────────────────
@@ -247,6 +267,8 @@ if (Test-Path $ENV_FILE) {
         Write-Info "Keeping existing .env — no changes made."
         exit 0
     }
+    $ENV_BACKUP_FILE = Backup-ExistingEnvFile -EnvPath $ENV_FILE
+    Write-Ok "Existing $ENV_FILE backed up to $ENV_BACKUP_FILE"
 }
 
 # ── Generate secrets ─────────────────────────────────────────

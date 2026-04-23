@@ -14,6 +14,7 @@
 set -euo pipefail
 
 ENV_FILE=".env"
+ENV_BACKUP_FILE=""
 PUBLIC_NGINX_TEMPLATE="infra/nginx_public.conf.template"
 TLS_NGINX_TEMPLATE="infra/nginx_tls.conf"
 PUBLIC_PROD_COMPOSE_OVERRIDE_TEMPLATE="infra/docker-compose.public-prod.yml"
@@ -48,6 +49,31 @@ write_compose_override() {
 
 clear_public_access_artifacts() {
   rm -f "$PUBLIC_NGINX_CONF" "$COMPOSE_OVERRIDE_FILE"
+}
+
+backup_existing_env_file() {
+  local env_path="$1"
+  local env_dir env_name timestamp candidate suffix
+
+  env_dir="$(dirname "$env_path")"
+  env_name="$(basename "$env_path")"
+  timestamp="$(date -u +"%Y%m%d-%H%M%SZ")"
+  candidate="${env_name}.backup-${timestamp}"
+  if [ "$env_dir" != "." ]; then
+    candidate="${env_dir}/${candidate}"
+  fi
+
+  suffix=1
+  while [ -e "$candidate" ]; do
+    candidate="${env_name}.backup-${timestamp}.${suffix}"
+    if [ "$env_dir" != "." ]; then
+      candidate="${env_dir}/${candidate}"
+    fi
+    suffix=$((suffix + 1))
+  done
+
+  cp "$env_path" "$candidate"
+  printf "%s\n" "$candidate"
 }
 
 # ── OS detection ────────────────────────────────────────────
@@ -267,6 +293,8 @@ if [ -f "$ENV_FILE" ]; then
     info "Keeping existing .env — no changes made."
     exit 0
   fi
+  ENV_BACKUP_FILE="$(backup_existing_env_file "$ENV_FILE")"
+  ok "Existing $ENV_FILE backed up to $ENV_BACKUP_FILE"
 fi
 
 # ── Generate secrets ─────────────────────────────────────────

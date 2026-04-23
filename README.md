@@ -203,6 +203,7 @@ The installer can:
 - verify or install host prerequisites such as Git, Docker, Docker Compose, and OpenSSL depending on platform
 - clone the repository if you launched the installer outside the repo
 - generate platform secrets and database credentials
+- create a timestamped `.env` backup before overwriting an existing installer-generated config
 - choose local-only or public-domain access mode
 - configure `PLATFORM_MODE=selfhosted` or `PLATFORM_MODE=paas`
 - enable OpenClaw, Hermes, or both runtime families plus matching deploy backends
