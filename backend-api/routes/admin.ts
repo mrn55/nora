@@ -8,11 +8,7 @@ const { scanTemplatePayloadForSecrets } = require("../marketplaceSafety");
 const { buildMarketplaceTemplateUpdate } = require("../marketplaceTemplateEdits");
 const snapshots = require("../snapshots");
 const containerManager = require("../containerManager");
-const {
-  addDeploymentJob,
-  getDLQJobs,
-  retryDLQJob,
-} = require("../redisQueue");
+const { addDeploymentJob, getDLQJobs, retryDLQJob } = require("../redisQueue");
 const { requireAdmin } = require("../middleware/auth");
 const { asyncHandler } = require("../middleware/errorHandler");
 const { reconcileAgentStatus } = require("../agentStatus");
@@ -31,10 +27,7 @@ const {
   isKnownRuntimeFamily,
   normalizeRuntimeFamilyName,
 } = require("../../agent-runtime/lib/backendCatalog");
-const {
-  buildAgentHistoryResponse,
-  buildAgentStatsResponse,
-} = require("../agentTelemetry");
+const { buildAgentHistoryResponse, buildAgentStatsResponse } = require("../agentTelemetry");
 const {
   buildAgentContext,
   buildAuditMetadata,
@@ -88,23 +81,17 @@ function normalizeRequestedRuntimeFamily(value) {
 function assertSupportedRuntimeSelection(runtimeFields) {
   if (runtimeFields?.runtime_family === "hermes") {
     if (runtimeFields.deploy_target !== "docker") {
-      throw createHttpError(
-        "Hermes runtime is only supported on the Docker execution target."
-      );
+      throw createHttpError("Hermes runtime is only supported on the Docker execution target.");
     }
     if (runtimeFields.sandbox_profile !== "standard") {
-      throw createHttpError(
-        "Hermes runtime currently supports only the Standard sandbox profile."
-      );
+      throw createHttpError("Hermes runtime currently supports only the Standard sandbox profile.");
     }
     return;
   }
   if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
   if (runtimeFields.deploy_target === "docker") return;
 
-  throw createHttpError(
-    "NemoClaw sandbox is only supported on the Docker execution target."
-  );
+  throw createHttpError("NemoClaw sandbox is only supported on the Docker execution target.");
 }
 
 function assertBackendAvailable(backend) {
@@ -114,7 +101,7 @@ function assertBackendAvailable(backend) {
   }
   if (!status.configured) {
     throw createHttpError(
-      status.issue || `${status.label} is not configured for this Nora control plane.`
+      status.issue || `${status.label} is not configured for this Nora control plane.`,
     );
   }
 }
@@ -125,8 +112,7 @@ function resolveRequestedImage({
   fallbackImage = null,
   fallbackRuntimeFields = null,
 } = {}) {
-  const explicitRequestedImage =
-    typeof requestedImage === "string" ? requestedImage.trim() : "";
+  const explicitRequestedImage = typeof requestedImage === "string" ? requestedImage.trim() : "";
   if (explicitRequestedImage) return explicitRequestedImage;
 
   if (
@@ -137,16 +123,18 @@ function resolveRequestedImage({
     return fallbackImage;
   }
 
-  return (
-    getDefaultAgentImage({
-      backend: runtimeFields?.backend_type,
-      deploy_target: runtimeFields?.deploy_target,
-      sandbox_profile: runtimeFields?.sandbox_profile,
-    })
-  );
+  return getDefaultAgentImage({
+    backend: runtimeFields?.backend_type,
+    deploy_target: runtimeFields?.deploy_target,
+    sandbox_profile: runtimeFields?.sandbox_profile,
+  });
 }
 
-function parsePositiveInteger(value, defaultValue, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+function parsePositiveInteger(
+  value,
+  defaultValue,
+  { min = 1, max = Number.MAX_SAFE_INTEGER } = {},
+) {
   const numeric = Number.parseInt(value, 10);
   if (!Number.isFinite(numeric)) return defaultValue;
   return Math.min(max, Math.max(min, numeric));
@@ -159,9 +147,7 @@ function parseAuditDate(value, { endOfDay = false } = {}) {
 
   let parsed;
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    parsed = new Date(
-      `${trimmed}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`
-    );
+    parsed = new Date(`${trimmed}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
   } else {
     parsed = new Date(trimmed);
   }
@@ -176,9 +162,7 @@ function parseAuditDate(value, { endOfDay = false } = {}) {
 function buildAuditFilters(query = {}) {
   const search = typeof query.search === "string" ? query.search.trim() : "";
   const type =
-    typeof query.type === "string" && query.type.trim() !== "all"
-      ? query.type.trim()
-      : "";
+    typeof query.type === "string" && query.type.trim() !== "all" ? query.type.trim() : "";
   const hasFrom = typeof query.from === "string" && query.from.trim();
   const hasTo = typeof query.to === "string" && query.to.trim();
   const from = hasFrom ? parseAuditDate(query.from) : null;
@@ -246,8 +230,7 @@ function buildAuditExportRows(events = []) {
       actor_user_id: metadata.actor?.userId || "",
       actor_role: metadata.actor?.role || "",
       owner_email: metadata.agent?.ownerEmail || metadata.listing?.ownerEmail || "",
-      owner_user_id:
-        metadata.agent?.ownerUserId || metadata.listing?.ownerUserId || "",
+      owner_user_id: metadata.agent?.ownerUserId || metadata.listing?.ownerUserId || "",
       agent_id: metadata.agent?.id || "",
       agent_name: metadata.agent?.name || "",
       user_id: metadata.user?.id || "",
@@ -261,16 +244,12 @@ function buildAuditExportRows(events = []) {
       source_label: source?.label || "",
       source_service: source?.service || "",
       source_channel: source?.channel || "",
-      source_account_email:
-        source?.account?.email || metadata.actor?.email || "",
-      source_account_user_id:
-        source?.account?.userId || metadata.actor?.userId || "",
-      source_account_role:
-        source?.account?.role || metadata.actor?.role || "",
+      source_account_email: source?.account?.email || metadata.actor?.email || "",
+      source_account_user_id: source?.account?.userId || metadata.actor?.userId || "",
+      source_account_role: source?.account?.role || metadata.actor?.role || "",
       source_ip: source?.ip || metadata.request?.ip || "",
       source_origin: source?.origin || metadata.request?.origin || "",
-      source_user_agent:
-        source?.userAgent || metadata.request?.userAgent || "",
+      source_user_agent: source?.userAgent || metadata.request?.userAgent || "",
       error_name: metadata.error?.name || "",
       error_code: metadata.error?.code || "",
       error_status: metadata.error?.status || "",
@@ -359,7 +338,7 @@ async function listAdminAgents() {
     `SELECT a.*, u.email AS "ownerEmail"
        FROM agents a
        LEFT JOIN users u ON u.id = a.user_id
-      ORDER BY a.created_at DESC`
+      ORDER BY a.created_at DESC`,
   );
   return result.rows.map((row) => serializeAgent(row));
 }
@@ -371,7 +350,7 @@ async function findAdminAgent(agentId, { includeOwner = false } = {}) {
            FROM agents a
            LEFT JOIN users u ON u.id = a.user_id
           WHERE a.id = $1`,
-        [agentId]
+        [agentId],
       )
     : await db.query("SELECT * FROM agents WHERE id = $1", [agentId]);
 
@@ -399,25 +378,16 @@ function adminReportAuditMetadata(req, report, extra = {}) {
 }
 
 async function reconcileAdminAgent(agent) {
-  if (
-    !agent?.container_id ||
-    !["running", "warning", "error", "stopped"].includes(agent.status)
-  ) {
+  if (!agent?.container_id || !["running", "warning", "error", "stopped"].includes(agent.status)) {
     return agent;
   }
 
   try {
     const live = await containerManager.status(agent);
-    const reconciledStatus = reconcileAgentStatus(
-      agent.status,
-      Boolean(live.running)
-    );
+    const reconciledStatus = reconcileAgentStatus(agent.status, Boolean(live.running));
 
     if (reconciledStatus !== agent.status) {
-      await db.query("UPDATE agents SET status = $1 WHERE id = $2", [
-        reconciledStatus,
-        agent.id,
-      ]);
+      await db.query("UPDATE agents SET status = $1 WHERE id = $2", [reconciledStatus, agent.id]);
       agent.status = reconciledStatus;
     }
   } catch {
@@ -428,16 +398,12 @@ async function reconcileAdminAgent(agent) {
 }
 
 async function countAdminUsers() {
-  const result = await db.query(
-    "SELECT count(*)::int AS total FROM users WHERE role = 'admin'"
-  );
+  const result = await db.query("SELECT count(*)::int AS total FROM users WHERE role = 'admin'");
   return result.rows[0]?.total || 0;
 }
 
 async function buildAdminListingDetail(listing, reports = [], options = {}) {
-  const snapshot = listing?.snapshot_id
-    ? await snapshots.getSnapshot(listing.snapshot_id)
-    : null;
+  const snapshot = listing?.snapshot_id ? await snapshots.getSnapshot(listing.snapshot_id) : null;
   const templatePayload = snapshot
     ? extractTemplatePayloadFromSnapshot(snapshot, { includeBootstrap: true })
     : null;
@@ -509,9 +475,7 @@ async function destroyAgent(agent) {
 }
 
 async function destroyUserAgents(userId) {
-  const result = await db.query("SELECT * FROM agents WHERE user_id = $1", [
-    userId,
-  ]);
+  const result = await db.query("SELECT * FROM agents WHERE user_id = $1", [userId]);
 
   for (const agent of result.rows) {
     await destroyAgent(agent);
@@ -528,10 +492,7 @@ function buildSubscriptionLookup(row = {}) {
   };
 }
 
-async function buildAdminUserResponse(
-  row,
-  { deploymentDefaults = null, subscriptionRow } = {}
-) {
+async function buildAdminUserResponse(row, { deploymentDefaults = null, subscriptionRow } = {}) {
   const subscription = await billing.getSubscription(row.id, {
     userRow: row,
     subscriptionRow,
@@ -585,7 +546,7 @@ async function getAdminUserRow(userId) {
         u.agent_limit_override,
         sub.plan,
         sub.status`,
-    [userId]
+    [userId],
   );
 
   return result.rows[0] || null;
@@ -595,14 +556,14 @@ router.get(
   "/stats",
   asyncHandler(async (_req, res) => {
     res.json(await monitoring.getMetrics());
-  })
+  }),
 );
 
 router.get(
   "/settings/deployment-defaults",
   asyncHandler(async (_req, res) => {
     res.json(await getDeploymentDefaults());
-  })
+  }),
 );
 
 router.put(
@@ -618,7 +579,7 @@ router.put(
 
     const nextDefaults = await updateDeploymentDefaults(
       requestedDefaults,
-      billing.SELFHOSTED_LIMITS
+      billing.SELFHOSTED_LIMITS,
     );
 
     await monitoring.logEvent(
@@ -630,18 +591,18 @@ router.put(
           previous: currentDefaults,
           next: nextDefaults,
         },
-      })
+      }),
     );
 
     res.json(nextDefaults);
-  })
+  }),
 );
 
 router.get(
   "/settings/system-banner",
   asyncHandler(async (_req, res) => {
     res.json(await getSystemBanner());
-  })
+  }),
 );
 
 router.put(
@@ -667,19 +628,17 @@ router.put(
           previous: currentBanner,
           next: nextBanner,
         },
-      })
+      }),
     );
 
     res.json(nextBanner);
-  })
+  }),
 );
 
 router.get(
   "/users",
   asyncHandler(async (_req, res) => {
-    const deploymentDefaults = billing.IS_PAAS
-      ? await getDeploymentDefaults()
-      : null;
+    const deploymentDefaults = billing.IS_PAAS ? await getDeploymentDefaults() : null;
     const result = await db.query(
       `SELECT u.id,
               u.email,
@@ -708,7 +667,7 @@ router.get(
           u.agent_limit_override,
           sub.plan,
           sub.status
-        ORDER BY u.created_at DESC`
+        ORDER BY u.created_at DESC`,
     );
 
     res.json(
@@ -717,11 +676,11 @@ router.get(
           buildAdminUserResponse(row, {
             deploymentDefaults,
             subscriptionRow: buildSubscriptionLookup(row),
-          })
-        )
-      )
+          }),
+        ),
+      ),
     );
-  })
+  }),
 );
 
 router.put(
@@ -732,10 +691,9 @@ router.put(
       return res.status(400).json({ error: "Invalid role" });
     }
 
-    const existing = await db.query(
-      "SELECT id, email, role FROM users WHERE id = $1",
-      [req.params.id]
-    );
+    const existing = await db.query("SELECT id, email, role FROM users WHERE id = $1", [
+      req.params.id,
+    ]);
     const user = existing.rows[0];
     if (!user) return res.status(404).json({ error: "User not found" });
     res.locals.auditContext = buildUserContext(user);
@@ -746,7 +704,7 @@ router.put(
 
     const result = await db.query(
       "UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, role",
-      [role, req.params.id]
+      [role, req.params.id],
     );
     await monitoring.logEvent(
       "admin_user_role_changed",
@@ -756,27 +714,22 @@ router.put(
           previousRole: user.role,
           nextRole: role,
         },
-      })
+      }),
     );
     res.json(result.rows[0]);
-  })
+  }),
 );
 
 router.put(
   "/users/:id/agent-limit",
   asyncHandler(async (req, res) => {
-    if (
-      !Object.prototype.hasOwnProperty.call(
-        req.body || {},
-        "agent_limit_override"
-      )
-    ) {
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, "agent_limit_override")) {
       return res.status(400).json({ error: "agent_limit_override is required" });
     }
 
     const existing = await db.query(
       "SELECT id, email, name, role, agent_limit_override FROM users WHERE id = $1",
-      [req.params.id]
+      [req.params.id],
     );
     const user = existing.rows[0];
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -786,19 +739,12 @@ router.put(
     let nextOverride = null;
     if (requestedOverride !== null) {
       if (!Number.isSafeInteger(requestedOverride)) {
-        return res
-          .status(400)
-          .json({ error: "agent_limit_override must be an integer or null" });
+        return res.status(400).json({ error: "agent_limit_override must be an integer or null" });
       }
       if (requestedOverride < 0) {
-        return res
-          .status(400)
-          .json({ error: "agent_limit_override must be 0 or greater" });
+        return res.status(400).json({ error: "agent_limit_override must be 0 or greater" });
       }
-      if (
-        !billing.IS_PAAS &&
-        requestedOverride > billing.SELFHOSTED_LIMITS.max_agents
-      ) {
+      if (!billing.IS_PAAS && requestedOverride > billing.SELFHOSTED_LIMITS.max_agents) {
         return res.status(400).json({
           error: `agent_limit_override cannot exceed the self-hosted platform ceiling (${billing.SELFHOSTED_LIMITS.max_agents})`,
         });
@@ -806,18 +752,16 @@ router.put(
       nextOverride = requestedOverride;
     }
 
-    const deploymentDefaults = billing.IS_PAAS
-      ? await getDeploymentDefaults()
-      : null;
+    const deploymentDefaults = billing.IS_PAAS ? await getDeploymentDefaults() : null;
     const previousSubscription = await billing.getSubscription(user.id, {
       userRow: user,
       ...(deploymentDefaults ? { deploymentDefaults } : {}),
     });
 
-    await db.query(
-      "UPDATE users SET agent_limit_override = $1 WHERE id = $2",
-      [nextOverride, req.params.id]
-    );
+    await db.query("UPDATE users SET agent_limit_override = $1 WHERE id = $2", [
+      nextOverride,
+      req.params.id,
+    ]);
 
     const updatedRow = await getAdminUserRow(req.params.id);
     const responseUser = await buildAdminUserResponse(updatedRow, {
@@ -833,7 +777,7 @@ router.put(
       adminUserAuditMetadata(req, responseUser, {
         result: {
           previousAgentLimitOverride: billing.normalizeAgentLimitOverride(
-            user.agent_limit_override
+            user.agent_limit_override,
           ),
           nextAgentLimitOverride: responseUser.agent_limit_override,
           previousAgentLimit: previousSubscription.agent_limit,
@@ -841,20 +785,19 @@ router.put(
           nextAgentLimitSource: responseUser.agent_limit_source,
           nextIsUnlimited: responseUser.is_unlimited,
         },
-      })
+      }),
     );
 
     res.json(responseUser);
-  })
+  }),
 );
 
 router.delete(
   "/users/:id",
   asyncHandler(async (req, res) => {
-    const existing = await db.query(
-      "SELECT id, email, role FROM users WHERE id = $1",
-      [req.params.id]
-    );
+    const existing = await db.query("SELECT id, email, role FROM users WHERE id = $1", [
+      req.params.id,
+    ]);
     const user = existing.rows[0];
     if (!user) return res.status(404).json({ error: "User not found" });
     res.locals.auditContext = buildUserContext(user);
@@ -870,17 +813,17 @@ router.delete(
           deleted: true,
           deletedAgentCount: deletedAgents.length,
         },
-      })
+      }),
     );
     res.json({ success: true });
-  })
+  }),
 );
 
 router.get(
   "/agents",
   asyncHandler(async (_req, res) => {
     res.json(await listAdminAgents());
-  })
+  }),
 );
 
 router.get(
@@ -892,7 +835,7 @@ router.get(
 
     await reconcileAdminAgent(agent);
     res.json(serializeAgent(agent));
-  })
+  }),
 );
 
 router.get(
@@ -902,7 +845,7 @@ router.get(
     if (!agent) return res.status(404).json({ error: "Agent not found" });
 
     res.json(await buildAgentStatsResponse(agent));
-  })
+  }),
 );
 
 router.get(
@@ -913,7 +856,7 @@ router.get(
 
     const { fromTime, toTime } = resolveHistoryWindow(req.query);
     res.json(await buildAgentHistoryResponse(agent, fromTime, toTime));
-  })
+  }),
 );
 
 router.post(
@@ -923,28 +866,30 @@ router.post(
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     res.locals.auditContext = buildAgentContext(agent);
     if (!agent.container_id) {
-      return res
-        .status(400)
-        .json({ error: "No container - redeploy the agent first" });
+      return res.status(400).json({ error: "No container - redeploy the agent first" });
     }
 
     await containerManager.start(agent);
     const updated = await db.query(
       "UPDATE agents SET status = 'running' WHERE id = $1 RETURNING *",
-      [agent.id]
+      [agent.id],
     );
     await monitoring.logEvent(
       "admin_agent_started",
       `Admin started agent "${agent.name}"`,
-      adminAgentAuditMetadata(req, {
-        ...updated.rows[0],
-        ownerEmail: agent.ownerEmail,
-      }, {
-        result: { status: "running" },
-      })
+      adminAgentAuditMetadata(
+        req,
+        {
+          ...updated.rows[0],
+          ownerEmail: agent.ownerEmail,
+        },
+        {
+          result: { status: "running" },
+        },
+      ),
     );
     res.json(serializeAgent(updated.rows[0]));
-  })
+  }),
 );
 
 router.post(
@@ -958,10 +903,7 @@ router.post(
       try {
         await containerManager.stop(agent);
       } catch (error) {
-        if (
-          !error.message.includes("already stopped") &&
-          !error.message.includes("not running")
-        ) {
+        if (!error.message.includes("already stopped") && !error.message.includes("not running")) {
           console.error("Container stop error:", error.message);
         }
       }
@@ -969,20 +911,24 @@ router.post(
 
     const updated = await db.query(
       "UPDATE agents SET status = 'stopped' WHERE id = $1 RETURNING *",
-      [agent.id]
+      [agent.id],
     );
     await monitoring.logEvent(
       "admin_agent_stopped",
       `Admin stopped agent "${agent.name}"`,
-      adminAgentAuditMetadata(req, {
-        ...updated.rows[0],
-        ownerEmail: agent.ownerEmail,
-      }, {
-        result: { status: "stopped" },
-      })
+      adminAgentAuditMetadata(
+        req,
+        {
+          ...updated.rows[0],
+          ownerEmail: agent.ownerEmail,
+        },
+        {
+          result: { status: "stopped" },
+        },
+      ),
     );
     res.json(serializeAgent(updated.rows[0]));
-  })
+  }),
 );
 
 router.post(
@@ -992,28 +938,30 @@ router.post(
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     res.locals.auditContext = buildAgentContext(agent);
     if (!agent.container_id) {
-      return res
-        .status(400)
-        .json({ error: "No container - redeploy the agent first" });
+      return res.status(400).json({ error: "No container - redeploy the agent first" });
     }
 
     await containerManager.restart(agent);
     const updated = await db.query(
       "UPDATE agents SET status = 'running' WHERE id = $1 RETURNING *",
-      [agent.id]
+      [agent.id],
     );
     await monitoring.logEvent(
       "admin_agent_restarted",
       `Admin restarted agent "${agent.name}"`,
-      adminAgentAuditMetadata(req, {
-        ...updated.rows[0],
-        ownerEmail: agent.ownerEmail,
-      }, {
-        result: { status: "running" },
-      })
+      adminAgentAuditMetadata(
+        req,
+        {
+          ...updated.rows[0],
+          ownerEmail: agent.ownerEmail,
+        },
+        {
+          result: { status: "running" },
+        },
+      ),
     );
     res.json(serializeAgent(updated.rows[0]));
-  })
+  }),
 );
 
 router.post(
@@ -1025,8 +973,7 @@ router.post(
     res.locals.auditContext = buildAgentContext(agent);
     if (!["warning", "error", "stopped"].includes(agent.status)) {
       return res.status(400).json({
-        error:
-          "Agent must be in warning, error, or stopped state to redeploy",
+        error: "Agent must be in warning, error, or stopped state to redeploy",
       });
     }
 
@@ -1088,13 +1035,10 @@ router.post(
         runtimeFields.sandbox_profile,
         containerName,
         image,
-      ]
+      ],
     );
 
-    await db.query(
-      "INSERT INTO deployments(agent_id, status) VALUES($1, 'queued')",
-      [agent.id]
-    );
+    await db.query("INSERT INTO deployments(agent_id, status) VALUES($1, 'queued')", [agent.id]);
 
     await addDeploymentJob({
       id: agent.id,
@@ -1122,11 +1066,11 @@ router.post(
           deployTarget: runtimeFields.deploy_target,
           sandboxProfile: runtimeFields.sandbox_profile,
         },
-      })
+      }),
     );
 
     res.json({ success: true, status: "queued" });
-  })
+  }),
 );
 
 router.delete(
@@ -1141,90 +1085,76 @@ router.delete(
       `Admin deleted agent "${agent.name}"`,
       adminAgentAuditMetadata(req, agent, {
         result: { deleted: true },
-      })
+      }),
     );
     res.json({ success: true });
-  })
+  }),
 );
 
 router.delete(
   "/marketplace/:id",
   asyncHandler(async (req, res) => {
     const listing = await marketplace.getListing(req.params.id);
-    res.locals.auditContext = buildListingContext(
-      listing || { id: req.params.id }
-    );
+    res.locals.auditContext = buildListingContext(listing || { id: req.params.id });
     await marketplace.deleteListing(req.params.id);
     await monitoring.logEvent(
       "admin_marketplace_listing_deleted",
       `Admin removed marketplace listing "${listing?.name || req.params.id}"`,
       adminListingAuditMetadata(req, listing || { id: req.params.id }, {
         result: { deleted: true },
-      })
+      }),
     );
     res.json({ success: true });
-  })
+  }),
 );
 
 router.get(
   "/marketplace",
   asyncHandler(async (_req, res) => {
     const listings = await marketplace.listAdminListings();
-    res.json(
-      await Promise.all(
-        listings.map((listing) => buildAdminListingDetail(listing))
-      )
-    );
-  })
+    res.json(await Promise.all(listings.map((listing) => buildAdminListingDetail(listing))));
+  }),
 );
 
 router.get(
   "/marketplace/reports",
   asyncHandler(async (_req, res) => {
     res.json(await marketplace.listReports());
-  })
+  }),
 );
 
 router.patch(
   "/marketplace/reports/:id",
   asyncHandler(async (req, res) => {
-    const nextStatus =
-      typeof req.body?.status === "string" ? req.body.status.trim() : "";
-    const report = await marketplace.resolveReport(
-      req.params.id,
-      req.user.id,
-      nextStatus
-    );
+    const nextStatus = typeof req.body?.status === "string" ? req.body.status.trim() : "";
+    const report = await marketplace.resolveReport(req.params.id, req.user.id, nextStatus);
     if (!report) return res.status(404).json({ error: "Report not found" });
 
     await monitoring.logEvent(
       "marketplace_report_resolved",
       `Marketplace report ${report.id} marked ${report.status}`,
       adminAuditMetadata(req, {
-        ...buildListingContext(
-          {
-            id: report.listing_id,
-            owner_user_id: report.owner_user_id,
-            owner_email: report.owner_email,
-            name: report.listing_name,
-          }
-        ),
+        ...buildListingContext({
+          id: report.listing_id,
+          owner_user_id: report.owner_user_id,
+          owner_email: report.owner_email,
+          name: report.listing_name,
+        }),
         ...buildReportContext(report, {
           reviewerUserId: req.user.id,
           reviewerEmail: req.user.email || null,
         }),
-      })
+      }),
     );
 
     res.json(report);
-  })
+  }),
 );
 
 router.patch(
   "/marketplace/:id/status",
   asyncHandler(async (req, res) => {
-    const nextStatus =
-      typeof req.body?.status === "string" ? req.body.status.trim() : "";
+    const nextStatus = typeof req.body?.status === "string" ? req.body.status.trim() : "";
     if (!nextStatus) {
       return res.status(400).json({ error: "status is required" });
     }
@@ -1233,9 +1163,7 @@ router.patch(
       req.params.id,
       nextStatus,
       req.user.id,
-      typeof req.body?.reviewNotes === "string"
-        ? req.body.reviewNotes.trim()
-        : null
+      typeof req.body?.reviewNotes === "string" ? req.body.reviewNotes.trim() : null,
     );
     if (!listing) return res.status(404).json({ error: "Listing not found" });
 
@@ -1245,16 +1173,13 @@ router.patch(
       `Marketplace listing "${refreshed?.name || listing.name}" marked ${listing.status}`,
       adminListingAuditMetadata(req, refreshed || listing, {
         review: {
-          notes:
-            typeof req.body?.reviewNotes === "string"
-              ? req.body.reviewNotes.trim()
-              : null,
+          notes: typeof req.body?.reviewNotes === "string" ? req.body.reviewNotes.trim() : null,
         },
-      })
+      }),
     );
 
     res.json(refreshed || listing);
-  })
+  }),
 );
 
 router.post(
@@ -1277,17 +1202,12 @@ router.post(
 
     const listing = await marketplace.upsertListing({
       snapshotId: snapshot.id,
-      name:
-        (typeof req.body.name === "string" && req.body.name.trim()) ||
-        snapshot.name,
+      name: (typeof req.body.name === "string" && req.body.name.trim()) || snapshot.name,
       description:
-        (typeof req.body.description === "string" &&
-          req.body.description.trim()) ||
+        (typeof req.body.description === "string" && req.body.description.trim()) ||
         snapshot.description,
       price: "Free",
-      category:
-        (typeof req.body.category === "string" && req.body.category.trim()) ||
-        "General",
+      category: (typeof req.body.category === "string" && req.body.category.trim()) || "General",
       builtIn: req.body.builtIn === true,
       sourceType: marketplace.LISTING_SOURCE_PLATFORM,
       status: marketplace.LISTING_STATUS_PUBLISHED,
@@ -1307,11 +1227,11 @@ router.post(
           name: snapshot.name,
           templateKey: snapshot.template_key || null,
         },
-      })
+      }),
     );
 
     res.json(listing);
-  })
+  }),
 );
 
 router.patch(
@@ -1329,13 +1249,10 @@ router.patch(
       allowTemplateKeyChange: true,
       allowSnapshotKindChange: true,
     });
-    const issues = scanTemplatePayloadForSecrets(
-      update.snapshot.config?.templatePayload
-    );
+    const issues = scanTemplatePayloadForSecrets(update.snapshot.config?.templatePayload);
     if (issues.length > 0) {
       return res.status(400).json({
-        error:
-          "Potential secrets were detected in this template. Remove them before saving.",
+        error: "Potential secrets were detected in this template. Remove them before saving.",
         issues,
       });
     }
@@ -1360,7 +1277,7 @@ router.patch(
           ? typeof req.body.reviewNotes === "string"
             ? req.body.reviewNotes.trim()
             : null
-          : listing.review_notes ?? null,
+          : (listing.review_notes ?? null),
     });
 
     await monitoring.logEvent(
@@ -1378,25 +1295,25 @@ router.patch(
               ? typeof req.body.reviewNotes === "string"
                 ? req.body.reviewNotes.trim()
                 : null
-              : listing.review_notes ?? null,
+              : (listing.review_notes ?? null),
         },
         result: {
           action: "template_update",
           currentVersion: update.listing.currentVersion,
         },
-      })
+      }),
     );
 
     const refreshed = await marketplace.getListing(listing.id);
     const reports = (await marketplace.listReports()).filter(
-      (report) => report.listing_id === listing.id
+      (report) => report.listing_id === listing.id,
     );
     res.json(
       await buildAdminListingDetail(refreshed || listing, reports, {
         includeContent: true,
-      })
+      }),
     );
-  })
+  }),
 );
 
 router.get(
@@ -1406,12 +1323,10 @@ router.get(
     if (!listing) return res.status(404).json({ error: "Listing not found" });
 
     const reports = (await marketplace.listReports()).filter(
-      (report) => report.listing_id === listing.id
+      (report) => report.listing_id === listing.id,
     );
-    res.json(
-      await buildAdminListingDetail(listing, reports, { includeContent: true })
-    );
-  })
+    res.json(await buildAdminListingDetail(listing, reports, { includeContent: true }));
+  }),
 );
 
 router.get(
@@ -1422,12 +1337,9 @@ router.get(
     const csv = buildAuditExportCsv(events);
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${buildAuditExportFilename()}"`
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${buildAuditExportFilename()}"`);
     res.send(csv);
-  })
+  }),
 );
 
 router.get(
@@ -1437,7 +1349,7 @@ router.get(
     const pagination = buildAuditPageOptions(req.query);
 
     res.json(await monitoring.getAuditEventsPage({ ...filters, ...pagination }));
-  })
+  }),
 );
 
 router.get(
@@ -1453,16 +1365,16 @@ router.get(
         failedReason: job.failedReason,
         timestamp: job.timestamp,
         finishedOn: job.finishedOn,
-      }))
+      })),
     );
-  })
+  }),
 );
 
 router.post(
   "/dlq/:jobId/retry",
   asyncHandler(async (req, res) => {
     res.json(await retryDLQJob(req.params.jobId));
-  })
+  }),
 );
 
 module.exports = router;

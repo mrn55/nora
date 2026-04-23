@@ -18,7 +18,9 @@ function matchesUser(user, search) {
 }
 
 function formatPlanLabel(plan) {
-  const normalized = String(plan || "free").trim().toLowerCase();
+  const normalized = String(plan || "free")
+    .trim()
+    .toLowerCase();
   if (normalized === "selfhosted") return "Self-hosted";
   if (!normalized) return "Free";
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
@@ -55,9 +57,7 @@ function describeDefaultAgentCap(user) {
     return "Leave blank to restore the admin default of unlimited.";
   }
   if (Number.isInteger(user?.base_agent_limit)) {
-    return `Leave blank to use the default cap of ${formatCount(
-      user.base_agent_limit
-    )}.`;
+    return `Leave blank to use the default cap of ${formatCount(user.base_agent_limit)}.`;
   }
   return "Leave blank to use the default cap.";
 }
@@ -67,7 +67,7 @@ function buildLimitDrafts(users = []) {
     users.map((user) => [
       user.id,
       user.agent_limit_override == null ? "" : String(user.agent_limit_override),
-    ])
+    ]),
   );
 }
 
@@ -121,9 +121,7 @@ export default function UsersPage() {
       }
 
       setUsers((current) =>
-        current.map((user) =>
-          user.id === userId ? { ...user, role: payload.role } : user
-        )
+        current.map((user) => (user.id === userId ? { ...user, role: payload.role } : user)),
       );
       toast.success("Role updated");
     } catch (error) {
@@ -138,9 +136,7 @@ export default function UsersPage() {
   async function deleteUser(user) {
     const label = user.email || user.id;
     if (
-      !window.confirm(
-        `Delete ${label}? This will remove the account and clean up owned agents.`
-      )
+      !window.confirm(`Delete ${label}? This will remove the account and clean up owned agents.`)
     ) {
       return;
     }
@@ -183,19 +179,12 @@ export default function UsersPage() {
         throw new Error(payload.error || "Failed to update agent cap");
       }
 
-      setUsers((current) =>
-        current.map((entry) => (entry.id === user.id ? payload : entry))
-      );
+      setUsers((current) => current.map((entry) => (entry.id === user.id ? payload : entry)));
       setLimitDrafts((current) => ({
         ...current,
-        [user.id]:
-          payload.agent_limit_override == null
-            ? ""
-            : String(payload.agent_limit_override),
+        [user.id]: payload.agent_limit_override == null ? "" : String(payload.agent_limit_override),
       }));
-      toast.success(
-        nextOverride == null ? "Agent cap override cleared" : "Agent cap updated"
-      );
+      toast.success(nextOverride == null ? "Agent cap override cleared" : "Agent cap updated");
     } catch (error) {
       console.error("Failed to update agent cap:", error);
       toast.error(error.message || "Failed to update agent cap");
@@ -231,10 +220,7 @@ export default function UsersPage() {
     return matchesUser(user, deferredSearch);
   });
 
-  const totalAgentCount = users.reduce(
-    (sum, user) => sum + (Number(user.agentCount) || 0),
-    0
-  );
+  const totalAgentCount = users.reduce((sum, user) => sum + (Number(user.agentCount) || 0), 0);
 
   return (
     <AdminLayout>
@@ -248,8 +234,8 @@ export default function UsersPage() {
               Accounts and roles
             </h1>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Search the user base, adjust admin privileges, and cleanly remove
-              accounts that own agent infrastructure.
+              Search the user base, adjust admin privileges, and cleanly remove accounts that own
+              agent infrastructure.
             </p>
           </div>
 
@@ -360,32 +346,22 @@ export default function UsersPage() {
                     const isLastAdmin = user.role === "admin" && adminCount <= 1;
                     const limitDraft = String(limitDrafts[user.id] || "");
                     const currentLimitDraft =
-                      user.agent_limit_override == null
-                        ? ""
-                        : String(user.agent_limit_override);
+                      user.agent_limit_override == null ? "" : String(user.agent_limit_override);
                     const limitDraftDirty = limitDraft !== currentLimitDraft;
-                    const parsedLimitDraft =
-                      limitDraft.trim() === ""
-                        ? null
-                        : Number(limitDraft);
+                    const parsedLimitDraft = limitDraft.trim() === "" ? null : Number(limitDraft);
                     const canSaveLimit =
                       limitDraftDirty &&
                       limitDraft.trim() !== "" &&
                       Number.isSafeInteger(parsedLimitDraft) &&
                       parsedLimitDraft >= 0;
                     return (
-                      <tr
-                        key={user.id}
-                        className="border-b border-slate-100 last:border-b-0"
-                      >
+                      <tr key={user.id} className="border-b border-slate-100 last:border-b-0">
                         <td className="px-2 py-4">
                           <div>
                             <p className="text-sm font-semibold text-slate-950">
                               {user.name || user.email}
                             </p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {user.email}
-                            </p>
+                            <p className="mt-1 text-xs text-slate-500">{user.email}</p>
                             <p className="mt-1 text-[11px] font-semibold text-slate-400">
                               {user.id.slice(0, 8)}
                             </p>
@@ -397,9 +373,7 @@ export default function UsersPage() {
                             <select
                               value={user.role}
                               disabled={roleLoadingId === user.id || isLastAdmin}
-                              onChange={(event) =>
-                                changeRole(user.id, event.target.value)
-                              }
+                              onChange={(event) => changeRole(user.id, event.target.value)}
                               className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-red-200 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <option value="user">user</option>
@@ -445,9 +419,7 @@ export default function UsersPage() {
                                   }))
                                 }
                                 placeholder={
-                                  user.role === "admin"
-                                    ? "Unlimited default"
-                                    : "Use default"
+                                  user.role === "admin" ? "Unlimited default" : "Use default"
                                 }
                                 className="w-28 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-red-200 focus:bg-white"
                               />

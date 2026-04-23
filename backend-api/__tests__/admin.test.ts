@@ -141,7 +141,7 @@ jest.mock("../billing", () => ({
     is_unlimited: false,
   }),
   normalizeAgentLimitOverride: jest.fn((value) =>
-    Number.isInteger(value) && value >= 0 ? value : null
+    Number.isInteger(value) && value >= 0 ? value : null,
   ),
   createCheckoutSession: jest.fn(),
   createPortalSession: jest.fn(),
@@ -190,9 +190,13 @@ jest.mock("../platformSettings", () => {
 
 const app = require("../server");
 
-const adminToken = jwt.sign({ id: "admin-1", email: "admin@nora.test", role: "admin" }, JWT_SECRET, {
-  expiresIn: "1h",
-});
+const adminToken = jwt.sign(
+  { id: "admin-1", email: "admin@nora.test", role: "admin" },
+  JWT_SECRET,
+  {
+    expiresIn: "1h",
+  },
+);
 const userToken = jwt.sign({ id: "user-1", email: "user@nora.test", role: "user" }, JWT_SECRET, {
   expiresIn: "1h",
 });
@@ -254,7 +258,7 @@ describe("admin routes", () => {
 
     const res = await withToken(
       request(app).get("/admin/settings/deployment-defaults"),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -284,7 +288,7 @@ describe("admin routes", () => {
         ram_mb: 2048,
         disk_gb: 20,
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -299,12 +303,12 @@ describe("admin routes", () => {
         max_vcpu: 16,
         max_ram_mb: 32768,
         max_disk_gb: 500,
-      })
+      }),
     );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "admin_deployment_defaults_updated",
       expect.stringContaining("2 vCPU / 2048 MB RAM / 20 GB disk"),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -318,10 +322,7 @@ describe("admin routes", () => {
       active: true,
     });
 
-    const res = await withToken(
-      request(app).get("/admin/settings/system-banner"),
-      adminToken
-    );
+    const res = await withToken(request(app).get("/admin/settings/system-banner"), adminToken);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -360,7 +361,7 @@ describe("admin routes", () => {
         title: "Testing warning",
         message: "Do not use this environment for production work.",
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -381,7 +382,7 @@ describe("admin routes", () => {
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "admin_system_banner_updated",
       expect.stringContaining("system banner"),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -398,7 +399,7 @@ describe("admin routes", () => {
         ram_mb: 1024,
         disk_gb: 10,
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(400);
@@ -461,10 +462,7 @@ describe("admin routes", () => {
       },
     });
 
-    const res = await withToken(
-      request(app).get("/admin/marketplace/listing-1"),
-      adminToken
-    );
+    const res = await withToken(request(app).get("/admin/marketplace/listing-1"), adminToken);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(
@@ -480,7 +478,7 @@ describe("admin routes", () => {
             expect.objectContaining({ path: "SOUL.md", content: expect.any(String) }),
           ]),
         }),
-      })
+      }),
     );
   });
 
@@ -523,36 +521,32 @@ describe("admin routes", () => {
       },
     };
 
-    marketplaceModule.getListing
-      .mockResolvedValueOnce(listing)
-      .mockResolvedValueOnce({
-        ...listing,
-        name: "Updated Template",
-        description: "Updated description",
-        category: "Support",
-        current_version: 3,
-      });
-    snapshotsModule.getSnapshot
-      .mockResolvedValueOnce(snapshot)
-      .mockResolvedValueOnce({
-        ...snapshot,
-        name: "Updated Template",
-        description: "Updated description",
-        template_key: "updated-template",
-        config: {
-          defaults: {
-            sandbox: "nemoclaw",
-            vcpu: 4,
-            ram_mb: 4096,
-            disk_gb: 40,
-          },
-          templatePayload: {
-            files: [{ path: "AGENTS.md", content: "updated" }],
-            memoryFiles: [],
-            wiring: { channels: [], integrations: [] },
-          },
+    marketplaceModule.getListing.mockResolvedValueOnce(listing).mockResolvedValueOnce({
+      ...listing,
+      name: "Updated Template",
+      description: "Updated description",
+      category: "Support",
+      current_version: 3,
+    });
+    snapshotsModule.getSnapshot.mockResolvedValueOnce(snapshot).mockResolvedValueOnce({
+      ...snapshot,
+      name: "Updated Template",
+      description: "Updated description",
+      template_key: "updated-template",
+      config: {
+        defaults: {
+          sandbox: "nemoclaw",
+          vcpu: 4,
+          ram_mb: 4096,
+          disk_gb: 40,
         },
-      });
+        templatePayload: {
+          files: [{ path: "AGENTS.md", content: "updated" }],
+          memoryFiles: [],
+          wiring: { channels: [], integrations: [] },
+        },
+      },
+    });
     snapshotsModule.updateSnapshot.mockResolvedValueOnce({
       ...snapshot,
       name: "Updated Template",
@@ -565,27 +559,29 @@ describe("admin routes", () => {
     marketplaceModule.listReports.mockResolvedValueOnce([]);
 
     const res = await withToken(
-      request(app).patch("/admin/marketplace/listing-1").send({
-        name: "Updated Template",
-        description: "Updated description",
-        category: "Support",
-        slug: "updated-template",
-        currentVersion: 3,
-        templateKey: "updated-template",
-        snapshotKind: "starter-template",
-        sandbox: "nemoclaw",
-        vcpu: 4,
-        ram_mb: 4096,
-        disk_gb: 40,
-        reviewNotes: "Reviewed and corrected",
-        files: [
-          {
-            path: "AGENTS.md",
-            content: "# Updated\n",
-          },
-        ],
-      }),
-      adminToken
+      request(app)
+        .patch("/admin/marketplace/listing-1")
+        .send({
+          name: "Updated Template",
+          description: "Updated description",
+          category: "Support",
+          slug: "updated-template",
+          currentVersion: 3,
+          templateKey: "updated-template",
+          snapshotKind: "starter-template",
+          sandbox: "nemoclaw",
+          vcpu: 4,
+          ram_mb: 4096,
+          disk_gb: 40,
+          reviewNotes: "Reviewed and corrected",
+          files: [
+            {
+              path: "AGENTS.md",
+              content: "# Updated\n",
+            },
+          ],
+        }),
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -610,7 +606,7 @@ describe("admin routes", () => {
             ]),
           }),
         }),
-      })
+      }),
     );
     expect(marketplaceModule.upsertListing).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -618,7 +614,7 @@ describe("admin routes", () => {
         category: "Support",
         currentVersion: 3,
         reviewNotes: "Reviewed and corrected",
-      })
+      }),
     );
     expect(res.body).toEqual(
       expect.objectContaining({
@@ -628,7 +624,7 @@ describe("admin routes", () => {
         snapshot: expect.objectContaining({
           templateKey: "updated-template",
         }),
-      })
+      }),
     );
   });
 
@@ -651,7 +647,7 @@ describe("admin routes", () => {
       request(app).patch("/admin/marketplace/listing-1/status").send({
         status: "published",
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -659,7 +655,7 @@ describe("admin routes", () => {
       "listing-1",
       "published",
       "admin-1",
-      null
+      null,
     );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "marketplace_reviewed",
@@ -673,7 +669,7 @@ describe("admin routes", () => {
           id: "listing-1",
           status: "published",
         }),
-      })
+      }),
     );
   });
 
@@ -699,7 +695,7 @@ describe("admin routes", () => {
         snapshotId: "snapshot-1",
         price: "$49/mo",
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -710,7 +706,7 @@ describe("admin routes", () => {
         sourceType: "platform",
         status: "published",
         visibility: "public",
-      })
+      }),
     );
   });
 
@@ -720,15 +716,10 @@ describe("admin routes", () => {
       { id: "report-1", listing_id: "listing-1", status: "open" },
     ]);
 
-    const res = await withToken(
-      request(app).get("/admin/marketplace/reports"),
-      adminToken
-    );
+    const res = await withToken(request(app).get("/admin/marketplace/reports"), adminToken);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([
-      expect.objectContaining({ id: "report-1", status: "open" }),
-    ]);
+    expect(res.body).toEqual([expect.objectContaining({ id: "report-1", status: "open" })]);
   });
 
   it("resolves marketplace reports", async () => {
@@ -744,14 +735,14 @@ describe("admin routes", () => {
       request(app).patch("/admin/marketplace/reports/report-1").send({
         status: "dismissed",
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
     expect(marketplaceModule.resolveReport).toHaveBeenCalledWith(
       "report-1",
       "admin-1",
-      "dismissed"
+      "dismissed",
     );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "marketplace_report_resolved",
@@ -770,7 +761,7 @@ describe("admin routes", () => {
           reviewerUserId: "admin-1",
           reviewerEmail: "admin@nora.test",
         }),
-      })
+      }),
     );
   });
 
@@ -868,10 +859,8 @@ describe("admin routes", () => {
       });
 
     const res = await withToken(
-      request(app)
-        .put("/admin/users/user-2/agent-limit")
-        .send({ agent_limit_override: 6 }),
-      adminToken
+      request(app).put("/admin/users/user-2/agent-limit").send({ agent_limit_override: 6 }),
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -882,7 +871,7 @@ describe("admin routes", () => {
         agent_limit_override: 6,
         base_agent_limit: 3,
         agent_limit_source: "admin_override",
-      })
+      }),
     );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "admin_user_agent_limit_updated",
@@ -897,7 +886,7 @@ describe("admin routes", () => {
           nextAgentLimit: 6,
           nextAgentLimitSource: "admin_override",
         }),
-      })
+      }),
     );
   });
 
@@ -955,10 +944,8 @@ describe("admin routes", () => {
       });
 
     const res = await withToken(
-      request(app)
-        .put("/admin/users/user-3/agent-limit")
-        .send({ agent_limit_override: null }),
-      adminToken
+      request(app).put("/admin/users/user-3/agent-limit").send({ agent_limit_override: null }),
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -967,12 +954,12 @@ describe("admin routes", () => {
         agent_limit: 3,
         agent_limit_override: null,
         agent_limit_source: "default",
-      })
+      }),
     );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
       "admin_user_agent_limit_updated",
       expect.stringContaining("cleared"),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -990,10 +977,8 @@ describe("admin routes", () => {
     });
 
     const res = await withToken(
-      request(app)
-        .put("/admin/users/user-4/agent-limit")
-        .send({ agent_limit_override: -1 }),
-      adminToken
+      request(app).put("/admin/users/user-4/agent-limit").send({ agent_limit_override: -1 }),
+      adminToken,
     );
 
     expect(res.status).toBe(400);
@@ -1012,7 +997,7 @@ describe("admin routes", () => {
 
     const res = await withToken(
       request(app).put("/admin/users/user-2/role").send({ role: "admin" }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -1044,7 +1029,7 @@ describe("admin routes", () => {
           previousRole: "user",
           nextRole: "admin",
         }),
-      })
+      }),
     );
   });
 
@@ -1053,7 +1038,7 @@ describe("admin routes", () => {
 
     const res = await withToken(
       request(app).put("/admin/users/user-2/role").send({ role: "superadmin" }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(400);
@@ -1075,7 +1060,7 @@ describe("admin routes", () => {
           message: "Invalid role",
           status: 400,
         }),
-      })
+      }),
     );
   });
 
@@ -1100,7 +1085,7 @@ describe("admin routes", () => {
       expect.objectContaining({
         id: "agent-1",
         ownerEmail: "owner@example.com",
-      })
+      }),
     );
   });
 
@@ -1122,14 +1107,11 @@ describe("admin routes", () => {
       current: { cpu_percent: 42.1 },
     });
 
-    const res = await withToken(
-      request(app).get("/admin/agents/agent-1/stats"),
-      adminToken
-    );
+    const res = await withToken(request(app).get("/admin/agents/agent-1/stats"), adminToken);
 
     expect(res.status).toBe(200);
     expect(mockBuildAgentStatsResponse).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "agent-1" })
+      expect.objectContaining({ id: "agent-1" }),
     );
     expect(res.body.current).toEqual(expect.objectContaining({ cpu_percent: 42.1 }));
   });
@@ -1154,14 +1136,14 @@ describe("admin routes", () => {
 
     const res = await withToken(
       request(app).get("/admin/agents/agent-1/stats/history?range=1h"),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
     expect(mockBuildAgentHistoryResponse).toHaveBeenCalledWith(
       expect.objectContaining({ id: "agent-1" }),
       expect.any(Date),
-      expect.any(Date)
+      expect.any(Date),
     );
     expect(res.body.samples).toHaveLength(1);
   });
@@ -1188,10 +1170,7 @@ describe("admin routes", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
-    const res = await withToken(
-      request(app).post("/admin/agents/agent-1/redeploy"),
-      adminToken
-    );
+    const res = await withToken(request(app).post("/admin/agents/agent-1/redeploy"), adminToken);
 
     expect(res.status).toBe(200);
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
@@ -1200,7 +1179,7 @@ describe("admin routes", () => {
         userId: "user-2",
         backend: "docker",
         specs: { vcpu: 4, ram_mb: 4096, disk_gb: 40 },
-      })
+      }),
     );
     expect(monitoring.logEvent).toHaveBeenCalled();
   });
@@ -1230,10 +1209,7 @@ describe("admin routes", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
-    const res = await withToken(
-      request(app).post("/admin/agents/agent-2/redeploy"),
-      adminToken
-    );
+    const res = await withToken(request(app).post("/admin/agents/agent-2/redeploy"), adminToken);
 
     expect(res.status).toBe(200);
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
@@ -1242,7 +1218,7 @@ describe("admin routes", () => {
         userId: "user-9",
         backend: "nemoclaw",
         sandbox: "nemoclaw",
-      })
+      }),
     );
   });
 
@@ -1275,24 +1251,20 @@ describe("admin routes", () => {
       request(app).post("/admin/agents/agent-3/redeploy").send({
         backend: "nemoclaw",
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
-    expect(mockDb.query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("deploy_target = $5"),
-      [
-        "agent-3",
-        "nemoclaw",
-        "nemoclaw",
-        "openclaw",
-        "docker",
-        "nemoclaw",
-        "standard-agent",
-        "ghcr.io/nvidia/openshell-community/sandboxes/openclaw",
-      ]
-    );
+    expect(mockDb.query).toHaveBeenNthCalledWith(2, expect.stringContaining("deploy_target = $5"), [
+      "agent-3",
+      "nemoclaw",
+      "nemoclaw",
+      "openclaw",
+      "docker",
+      "nemoclaw",
+      "standard-agent",
+      "ghcr.io/nvidia/openshell-community/sandboxes/openclaw",
+    ]);
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "agent-3",
@@ -1300,7 +1272,7 @@ describe("admin routes", () => {
         backend: "nemoclaw",
         sandbox: "nemoclaw",
         image: "ghcr.io/nvidia/openshell-community/sandboxes/openclaw",
-      })
+      }),
     );
   });
 
@@ -1334,24 +1306,20 @@ describe("admin routes", () => {
       request(app).post("/admin/agents/agent-4/redeploy").send({
         deploy_target: "k8s",
       }),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
-    expect(mockDb.query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("image = $8"),
-      [
-        "agent-4",
-        "k8s",
-        "standard",
-        "openclaw",
-        "k8s",
-        "standard",
-        "docker-agent",
-        "node:24-slim",
-      ]
-    );
+    expect(mockDb.query).toHaveBeenNthCalledWith(2, expect.stringContaining("image = $8"), [
+      "agent-4",
+      "k8s",
+      "standard",
+      "openclaw",
+      "k8s",
+      "standard",
+      "docker-agent",
+      "node:24-slim",
+    ]);
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "agent-4",
@@ -1359,7 +1327,7 @@ describe("admin routes", () => {
         backend: "k8s",
         sandbox: "standard",
         image: "node:24-slim",
-      })
+      }),
     );
   });
 
@@ -1382,19 +1350,13 @@ describe("admin routes", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
-    const res = await withToken(
-      request(app).delete("/admin/users/user-7"),
-      adminToken
-    );
+    const res = await withToken(request(app).delete("/admin/users/user-7"), adminToken);
 
     expect(res.status).toBe(200);
     expect(containerManager.destroy).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "agent-7" })
+      expect.objectContaining({ id: "agent-7" }),
     );
-    expect(mockDb.query).toHaveBeenLastCalledWith(
-      "DELETE FROM users WHERE id = $1",
-      ["user-7"]
-    );
+    expect(mockDb.query).toHaveBeenLastCalledWith("DELETE FROM users WHERE id = $1", ["user-7"]);
   });
 
   it("deletes global agents with admin privileges", async () => {
@@ -1412,14 +1374,11 @@ describe("admin routes", () => {
       })
       .mockResolvedValueOnce({ rows: [] });
 
-    const res = await withToken(
-      request(app).delete("/admin/agents/agent-9"),
-      adminToken
-    );
+    const res = await withToken(request(app).delete("/admin/agents/agent-9"), adminToken);
 
     expect(res.status).toBe(200);
     expect(containerManager.destroy).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "agent-9" })
+      expect.objectContaining({ id: "agent-9" }),
     );
     expect(res.body).toEqual({ success: true });
   });
@@ -1448,9 +1407,9 @@ describe("admin routes", () => {
 
     const res = await withToken(
       request(app).get(
-        "/admin/audit?search=invalid&type=admin_action_failed&from=2026-04-01&to=2026-04-08&page=2&limit=30"
+        "/admin/audit?search=invalid&type=admin_action_failed&from=2026-04-01&to=2026-04-08&page=2&limit=30",
       ),
-      adminToken
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -1462,17 +1421,17 @@ describe("admin routes", () => {
         to: expect.any(Date),
         page: 2,
         limit: 30,
-      })
+      }),
     );
     expect(res.body).toEqual(
       expect.objectContaining({
         total: 23,
         page: 2,
         limit: 30,
-      })
+      }),
     );
     expect(res.body.availableTypes).toEqual(
-      expect.arrayContaining(["admin_action_failed", "agent_started"])
+      expect.arrayContaining(["admin_action_failed", "agent_started"]),
     );
     expect(res.body.events).toHaveLength(1);
   });
@@ -1503,10 +1462,8 @@ describe("admin routes", () => {
     ]);
 
     const res = await withToken(
-      request(app).get(
-        "/admin/audit/export?search=invalid&type=admin_action_failed"
-      ),
-      adminToken
+      request(app).get("/admin/audit/export?search=invalid&type=admin_action_failed"),
+      adminToken,
     );
 
     expect(res.status).toBe(200);
@@ -1514,7 +1471,7 @@ describe("admin routes", () => {
       expect.objectContaining({
         search: "invalid",
         type: "admin_action_failed",
-      })
+      }),
     );
     expect(res.headers["content-type"]).toContain("text/csv");
     expect(res.headers["content-disposition"]).toContain("nora-audit-");

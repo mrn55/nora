@@ -110,7 +110,9 @@ function formatMigrationTransportLabel(value) {
 }
 
 function formatPlanLabel(plan, { selfHosted = false } = {}) {
-  const normalized = String(plan || "free").trim().toLowerCase();
+  const normalized = String(plan || "free")
+    .trim()
+    .toLowerCase();
   if (selfHosted || normalized === "selfhosted") return "Self-hosted";
   if (!normalized) return "Free";
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
@@ -154,9 +156,7 @@ function describeAgentCapDetail({
     return "Contact your administrator to increase the limit.";
   }
   if (Number.isInteger(remainingSlots)) {
-    return `${remainingSlots} deployment slot${
-      remainingSlots !== 1 ? "s" : ""
-    } remaining.`;
+    return `${remainingSlots} deployment slot${remainingSlots !== 1 ? "s" : ""} remaining.`;
   }
   return "Deployment cap is being refreshed from the control plane.";
 }
@@ -279,14 +279,10 @@ export default function Deploy() {
   const limit = Number.isInteger(sub?.agent_limit) ? sub.agent_limit : null;
   const isUnlimited = Boolean(sub?.is_unlimited);
   const limitSource =
-    sub?.agent_limit_source ||
-    (viewerRole === "admin" ? "admin_default_unlimited" : "default");
+    sub?.agent_limit_source || (viewerRole === "admin" ? "admin_default_unlimited" : "default");
   const remainingSlots =
-    !isUnlimited && Number.isInteger(limit)
-      ? Math.max(limit - agentCount, 0)
-      : null;
-  const atLimit =
-    !isUnlimited && Number.isInteger(limit) ? agentCount >= limit : false;
+    !isUnlimited && Number.isInteger(limit) ? Math.max(limit - agentCount, 0) : null;
+  const atLimit = !isUnlimited && Number.isInteger(limit) ? agentCount >= limit : false;
   const isAdmin = viewerRole === "admin";
   const runtimeFamilyLocked =
     deploymentMode === "migrate"
@@ -741,7 +737,7 @@ export default function Deploy() {
                     ? `${planLabel} account — ${agentCount} agents deployed`
                     : `${planLabel} account — ${agentCount}/${formatAgentCapValue(
                         limit,
-                        false
+                        false,
                       )} agents used`}
                 </p>
                 <p className={`text-xs mt-0.5 ${atLimit ? "text-red-500" : "text-slate-400"}`}>
@@ -752,7 +748,9 @@ export default function Deploy() {
                     remainingSlots,
                   })}
                 </p>
-                <p className={`mt-1 text-[11px] font-semibold ${atLimit ? "text-red-600" : "text-slate-500"}`}>
+                <p
+                  className={`mt-1 text-[11px] font-semibold ${atLimit ? "text-red-600" : "text-slate-500"}`}
+                >
                   Cap source: {describeAgentCapSource(limitSource)}
                 </p>
               </div>

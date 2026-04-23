@@ -22,9 +22,7 @@ function loadBillingModule({
   delete process.env.STRIPE_SECRET_KEY;
 
   const mockDb = { query: jest.fn() };
-  const mockGetDeploymentDefaults = jest
-    .fn()
-    .mockResolvedValue(DEFAULT_DEPLOYMENT_DEFAULTS);
+  const mockGetDeploymentDefaults = jest.fn().mockResolvedValue(DEFAULT_DEPLOYMENT_DEFAULTS);
 
   jest.doMock("../db", () => mockDb);
   jest.doMock("../platformSettings", () => ({
@@ -66,7 +64,7 @@ describe("billing effective agent caps", () => {
         agent_limit_override: null,
         agent_limit_source: "default",
         is_unlimited: false,
-      })
+      }),
     );
   });
 
@@ -91,7 +89,7 @@ describe("billing effective agent caps", () => {
         agent_limit_override: null,
         agent_limit_source: "admin_default_unlimited",
         is_unlimited: true,
-      })
+      }),
     );
   });
 
@@ -124,7 +122,7 @@ describe("billing effective agent caps", () => {
         vcpu: 4,
         ram_mb: 4096,
         disk_gb: 50,
-      })
+      }),
     );
   });
 
@@ -151,7 +149,7 @@ describe("billing effective agent caps", () => {
         agent_limit_override: null,
         agent_limit_source: "default",
         is_unlimited: false,
-      })
+      }),
     );
   });
 
@@ -182,7 +180,7 @@ describe("billing effective agent caps", () => {
           agent_limit: 3,
           agent_limit_source: "default",
         }),
-      })
+      }),
     );
   });
 
@@ -210,7 +208,7 @@ describe("billing effective agent caps", () => {
           agent_limit: 2,
           agent_limit_source: "admin_override",
         }),
-      })
+      }),
     );
   });
 
@@ -237,7 +235,7 @@ describe("billing effective agent caps", () => {
       expect.objectContaining({
         is_unlimited: true,
         agent_limit_source: "admin_default_unlimited",
-      })
+      }),
     );
   });
 
@@ -266,7 +264,7 @@ describe("billing effective agent caps", () => {
           agent_limit_source: "admin_override",
           status: "past_due",
         }),
-      })
+      }),
     );
     expect(mockDb.query).toHaveBeenCalledTimes(2);
   });

@@ -2,15 +2,32 @@ import { useState, useEffect, useRef } from "react";
 import Layout from "../../components/layout/Layout";
 import LLMSetupWizard from "../../components/agents/LLMSetupWizard";
 import {
-  User, Lock, CreditCard, Link2, Trash2, Save, Loader2,
-  ExternalLink, Shield, Key, Mail, Calendar, BadgeCheck, Edit3, Check, X, Camera
+  User,
+  Lock,
+  CreditCard,
+  Link2,
+  Trash2,
+  Save,
+  Loader2,
+  ExternalLink,
+  Shield,
+  Key,
+  Mail,
+  Calendar,
+  BadgeCheck,
+  Edit3,
+  Check,
+  X,
+  Camera,
 } from "lucide-react";
 import { fetchWithAuth } from "../../lib/api";
 import { useToast } from "../../components/Toast";
 import ActivationChecklist from "../../components/onboarding/ActivationChecklist";
 
 function formatPlanLabel(plan, { selfHosted = false } = {}) {
-  const normalized = String(plan || "free").trim().toLowerCase();
+  const normalized = String(plan || "free")
+    .trim()
+    .toLowerCase();
   if (selfHosted || normalized === "selfhosted") return "Self-hosted";
   if (!normalized) return "Free";
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
@@ -59,15 +76,21 @@ export default function SettingsPage() {
   useEffect(() => {
     Promise.all([
       fetchWithAuth("/api/auth/me").then((r) => r.json()),
-      fetchWithAuth("/api/billing/subscription").then((r) => r.json()).catch(() => null),
-      fetch("/api/config/platform").then((r) => r.json()).catch(() => ({ mode: "selfhosted" })),
-    ]).then(([p, s, c]) => {
-      setProfile(p);
-      setSubscription(s);
-      setPlatformConfig(c);
-      setNameInput(p?.name || "");
-      setLoading(false);
-    }).catch(() => setLoading(false));
+      fetchWithAuth("/api/billing/subscription")
+        .then((r) => r.json())
+        .catch(() => null),
+      fetch("/api/config/platform")
+        .then((r) => r.json())
+        .catch(() => ({ mode: "selfhosted" })),
+    ])
+      .then(([p, s, c]) => {
+        setProfile(p);
+        setSubscription(s);
+        setPlatformConfig(c);
+        setNameInput(p?.name || "");
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   const isSelfHosted = platformConfig?.mode !== "paas";
@@ -206,29 +229,29 @@ export default function SettingsPage() {
 
   const plan = subscription?.plan || "free";
   const planLabel = formatPlanLabel(plan, { selfHosted: isSelfHosted });
-  const effectiveAgentCap = formatAgentCap(
-    subscription?.agent_limit,
-    subscription?.is_unlimited
-  );
-  const defaultAgentCap = formatDefaultAgentCap(
-    profile?.role,
-    subscription?.base_agent_limit
-  );
+  const effectiveAgentCap = formatAgentCap(subscription?.agent_limit, subscription?.is_unlimited);
+  const defaultAgentCap = formatDefaultAgentCap(profile?.role, subscription?.base_agent_limit);
   const agentCapSource = describeAgentCapSource(
     subscription?.agent_limit_source ||
-      (profile?.role === "admin" ? "admin_default_unlimited" : "default")
+      (profile?.role === "admin" ? "admin_default_unlimited" : "default"),
   );
   const selfHostedMaxAgents = platformConfig?.selfhosted?.max_agents || 50;
-  const memberSince = profile?.created_at ? new Date(profile.created_at).toLocaleDateString("en-US", {
-    year: "numeric", month: "long", day: "numeric"
-  }) : "—";
+  const memberSince = profile?.created_at
+    ? new Date(profile.created_at).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : "—";
 
   return (
     <Layout>
       <div className="max-w-3xl mx-auto space-y-8 pb-12">
         <div>
           <h1 className="text-2xl font-black text-slate-900">Settings</h1>
-          <p className="text-sm text-slate-400 mt-1">Manage your account, security, and preferences.</p>
+          <p className="text-sm text-slate-400 mt-1">
+            Manage your account, security, and preferences.
+          </p>
         </div>
 
         <ActivationChecklist
@@ -248,7 +271,11 @@ export default function SettingsPage() {
           <div className="flex items-start gap-4 mb-6">
             <div className="relative group shrink-0">
               {profile?.avatar ? (
-                <img src={profile.avatar} alt="Avatar" className="w-16 h-16 rounded-2xl object-cover" />
+                <img
+                  src={profile.avatar}
+                  alt="Avatar"
+                  className="w-16 h-16 rounded-2xl object-cover"
+                />
               ) : (
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xl font-black">
                   {(profile?.name || profile?.email || "U").charAt(0).toUpperCase()}
@@ -291,22 +318,44 @@ export default function SettingsPage() {
                     onChange={(e) => setNameInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleNameSave();
-                      if (e.key === "Escape") { setEditingName(false); setNameInput(profile?.name || ""); }
+                      if (e.key === "Escape") {
+                        setEditingName(false);
+                        setNameInput(profile?.name || "");
+                      }
                     }}
                     className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/40"
                     autoFocus
                   />
-                  <button onClick={handleNameSave} disabled={savingName} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg">
-                    {savingName ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                  <button
+                    onClick={handleNameSave}
+                    disabled={savingName}
+                    className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"
+                  >
+                    {savingName ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Check size={16} />
+                    )}
                   </button>
-                  <button onClick={() => { setEditingName(false); setNameInput(profile?.name || ""); }} className="p-1.5 text-slate-400 hover:bg-slate-50 rounded-lg">
+                  <button
+                    onClick={() => {
+                      setEditingName(false);
+                      setNameInput(profile?.name || "");
+                    }}
+                    className="p-1.5 text-slate-400 hover:bg-slate-50 rounded-lg"
+                  >
                     <X size={16} />
                   </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-bold text-slate-900 truncate">{profile?.name || "Unnamed User"}</h3>
-                  <button onClick={() => setEditingName(true)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                  <h3 className="text-lg font-bold text-slate-900 truncate">
+                    {profile?.name || "Unnamed User"}
+                  </h3>
+                  <button
+                    onClick={() => setEditingName(true)}
+                    className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  >
                     <Edit3 size={14} />
                   </button>
                 </div>
@@ -321,23 +370,36 @@ export default function SettingsPage() {
           {/* Info Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-slate-50 rounded-xl p-3">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Role</label>
+              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                Role
+              </label>
               <div className="flex items-center gap-1.5 mt-1">
-                <BadgeCheck size={14} className={profile?.role === "admin" ? "text-purple-500" : "text-blue-500"} />
-                <span className="text-sm font-semibold text-slate-900 capitalize">{profile?.role || "user"}</span>
+                <BadgeCheck
+                  size={14}
+                  className={profile?.role === "admin" ? "text-purple-500" : "text-blue-500"}
+                />
+                <span className="text-sm font-semibold text-slate-900 capitalize">
+                  {profile?.role || "user"}
+                </span>
               </div>
             </div>
             <div className="bg-slate-50 rounded-xl p-3">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Auth Provider</label>
+              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                Auth Provider
+              </label>
               <div className="flex items-center gap-1.5 mt-1">
                 {profile?.provider === "google" && <GoogleIcon />}
                 {profile?.provider === "github" && <GitHubIcon />}
                 {isEmailAuth && <Lock size={14} className="text-slate-400" />}
-                <span className="text-sm font-semibold text-slate-900 capitalize">{profile?.provider || "Email / Password"}</span>
+                <span className="text-sm font-semibold text-slate-900 capitalize">
+                  {profile?.provider || "Email / Password"}
+                </span>
               </div>
             </div>
             <div className="bg-slate-50 rounded-xl p-3">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Member Since</label>
+              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                Member Since
+              </label>
               <div className="flex items-center gap-1.5 mt-1">
                 <Calendar size={14} className="text-slate-400" />
                 <span className="text-sm font-semibold text-slate-900">{memberSince}</span>
@@ -372,7 +434,9 @@ export default function SettingsPage() {
             <Key size={20} className="text-blue-600" />
             <div>
               <h2 className="text-lg font-bold text-slate-900">LLM Provider Keys</h2>
-              <p className="text-xs text-slate-400 mt-0.5">API keys are shared across all your agents. Sync to agents after changes.</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                API keys are shared across all your agents. Sync to agents after changes.
+              </p>
             </div>
           </div>
           <LLMSetupWizard compact />
@@ -387,7 +451,9 @@ export default function SettingsPage() {
             </div>
             <form onSubmit={handlePasswordChange} className="space-y-4">
               <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Current Password</label>
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Current Password
+                </label>
                 <input
                   type="password"
                   placeholder="Enter current password"
@@ -399,7 +465,9 @@ export default function SettingsPage() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">New Password</label>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    New Password
+                  </label>
                   <input
                     type="password"
                     placeholder="At least 6 characters"
@@ -411,7 +479,9 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Confirm Password</label>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    Confirm Password
+                  </label>
                   <input
                     type="password"
                     placeholder="Re-enter new password"
@@ -424,7 +494,9 @@ export default function SettingsPage() {
                 </div>
               </div>
               {pwMsg && (
-                <p className={`text-sm font-medium ${pwSuccess ? "text-green-600" : "text-red-500"}`}>
+                <p
+                  className={`text-sm font-medium ${pwSuccess ? "text-green-600" : "text-red-500"}`}
+                >
                   {pwMsg}
                 </p>
               )}
@@ -449,35 +521,53 @@ export default function SettingsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Current Plan</label>
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Current Plan
+                </label>
                 <p className="mt-1">
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black ${
-                    plan === "enterprise" ? "bg-purple-50 text-purple-600 border border-purple-200" :
-                    plan === "pro" ? "bg-blue-50 text-blue-600 border border-blue-200" :
-                    "bg-slate-100 text-slate-500"
-                  }`}>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black ${
+                      plan === "enterprise"
+                        ? "bg-purple-50 text-purple-600 border border-purple-200"
+                        : plan === "pro"
+                          ? "bg-blue-50 text-blue-600 border border-blue-200"
+                          : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
                     <Shield size={12} />
                     {planLabel}
                   </span>
                 </p>
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Effective Agent Cap</label>
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Effective Agent Cap
+                </label>
                 <p className="text-sm text-slate-900 mt-1 font-semibold">{effectiveAgentCap}</p>
                 <p className="text-[11px] text-slate-400 mt-1">{agentCapSource}</p>
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resources per Agent</label>
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Resources per Agent
+                </label>
                 <p className="text-sm text-slate-900 mt-1">
-                  {subscription?.vcpu || 2} vCPU / {subscription?.ram_mb ? subscription.ram_mb / 1024 : 2} GB RAM / {subscription?.disk_gb || 20} GB SSD
+                  {subscription?.vcpu || 2} vCPU /{" "}
+                  {subscription?.ram_mb ? subscription.ram_mb / 1024 : 2} GB RAM /{" "}
+                  {subscription?.disk_gb || 20} GB SSD
                 </p>
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Status</label>
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Status
+                </label>
                 <p className="mt-1">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                    subscription?.status === "active" ? "bg-green-50 text-green-600 border border-green-200" : "bg-yellow-50 text-yellow-600 border border-yellow-200"
-                  }`}>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                      subscription?.status === "active"
+                        ? "bg-green-50 text-green-600 border border-green-200"
+                        : "bg-yellow-50 text-yellow-600 border border-yellow-200"
+                    }`}
+                  >
                     {subscription?.status || "active"}
                   </span>
                 </p>
@@ -488,23 +578,19 @@ export default function SettingsPage() {
               subscription.base_agent_limit !== subscription.agent_limit) ||
               profile?.role === "admin") ? (
               <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                <p className="text-sm font-semibold text-amber-900">
-                  Admin override active
-                </p>
+                <p className="text-sm font-semibold text-amber-900">Admin override active</p>
                 <p className="mt-1 text-sm text-amber-800">
-                  Your account is capped at {effectiveAgentCap} agents. The
-                  default cap for your role is {defaultAgentCap}.
+                  Your account is capped at {effectiveAgentCap} agents. The default cap for your
+                  role is {defaultAgentCap}.
                 </p>
               </div>
             ) : null}
             {subscription?.is_unlimited ? (
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-sm font-semibold text-slate-900">
-                  Admin default
-                </p>
+                <p className="text-sm font-semibold text-slate-900">Admin default</p>
                 <p className="mt-1 text-sm text-slate-600">
-                  Admin accounts are uncapped by default. A finite per-user cap
-                  can still be applied from the admin panel when needed.
+                  Admin accounts are uncapped by default. A finite per-user cap can still be applied
+                  from the admin panel when needed.
                 </p>
               </div>
             ) : null}
@@ -539,44 +625,55 @@ export default function SettingsPage() {
               <h2 className="text-lg font-bold text-slate-900">Usage & Resource Limits</h2>
             </div>
             <p className="text-sm text-slate-400 mb-4">
-              Self-hosted mode — admin accounts are uncapped by default, and
-              all other users default to 3 agents unless an admin sets an
-              override.
+              Self-hosted mode — admin accounts are uncapped by default, and all other users default
+              to 3 agents unless an admin sets an override.
             </p>
             <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-4">
               <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">
                 Your agent cap
               </p>
-              <p className="mt-2 text-2xl font-black text-slate-900">
-                {effectiveAgentCap}
-              </p>
-              <p className="mt-1 text-sm font-medium text-slate-600">
-                {agentCapSource}
-              </p>
+              <p className="mt-2 text-2xl font-black text-slate-900">{effectiveAgentCap}</p>
+              <p className="mt-1 text-sm font-medium text-slate-600">{agentCapSource}</p>
               {subscription?.agent_limit_source === "admin_override" ? (
                 <p className="mt-2 text-sm text-slate-500">
-                  Default cap for your role is {defaultAgentCap}. The
-                  self-hosted finite-cap ceiling remains {selfHostedMaxAgents}{" "}
-                  agents.
+                  Default cap for your role is {defaultAgentCap}. The self-hosted finite-cap ceiling
+                  remains {selfHostedMaxAgents} agents.
                 </p>
               ) : null}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="bg-slate-50 rounded-xl p-3 text-center">
                 <p className="text-2xl font-black text-slate-900">{selfHostedMaxAgents}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Finite Cap Ceiling</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                  Finite Cap Ceiling
+                </p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-black text-slate-900">{platformConfig?.selfhosted?.max_vcpu || 16}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Max vCPU</p>
+                <p className="text-2xl font-black text-slate-900">
+                  {platformConfig?.selfhosted?.max_vcpu || 16}
+                </p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                  Max vCPU
+                </p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-black text-slate-900">{platformConfig?.selfhosted?.max_ram_mb ? Math.round(platformConfig.selfhosted.max_ram_mb / 1024) : 32} GB</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Max RAM</p>
+                <p className="text-2xl font-black text-slate-900">
+                  {platformConfig?.selfhosted?.max_ram_mb
+                    ? Math.round(platformConfig.selfhosted.max_ram_mb / 1024)
+                    : 32}{" "}
+                  GB
+                </p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                  Max RAM
+                </p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-black text-slate-900">{platformConfig?.selfhosted?.max_disk_gb || 500} GB</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Max Disk</p>
+                <p className="text-2xl font-black text-slate-900">
+                  {platformConfig?.selfhosted?.max_disk_gb || 500} GB
+                </p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                  Max Disk
+                </p>
               </div>
             </div>
           </section>
@@ -589,11 +686,17 @@ export default function SettingsPage() {
             <h2 className="text-lg font-bold text-red-600">Danger Zone</h2>
           </div>
           <p className="text-sm text-slate-500">
-            Once you delete your account, all your agents and data will be permanently removed. This action cannot be undone.
+            Once you delete your account, all your agents and data will be permanently removed. This
+            action cannot be undone.
           </p>
           <div className="mt-4 rounded-2xl border border-red-200 bg-white/70 px-4 py-4">
-            <p className="text-sm font-bold text-red-700">Self-serve account deletion is not available in this build.</p>
-            <p className="text-sm text-red-700/80 mt-1">That dead control has been removed for now so operators do not click into an action Nora cannot actually complete yet.</p>
+            <p className="text-sm font-bold text-red-700">
+              Self-serve account deletion is not available in this build.
+            </p>
+            <p className="text-sm text-red-700/80 mt-1">
+              That dead control has been removed for now so operators do not click into an action
+              Nora cannot actually complete yet.
+            </p>
           </div>
         </section>
       </div>
@@ -608,11 +711,13 @@ function AccountRow({ icon, name, connected }) {
         {icon}
         <span className="text-sm font-medium text-slate-900">{name}</span>
       </div>
-      <span className={`text-xs font-bold px-3 py-1 rounded-full ${
-        connected
-          ? "bg-green-50 text-green-600 border border-green-200"
-          : "bg-slate-100 text-slate-500"
-      }`}>
+      <span
+        className={`text-xs font-bold px-3 py-1 rounded-full ${
+          connected
+            ? "bg-green-50 text-green-600 border border-green-200"
+            : "bg-slate-100 text-slate-500"
+        }`}
+      >
         {connected ? "Connected" : "Not Connected"}
       </span>
     </div>
@@ -622,10 +727,22 @@ function AccountRow({ icon, name, connected }) {
 function GoogleIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      <path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        fill="#34A853"
+      />
+      <path
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+        fill="#EA4335"
+      />
     </svg>
   );
 }
@@ -633,7 +750,7 @@ function GoogleIcon() {
 function GitHubIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="#1e293b">
-      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
     </svg>
   );
 }

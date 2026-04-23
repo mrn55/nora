@@ -18,12 +18,12 @@ const KNOWN_PLANS = new Set(Object.keys(PLANS));
 const DEFAULT_USER_AGENT_LIMIT = 3;
 
 const SELFHOSTED_LIMITS = {
-  max_vcpu:   parseInt(process.env.MAX_VCPU   || "16",    10),
+  max_vcpu: parseInt(process.env.MAX_VCPU || "16", 10),
   max_ram_mb: parseInt(process.env.MAX_RAM_MB || "32768", 10),
-  max_disk_gb:parseInt(process.env.MAX_DISK_GB|| "500",   10),
-  max_agents: parseInt(process.env.MAX_AGENTS || "50",    10),
+  max_disk_gb: parseInt(process.env.MAX_DISK_GB || "500", 10),
+  max_agents: parseInt(process.env.MAX_AGENTS || "50", 10),
 };
-const BILLING_ENABLED = process.env.BILLING_ENABLED === 'true';
+const BILLING_ENABLED = process.env.BILLING_ENABLED === "true";
 
 function parseInteger(value) {
   const parsed = Number.parseInt(value, 10);
@@ -31,7 +31,9 @@ function parseInteger(value) {
 }
 
 function normalizePlanName(plan) {
-  const normalized = String(plan || "").trim().toLowerCase();
+  const normalized = String(plan || "")
+    .trim()
+    .toLowerCase();
   return KNOWN_PLANS.has(normalized) ? normalized : "free";
 }
 
@@ -42,20 +44,18 @@ function normalizeAgentLimitOverride(value) {
 }
 
 function isAdminUser(user = {}) {
-  return String(user?.role || "").trim().toLowerCase() === "admin";
+  return (
+    String(user?.role || "")
+      .trim()
+      .toLowerCase() === "admin"
+  );
 }
 
 function applyEffectiveAgentLimit(base, user = {}, options = {}) {
   const override = normalizeAgentLimitOverride(user?.agent_limit_override);
-  const maxAgentLimit = Number.isInteger(options.maxAgentLimit)
-    ? options.maxAgentLimit
-    : null;
+  const maxAgentLimit = Number.isInteger(options.maxAgentLimit) ? options.maxAgentLimit : null;
   const effectiveOverride =
-    override == null
-      ? null
-      : maxAgentLimit == null
-        ? override
-        : Math.min(override, maxAgentLimit);
+    override == null ? null : maxAgentLimit == null ? override : Math.min(override, maxAgentLimit);
   const roleDefaultIsUnlimited = isAdminUser(user);
   const baseAgentLimit = roleDefaultIsUnlimited ? null : DEFAULT_USER_AGENT_LIMIT;
 
@@ -106,7 +106,7 @@ function buildPlanSubscription(plan, defaults = {}) {
 async function getUserRow(userId) {
   const result = await db.query(
     "SELECT id, email, role, name, agent_limit_override FROM users WHERE id = $1",
-    [userId]
+    [userId],
   );
   return result.rows[0] || null;
 }
@@ -114,7 +114,7 @@ async function getUserRow(userId) {
 async function getLatestSubscription(userId) {
   const result = await db.query(
     "SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
-    [userId]
+    [userId],
   );
   return result.rows[0] || null;
 }
@@ -158,12 +158,8 @@ async function getSubscription(userId, options = {}) {
     return buildSelfHostedSubscription(user || {});
   }
 
-  const deploymentDefaults =
-    options.deploymentDefaults || (await getDeploymentDefaults());
-  const hasSubscriptionRow = Object.prototype.hasOwnProperty.call(
-    options,
-    "subscriptionRow"
-  );
+  const deploymentDefaults = options.deploymentDefaults || (await getDeploymentDefaults());
+  const hasSubscriptionRow = Object.prototype.hasOwnProperty.call(options, "subscriptionRow");
   const subscriptionRow = hasSubscriptionRow
     ? options.subscriptionRow
     : await getLatestSubscription(userId);
@@ -176,9 +172,7 @@ async function getSubscription(userId, options = {}) {
 }
 
 function buildLimitReachedError(count, subscription = {}) {
-  const limit = Number.isInteger(subscription?.agent_limit)
-    ? subscription.agent_limit
-    : 0;
+  const limit = Number.isInteger(subscription?.agent_limit) ? subscription.agent_limit : 0;
   return `Agent limit reached (${count}/${limit}). Contact your administrator.`;
 }
 
@@ -188,10 +182,7 @@ async function enforceLimits(userId) {
     return { allowed: false, error: "Subscription is not active", subscription: sub };
   }
 
-  const agentCount = await db.query(
-    "SELECT COUNT(*) FROM agents WHERE user_id = $1",
-    [userId]
-  );
+  const agentCount = await db.query("SELECT COUNT(*) FROM agents WHERE user_id = $1", [userId]);
   const count = parseInt(agentCount.rows[0].count, 10);
 
   if (sub.is_unlimited) {
@@ -218,9 +209,8 @@ async function enforceLimits(userId) {
 async function createCheckoutSession(userId, plan) {
   if (!stripe) throw new Error("Stripe is not configured");
 
-  const priceId = plan === "pro"
-    ? process.env.STRIPE_PRICE_PRO
-    : process.env.STRIPE_PRICE_ENTERPRISE;
+  const priceId =
+    plan === "pro" ? process.env.STRIPE_PRICE_PRO : process.env.STRIPE_PRICE_ENTERPRISE;
 
   if (!priceId) throw new Error(`No Stripe price configured for plan: ${plan}`);
 
@@ -266,10 +256,7 @@ async function handleWebhookEvent(event) {
       const session = event.data.object;
       const userId = session.metadata?.userId;
       const plan = session.metadata?.plan || "pro";
-      const specs = buildPlanSubscription(
-        plan,
-        await getDeploymentDefaults()
-      );
+      const specs = buildPlanSubscription(plan, await getDeploymentDefaults());
 
       await db.query(
         `INSERT INTO subscriptions(user_id, stripe_customer_id, stripe_subscription_id, plan, status, agent_limit, vcpu, ram_mb, disk_gb, current_period_end)
@@ -278,8 +265,16 @@ async function handleWebhookEvent(event) {
            plan = EXCLUDED.plan, status = 'active', agent_limit = EXCLUDED.agent_limit,
            vcpu = EXCLUDED.vcpu, ram_mb = EXCLUDED.ram_mb, disk_gb = EXCLUDED.disk_gb,
            updated_at = NOW()`,
-        [userId, session.customer, session.subscription, plan,
-         specs.agent_limit, specs.vcpu, specs.ram_mb, specs.disk_gb]
+        [
+          userId,
+          session.customer,
+          session.subscription,
+          plan,
+          specs.agent_limit,
+          specs.vcpu,
+          specs.ram_mb,
+          specs.disk_gb,
+        ],
       );
       break;
     }
@@ -289,7 +284,7 @@ async function handleWebhookEvent(event) {
       await db.query(
         `UPDATE subscriptions SET status = 'active', current_period_end = NOW() + INTERVAL '30 days', updated_at = NOW()
          WHERE stripe_subscription_id = $1`,
-        [invoice.subscription]
+        [invoice.subscription],
       );
       break;
     }
@@ -298,7 +293,7 @@ async function handleWebhookEvent(event) {
       const invoice = event.data.object;
       await db.query(
         "UPDATE subscriptions SET status = 'past_due', updated_at = NOW() WHERE stripe_subscription_id = $1",
-        [invoice.subscription]
+        [invoice.subscription],
       );
       break;
     }
@@ -306,14 +301,11 @@ async function handleWebhookEvent(event) {
     case "customer.subscription.deleted": {
       const sub = event.data.object;
       // Downgrade to free
-      const freePlan = buildPlanSubscription(
-        "free",
-        await getDeploymentDefaults()
-      );
+      const freePlan = buildPlanSubscription("free", await getDeploymentDefaults());
       await db.query(
         `UPDATE subscriptions SET plan = 'free', status = 'canceled', agent_limit = $1, vcpu = $2, ram_mb = $3, disk_gb = $4, updated_at = NOW()
          WHERE stripe_subscription_id = $5`,
-        [freePlan.agent_limit, freePlan.vcpu, freePlan.ram_mb, freePlan.disk_gb, sub.id]
+        [freePlan.agent_limit, freePlan.vcpu, freePlan.ram_mb, freePlan.disk_gb, sub.id],
       );
       break;
     }
