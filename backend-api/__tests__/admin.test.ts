@@ -131,7 +131,18 @@ jest.mock("../billing", () => ({
     allowed: true,
     subscription: { plan: "selfhosted", vcpu: 2, ram_mb: 2048, disk_gb: 20 },
   }),
-  getSubscription: jest.fn().mockResolvedValue({ plan: "selfhosted" }),
+  getSubscription: jest.fn().mockResolvedValue({
+    plan: "selfhosted",
+    status: "active",
+    agent_limit: 3,
+    agent_limit_override: null,
+    base_agent_limit: 3,
+    agent_limit_source: "default",
+    is_unlimited: false,
+  }),
+  normalizeAgentLimitOverride: jest.fn((value) =>
+    Number.isInteger(value) && value >= 0 ? value : null
+  ),
   createCheckoutSession: jest.fn(),
   createPortalSession: jest.fn(),
   handleWebhookEvent: jest.fn(),
@@ -764,6 +775,18 @@ describe("admin routes", () => {
   });
 
   it("returns enriched admin users with agent counts", async () => {
+    const billingModule = require("../billing");
+
+    billingModule.getSubscription.mockResolvedValueOnce({
+      plan: "selfhosted",
+      status: "active",
+      agent_limit: null,
+      agent_limit_override: null,
+      base_agent_limit: null,
+      agent_limit_source: "admin_default_unlimited",
+      is_unlimited: true,
+    });
+
     mockDb.query.mockResolvedValueOnce({
       rows: [
         {
@@ -784,8 +807,197 @@ describe("admin routes", () => {
       expect.objectContaining({
         email: "ops@example.com",
         agentCount: 3,
+        agent_limit: null,
+        agent_limit_source: "admin_default_unlimited",
+        is_unlimited: true,
       }),
     ]);
+  });
+
+  it("updates a user agent cap override and returns enriched user data", async () => {
+    const billingModule = require("../billing");
+    const monitoringModule = require("../monitoring");
+
+    billingModule.getSubscription
+      .mockResolvedValueOnce({
+        plan: "selfhosted",
+        status: "active",
+        agent_limit: 3,
+        agent_limit_override: null,
+        base_agent_limit: 3,
+        agent_limit_source: "default",
+        is_unlimited: false,
+      })
+      .mockResolvedValueOnce({
+        plan: "selfhosted",
+        status: "active",
+        agent_limit: 6,
+        agent_limit_override: 6,
+        base_agent_limit: 3,
+        agent_limit_source: "admin_override",
+        is_unlimited: false,
+      });
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "user-2",
+            email: "target@example.com",
+            name: "Target User",
+            role: "user",
+            agent_limit_override: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "user-2",
+            email: "target@example.com",
+            name: "Target User",
+            role: "user",
+            created_at: "2026-04-08T00:00:00.000Z",
+            agent_limit_override: 6,
+            agentCount: 2,
+            subscriptionPlan: null,
+            subscriptionStatus: null,
+          },
+        ],
+      });
+
+    const res = await withToken(
+      request(app)
+        .put("/admin/users/user-2/agent-limit")
+        .send({ agent_limit_override: 6 }),
+      adminToken
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        id: "user-2",
+        agent_limit: 6,
+        agent_limit_override: 6,
+        base_agent_limit: 3,
+        agent_limit_source: "admin_override",
+      })
+    );
+    expect(monitoringModule.logEvent).toHaveBeenCalledWith(
+      "admin_user_agent_limit_updated",
+      expect.stringContaining("to 6"),
+      expect.objectContaining({
+        user: expect.objectContaining({
+          id: "user-2",
+          email: "target@example.com",
+        }),
+        result: expect.objectContaining({
+          previousAgentLimit: 3,
+          nextAgentLimit: 6,
+          nextAgentLimitSource: "admin_override",
+        }),
+      })
+    );
+  });
+
+  it("clears a user agent cap override", async () => {
+    const billingModule = require("../billing");
+    const monitoringModule = require("../monitoring");
+
+    billingModule.getSubscription
+      .mockResolvedValueOnce({
+        plan: "selfhosted",
+        status: "active",
+        agent_limit: 7,
+        agent_limit_override: 7,
+        base_agent_limit: 3,
+        agent_limit_source: "admin_override",
+        is_unlimited: false,
+      })
+      .mockResolvedValueOnce({
+        plan: "selfhosted",
+        status: "active",
+        agent_limit: 3,
+        agent_limit_override: null,
+        base_agent_limit: 3,
+        agent_limit_source: "default",
+        is_unlimited: false,
+      });
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "user-3",
+            email: "clear@example.com",
+            name: "Clear User",
+            role: "user",
+            agent_limit_override: 7,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "user-3",
+            email: "clear@example.com",
+            name: "Clear User",
+            role: "user",
+            created_at: "2026-04-08T00:00:00.000Z",
+            agent_limit_override: null,
+            agentCount: 4,
+            subscriptionPlan: null,
+            subscriptionStatus: null,
+          },
+        ],
+      });
+
+    const res = await withToken(
+      request(app)
+        .put("/admin/users/user-3/agent-limit")
+        .send({ agent_limit_override: null }),
+      adminToken
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        agent_limit: 3,
+        agent_limit_override: null,
+        agent_limit_source: "default",
+      })
+    );
+    expect(monitoringModule.logEvent).toHaveBeenCalledWith(
+      "admin_user_agent_limit_updated",
+      expect.stringContaining("cleared"),
+      expect.any(Object)
+    );
+  });
+
+  it("rejects invalid agent cap overrides", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "user-4",
+          email: "invalid@example.com",
+          name: "Invalid User",
+          role: "user",
+          agent_limit_override: null,
+        },
+      ],
+    });
+
+    const res = await withToken(
+      request(app)
+        .put("/admin/users/user-4/agent-limit")
+        .send({ agent_limit_override: -1 }),
+      adminToken
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/0 or greater/i);
   });
 
   it("logs actor and target detail when an admin changes a user role", async () => {

@@ -1008,6 +1008,7 @@ async function migrateDB() {
     `CREATE INDEX IF NOT EXISTS idx_usage_metrics_user ON usage_metrics(user_id, recorded_at)`,
     `CREATE INDEX IF NOT EXISTS idx_usage_metrics_type ON usage_metrics(metric_type, recorded_at)`,
     `DO $$ BEGIN ALTER TABLE users ADD COLUMN avatar TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE users ADD COLUMN agent_limit_override INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `CREATE TABLE IF NOT EXISTS container_stats (
        id BIGSERIAL PRIMARY KEY,
        agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,

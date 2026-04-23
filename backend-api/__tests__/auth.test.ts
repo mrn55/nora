@@ -58,7 +58,15 @@ jest.mock("../billing", () => ({
     allowed: true,
     subscription: { plan: "selfhosted", vcpu: 2, ram_mb: 2048, disk_gb: 20 },
   }),
-  getSubscription: jest.fn().mockResolvedValue({ plan: "selfhosted" }),
+  getSubscription: jest.fn().mockResolvedValue({
+    plan: "selfhosted",
+    status: "active",
+    agent_limit: 3,
+    agent_limit_override: null,
+    base_agent_limit: 3,
+    agent_limit_source: "default",
+    is_unlimited: false,
+  }),
   createCheckoutSession: jest.fn(),
   createPortalSession: jest.fn(),
   handleWebhookEvent: jest.fn(),
@@ -252,6 +260,48 @@ describe("Protected auth routes", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ name: "User One", avatar });
+  });
+
+  it("returns the effective subscription payload for the authenticated user", async () => {
+    const billingModule = require("../billing");
+    const token = jwt.sign({ id: "user-1", role: "user" }, JWT_SECRET, {
+      expiresIn: "1h",
+    });
+
+    billingModule.getSubscription.mockResolvedValueOnce({
+      plan: "pro",
+      status: "active",
+      agent_limit: 12,
+      agent_limit_override: 12,
+      base_agent_limit: 10,
+      agent_limit_source: "admin_override",
+      is_unlimited: false,
+      vcpu: 4,
+      ram_mb: 4096,
+      disk_gb: 50,
+    });
+    mockDb.query.mockResolvedValueOnce({ rows: [{ count: "4" }] });
+
+    const res = await request(app)
+      .get("/billing/subscription")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        plan: "pro",
+        status: "active",
+        agent_limit: 12,
+        agent_limit_override: 12,
+        base_agent_limit: 10,
+        agent_limit_source: "admin_override",
+        is_unlimited: false,
+        agents_used: 4,
+        vcpu: 4,
+        ram_mb: 4096,
+        disk_gb: 50,
+      })
+    );
   });
 });
 

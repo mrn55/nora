@@ -14,6 +14,8 @@ const PLANS = {
   pro: { agent_limit: 10 },
   enterprise: { agent_limit: 100 },
 };
+const KNOWN_PLANS = new Set(Object.keys(PLANS));
+const DEFAULT_USER_AGENT_LIMIT = 3;
 
 const SELFHOSTED_LIMITS = {
   max_vcpu:   parseInt(process.env.MAX_VCPU   || "16",    10),
@@ -21,11 +23,79 @@ const SELFHOSTED_LIMITS = {
   max_disk_gb:parseInt(process.env.MAX_DISK_GB|| "500",   10),
   max_agents: parseInt(process.env.MAX_AGENTS || "50",    10),
 };
+const BILLING_ENABLED = process.env.BILLING_ENABLED === 'true';
+
+function parseInteger(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizePlanName(plan) {
+  const normalized = String(plan || "").trim().toLowerCase();
+  return KNOWN_PLANS.has(normalized) ? normalized : "free";
+}
+
+function normalizeAgentLimitOverride(value) {
+  const parsed = parseInteger(value);
+  if (parsed == null || parsed < 0) return null;
+  return parsed;
+}
+
+function isAdminUser(user = {}) {
+  return String(user?.role || "").trim().toLowerCase() === "admin";
+}
+
+function applyEffectiveAgentLimit(base, user = {}, options = {}) {
+  const override = normalizeAgentLimitOverride(user?.agent_limit_override);
+  const maxAgentLimit = Number.isInteger(options.maxAgentLimit)
+    ? options.maxAgentLimit
+    : null;
+  const effectiveOverride =
+    override == null
+      ? null
+      : maxAgentLimit == null
+        ? override
+        : Math.min(override, maxAgentLimit);
+  const roleDefaultIsUnlimited = isAdminUser(user);
+  const baseAgentLimit = roleDefaultIsUnlimited ? null : DEFAULT_USER_AGENT_LIMIT;
+
+  if (effectiveOverride != null) {
+    return {
+      ...base,
+      agent_limit: effectiveOverride,
+      base_agent_limit: baseAgentLimit,
+      agent_limit_override: effectiveOverride,
+      agent_limit_source: "admin_override",
+      is_unlimited: false,
+    };
+  }
+
+  if (roleDefaultIsUnlimited) {
+    return {
+      ...base,
+      agent_limit: null,
+      base_agent_limit: null,
+      agent_limit_override: null,
+      agent_limit_source: "admin_default_unlimited",
+      is_unlimited: true,
+    };
+  }
+
+  return {
+    ...base,
+    agent_limit: DEFAULT_USER_AGENT_LIMIT,
+    base_agent_limit: DEFAULT_USER_AGENT_LIMIT,
+    agent_limit_override: null,
+    agent_limit_source: "default",
+    is_unlimited: false,
+  };
+}
 
 function buildPlanSubscription(plan, defaults = {}) {
-  const basePlan = PLANS[plan] || PLANS.free;
+  const normalizedPlan = normalizePlanName(plan);
+  const basePlan = PLANS[normalizedPlan] || PLANS.free;
   return {
-    plan,
+    plan: normalizedPlan,
     agent_limit: basePlan.agent_limit,
     vcpu: defaults.vcpu,
     ram_mb: defaults.ram_mb,
@@ -33,85 +103,114 @@ function buildPlanSubscription(plan, defaults = {}) {
   };
 }
 
-// ── Get or create a free subscription for a user ──────────────────
+async function getUserRow(userId) {
+  const result = await db.query(
+    "SELECT id, email, role, name, agent_limit_override FROM users WHERE id = $1",
+    [userId]
+  );
+  return result.rows[0] || null;
+}
 
-async function getSubscription(userId) {
-  // Self-hosted: return operator-configured limits (no DB subscription needed)
-  if (!IS_PAAS) {
-    return {
-      plan: 'selfhosted',
-      status: 'active',
-      agent_limit: SELFHOSTED_LIMITS.max_agents,
-      vcpu: SELFHOSTED_LIMITS.max_vcpu,
-      ram_mb: SELFHOSTED_LIMITS.max_ram_mb,
-      disk_gb: SELFHOSTED_LIMITS.max_disk_gb,
-    };
-  }
-
-  const deploymentDefaults = await getDeploymentDefaults();
+async function getLatestSubscription(userId) {
   const result = await db.query(
     "SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
     [userId]
   );
-  if (result.rows[0]) {
-    const existing = result.rows[0];
-    return {
-      ...existing,
-      ...buildPlanSubscription(existing.plan || "free", deploymentDefaults),
-    };
-  }
-
-  // Auto-create a free-tier subscription
-  const free = buildPlanSubscription("free", deploymentDefaults);
-  const insert = await db.query(
-    `INSERT INTO subscriptions(user_id, plan, status, agent_limit, vcpu, ram_mb, disk_gb)
-     VALUES($1, 'free', 'active', $2, $3, $4, $5) RETURNING *`,
-    [userId, free.agent_limit, free.vcpu, free.ram_mb, free.disk_gb]
-  );
-  return {
-    ...insert.rows[0],
-    ...buildPlanSubscription("free", deploymentDefaults),
-  };
+  return result.rows[0] || null;
 }
 
-// ── Enforce agent deployment limits ──────────────────────────────
+function buildSelfHostedSubscription(user = {}) {
+  const base = {
+    plan: "selfhosted",
+    status: "active",
+    agent_limit: SELFHOSTED_LIMITS.max_agents,
+    vcpu: SELFHOSTED_LIMITS.max_vcpu,
+    ram_mb: SELFHOSTED_LIMITS.max_ram_mb,
+    disk_gb: SELFHOSTED_LIMITS.max_disk_gb,
+  };
 
-const BILLING_ENABLED = process.env.BILLING_ENABLED === 'true';
+  return applyEffectiveAgentLimit(base, user, {
+    maxAgentLimit: SELFHOSTED_LIMITS.max_agents,
+  });
+}
+
+function buildPaaSSubscription({
+  user = {},
+  subscriptionRow = null,
+  deploymentDefaults = {},
+} = {}) {
+  const basePlan = normalizePlanName(subscriptionRow?.plan);
+  const base = {
+    ...subscriptionRow,
+    ...buildPlanSubscription(basePlan, deploymentDefaults),
+    plan: basePlan,
+    status: BILLING_ENABLED ? subscriptionRow?.status || "active" : "active",
+  };
+
+  return applyEffectiveAgentLimit(base, user);
+}
+
+async function getSubscription(userId, options = {}) {
+  const hasUserRow = Object.prototype.hasOwnProperty.call(options, "userRow");
+  const user = hasUserRow ? options.userRow : await getUserRow(userId);
+
+  if (!IS_PAAS) {
+    return buildSelfHostedSubscription(user || {});
+  }
+
+  const deploymentDefaults =
+    options.deploymentDefaults || (await getDeploymentDefaults());
+  const hasSubscriptionRow = Object.prototype.hasOwnProperty.call(
+    options,
+    "subscriptionRow"
+  );
+  const subscriptionRow = hasSubscriptionRow
+    ? options.subscriptionRow
+    : await getLatestSubscription(userId);
+
+  return buildPaaSSubscription({
+    user: user || {},
+    subscriptionRow,
+    deploymentDefaults,
+  });
+}
+
+function buildLimitReachedError(count, subscription = {}) {
+  const limit = Number.isInteger(subscription?.agent_limit)
+    ? subscription.agent_limit
+    : 0;
+  return `Agent limit reached (${count}/${limit}). Contact your administrator.`;
+}
 
 async function enforceLimits(userId) {
-  // Self-hosted: enforce MAX_AGENTS from env
-  if (!IS_PAAS) {
-    const agentCount = await db.query("SELECT COUNT(*) FROM agents WHERE user_id = $1", [userId]);
-    const count = parseInt(agentCount.rows[0].count, 10);
-    const maxAgents = SELFHOSTED_LIMITS.max_agents;
-    if (count >= maxAgents) {
-      return { allowed: false, error: `Agent limit reached (${count}/${maxAgents}). Contact your administrator.`, subscription: { plan: 'selfhosted', status: 'active' } };
-    }
-    return { allowed: true, remaining: maxAgents - count, subscription: { plan: 'selfhosted', status: 'active' } };
-  }
-
-  // PaaS: when billing is disabled, allow unlimited deployments
-  if (!BILLING_ENABLED) {
-    return { allowed: true, remaining: Infinity, subscription: { plan: 'free', status: 'active' } };
-  }
-
   const sub = await getSubscription(userId);
-  if (sub.status !== "active") {
+  if (IS_PAAS && BILLING_ENABLED && sub.status !== "active") {
     return { allowed: false, error: "Subscription is not active", subscription: sub };
   }
+
   const agentCount = await db.query(
     "SELECT COUNT(*) FROM agents WHERE user_id = $1",
     [userId]
   );
   const count = parseInt(agentCount.rows[0].count, 10);
-  if (count >= sub.agent_limit) {
+
+  if (sub.is_unlimited) {
+    return { allowed: true, remaining: Infinity, subscription: sub };
+  }
+
+  if (Number.isInteger(sub.agent_limit) && count >= sub.agent_limit) {
     return {
       allowed: false,
-      error: `Agent limit reached (${count}/${sub.agent_limit}). Upgrade your plan.`,
+      error: buildLimitReachedError(count, sub),
       subscription: sub,
     };
   }
-  return { allowed: true, remaining: sub.agent_limit - count, subscription: sub };
+
+  return {
+    allowed: true,
+    remaining: Number.isInteger(sub.agent_limit) ? sub.agent_limit - count : Infinity,
+    subscription: sub,
+  };
 }
 
 // ── Create Stripe Checkout Session ──────────────────────────────
@@ -227,6 +326,7 @@ module.exports = {
   PLATFORM_MODE,
   IS_PAAS,
   SELFHOSTED_LIMITS,
+  normalizeAgentLimitOverride,
   getSubscription,
   enforceLimits,
   createCheckoutSession,

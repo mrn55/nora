@@ -520,6 +520,77 @@ async function destroyUserAgents(userId) {
   return result.rows;
 }
 
+function buildSubscriptionLookup(row = {}) {
+  if (!row?.subscriptionPlan) return null;
+  return {
+    plan: row.subscriptionPlan,
+    status: row.subscriptionStatus,
+  };
+}
+
+async function buildAdminUserResponse(
+  row,
+  { deploymentDefaults = null, subscriptionRow } = {}
+) {
+  const subscription = await billing.getSubscription(row.id, {
+    userRow: row,
+    subscriptionRow,
+    ...(deploymentDefaults ? { deploymentDefaults } : {}),
+  });
+
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    created_at: row.created_at,
+    agentCount: Number.parseInt(row.agentCount, 10) || 0,
+    plan: subscription.plan,
+    subscriptionStatus: subscription.status,
+    agent_limit: subscription.agent_limit,
+    agent_limit_override: subscription.agent_limit_override,
+    base_agent_limit: subscription.base_agent_limit,
+    agent_limit_source: subscription.agent_limit_source,
+    is_unlimited: subscription.is_unlimited,
+  };
+}
+
+async function getAdminUserRow(userId) {
+  const result = await db.query(
+    `SELECT u.id,
+            u.email,
+            u.name,
+            u.role,
+            u.created_at,
+            u.agent_limit_override,
+            COUNT(a.id)::int AS "agentCount",
+            sub.plan AS "subscriptionPlan",
+            sub.status AS "subscriptionStatus"
+       FROM users u
+       LEFT JOIN agents a ON a.user_id = u.id
+       LEFT JOIN LATERAL (
+         SELECT plan, status
+           FROM subscriptions
+          WHERE user_id = u.id
+          ORDER BY created_at DESC
+          LIMIT 1
+       ) sub ON TRUE
+      WHERE u.id = $1
+      GROUP BY
+        u.id,
+        u.email,
+        u.name,
+        u.role,
+        u.created_at,
+        u.agent_limit_override,
+        sub.plan,
+        sub.status`,
+    [userId]
+  );
+
+  return result.rows[0] || null;
+}
+
 router.get(
   "/stats",
   asyncHandler(async (_req, res) => {
@@ -606,20 +677,50 @@ router.put(
 router.get(
   "/users",
   asyncHandler(async (_req, res) => {
+    const deploymentDefaults = billing.IS_PAAS
+      ? await getDeploymentDefaults()
+      : null;
     const result = await db.query(
       `SELECT u.id,
               u.email,
               u.name,
               u.role,
               u.created_at,
-              COUNT(a.id)::int AS "agentCount"
+              u.agent_limit_override,
+              COUNT(a.id)::int AS "agentCount",
+              sub.plan AS "subscriptionPlan",
+              sub.status AS "subscriptionStatus"
          FROM users u
          LEFT JOIN agents a ON a.user_id = u.id
-        GROUP BY u.id, u.email, u.name, u.role, u.created_at
+         LEFT JOIN LATERAL (
+           SELECT plan, status
+             FROM subscriptions
+            WHERE user_id = u.id
+            ORDER BY created_at DESC
+            LIMIT 1
+         ) sub ON TRUE
+        GROUP BY
+          u.id,
+          u.email,
+          u.name,
+          u.role,
+          u.created_at,
+          u.agent_limit_override,
+          sub.plan,
+          sub.status
         ORDER BY u.created_at DESC`
     );
 
-    res.json(result.rows);
+    res.json(
+      await Promise.all(
+        result.rows.map((row) =>
+          buildAdminUserResponse(row, {
+            deploymentDefaults,
+            subscriptionRow: buildSubscriptionLookup(row),
+          })
+        )
+      )
+    );
   })
 );
 
@@ -658,6 +759,92 @@ router.put(
       })
     );
     res.json(result.rows[0]);
+  })
+);
+
+router.put(
+  "/users/:id/agent-limit",
+  asyncHandler(async (req, res) => {
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        req.body || {},
+        "agent_limit_override"
+      )
+    ) {
+      return res.status(400).json({ error: "agent_limit_override is required" });
+    }
+
+    const existing = await db.query(
+      "SELECT id, email, name, role, agent_limit_override FROM users WHERE id = $1",
+      [req.params.id]
+    );
+    const user = existing.rows[0];
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.locals.auditContext = buildUserContext(user);
+
+    const requestedOverride = req.body?.agent_limit_override;
+    let nextOverride = null;
+    if (requestedOverride !== null) {
+      if (!Number.isSafeInteger(requestedOverride)) {
+        return res
+          .status(400)
+          .json({ error: "agent_limit_override must be an integer or null" });
+      }
+      if (requestedOverride < 0) {
+        return res
+          .status(400)
+          .json({ error: "agent_limit_override must be 0 or greater" });
+      }
+      if (
+        !billing.IS_PAAS &&
+        requestedOverride > billing.SELFHOSTED_LIMITS.max_agents
+      ) {
+        return res.status(400).json({
+          error: `agent_limit_override cannot exceed the self-hosted platform ceiling (${billing.SELFHOSTED_LIMITS.max_agents})`,
+        });
+      }
+      nextOverride = requestedOverride;
+    }
+
+    const deploymentDefaults = billing.IS_PAAS
+      ? await getDeploymentDefaults()
+      : null;
+    const previousSubscription = await billing.getSubscription(user.id, {
+      userRow: user,
+      ...(deploymentDefaults ? { deploymentDefaults } : {}),
+    });
+
+    await db.query(
+      "UPDATE users SET agent_limit_override = $1 WHERE id = $2",
+      [nextOverride, req.params.id]
+    );
+
+    const updatedRow = await getAdminUserRow(req.params.id);
+    const responseUser = await buildAdminUserResponse(updatedRow, {
+      deploymentDefaults,
+      subscriptionRow: buildSubscriptionLookup(updatedRow),
+    });
+
+    await monitoring.logEvent(
+      "admin_user_agent_limit_updated",
+      nextOverride == null
+        ? `Admin cleared agent cap override for ${user.email}`
+        : `Admin set agent cap override for ${user.email} to ${nextOverride}`,
+      adminUserAuditMetadata(req, responseUser, {
+        result: {
+          previousAgentLimitOverride: billing.normalizeAgentLimitOverride(
+            user.agent_limit_override
+          ),
+          nextAgentLimitOverride: responseUser.agent_limit_override,
+          previousAgentLimit: previousSubscription.agent_limit,
+          nextAgentLimit: responseUser.agent_limit,
+          nextAgentLimitSource: responseUser.agent_limit_source,
+          nextIsUnlimited: responseUser.is_unlimited,
+        },
+      })
+    );
+
+    res.json(responseUser);
   })
 );
 

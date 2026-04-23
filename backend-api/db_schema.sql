@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT,
   role TEXT DEFAULT 'user',
   name TEXT,
+  agent_limit_override INTEGER,
   provider TEXT,
   provider_id TEXT,
   stripe_customer_id TEXT,

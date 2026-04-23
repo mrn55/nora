@@ -17,6 +17,60 @@ function matchesUser(user, search) {
   );
 }
 
+function formatPlanLabel(plan) {
+  const normalized = String(plan || "free").trim().toLowerCase();
+  if (normalized === "selfhosted") return "Self-hosted";
+  if (!normalized) return "Free";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatAgentCap(user) {
+  if (user?.is_unlimited) return "Unlimited";
+  if (Number.isInteger(user?.agent_limit)) return formatCount(user.agent_limit);
+  return "—";
+}
+
+function formatAgentCapSource(source) {
+  switch (source) {
+    case "admin_override":
+      return "Admin override";
+    case "admin_default_unlimited":
+      return "Admin default";
+    case "default":
+    default:
+      return "Default user cap";
+  }
+}
+
+function formatDefaultAgentCap(user) {
+  if (user?.role === "admin") return "Unlimited";
+  if (Number.isInteger(user?.base_agent_limit)) {
+    return formatCount(user.base_agent_limit);
+  }
+  return "—";
+}
+
+function describeDefaultAgentCap(user) {
+  if (user?.role === "admin") {
+    return "Leave blank to restore the admin default of unlimited.";
+  }
+  if (Number.isInteger(user?.base_agent_limit)) {
+    return `Leave blank to use the default cap of ${formatCount(
+      user.base_agent_limit
+    )}.`;
+  }
+  return "Leave blank to use the default cap.";
+}
+
+function buildLimitDrafts(users = []) {
+  return Object.fromEntries(
+    users.map((user) => [
+      user.id,
+      user.agent_limit_override == null ? "" : String(user.agent_limit_override),
+    ])
+  );
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +78,8 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [roleLoadingId, setRoleLoadingId] = useState("");
   const [deleteLoadingId, setDeleteLoadingId] = useState("");
+  const [limitDrafts, setLimitDrafts] = useState({});
+  const [limitLoadingId, setLimitLoadingId] = useState("");
   const deferredSearch = useDeferredValue(search);
   const toast = useToast();
 
@@ -35,7 +91,9 @@ export default function UsersPage() {
       }
 
       const data = await response.json();
-      setUsers(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      setUsers(rows);
+      setLimitDrafts(buildLimitDrafts(rows));
     } catch (error) {
       console.error("Failed to load admin users:", error);
       toast.error(error.message || "Failed to load users");
@@ -98,6 +156,11 @@ export default function UsersPage() {
       }
 
       setUsers((current) => current.filter((entry) => entry.id !== user.id));
+      setLimitDrafts((current) => {
+        const next = { ...current };
+        delete next[user.id];
+        return next;
+      });
       toast.success("User deleted");
     } catch (error) {
       console.error("Failed to delete admin user:", error);
@@ -105,6 +168,61 @@ export default function UsersPage() {
     } finally {
       setDeleteLoadingId("");
     }
+  }
+
+  async function updateAgentLimit(user, nextOverride) {
+    setLimitLoadingId(user.id);
+    try {
+      const response = await fetchWithAuth(`/api/admin/users/${user.id}/agent-limit`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_limit_override: nextOverride }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to update agent cap");
+      }
+
+      setUsers((current) =>
+        current.map((entry) => (entry.id === user.id ? payload : entry))
+      );
+      setLimitDrafts((current) => ({
+        ...current,
+        [user.id]:
+          payload.agent_limit_override == null
+            ? ""
+            : String(payload.agent_limit_override),
+      }));
+      toast.success(
+        nextOverride == null ? "Agent cap override cleared" : "Agent cap updated"
+      );
+    } catch (error) {
+      console.error("Failed to update agent cap:", error);
+      toast.error(error.message || "Failed to update agent cap");
+      loadUsers();
+    } finally {
+      setLimitLoadingId("");
+    }
+  }
+
+  async function saveAgentLimit(user) {
+    const rawValue = String(limitDrafts[user.id] || "").trim();
+    if (!rawValue) {
+      toast.error("Enter an agent cap or clear the override");
+      return;
+    }
+
+    const nextOverride = Number(rawValue);
+    if (!Number.isSafeInteger(nextOverride) || nextOverride < 0) {
+      toast.error("Agent cap must be a whole number that is 0 or greater");
+      return;
+    }
+
+    await updateAgentLimit(user, nextOverride);
+  }
+
+  async function clearAgentLimit(user) {
+    await updateAgentLimit(user, null);
   }
 
   const adminCount = users.filter((user) => user.role === "admin").length;
@@ -227,6 +345,9 @@ export default function UsersPage() {
                       Agents
                     </th>
                     <th className="px-2 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Agent Cap
+                    </th>
+                    <th className="px-2 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
                       Created
                     </th>
                     <th className="px-2 py-3 text-right text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
@@ -237,6 +358,21 @@ export default function UsersPage() {
                 <tbody>
                   {filteredUsers.map((user) => {
                     const isLastAdmin = user.role === "admin" && adminCount <= 1;
+                    const limitDraft = String(limitDrafts[user.id] || "");
+                    const currentLimitDraft =
+                      user.agent_limit_override == null
+                        ? ""
+                        : String(user.agent_limit_override);
+                    const limitDraftDirty = limitDraft !== currentLimitDraft;
+                    const parsedLimitDraft =
+                      limitDraft.trim() === ""
+                        ? null
+                        : Number(limitDraft);
+                    const canSaveLimit =
+                      limitDraftDirty &&
+                      limitDraft.trim() !== "" &&
+                      Number.isSafeInteger(parsedLimitDraft) &&
+                      parsedLimitDraft >= 0;
                     return (
                       <tr
                         key={user.id}
@@ -280,6 +416,67 @@ export default function UsersPage() {
                           <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-bold text-slate-700">
                             {formatCount(user.agentCount)}
                           </span>
+                        </td>
+                        <td className="px-2 py-4">
+                          <div className="min-w-[16rem]">
+                            <p className="text-sm font-semibold text-slate-950">
+                              {formatAgentCap(user)}
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                              {formatAgentCapSource(user.agent_limit_source)} ·{" "}
+                              {formatPlanLabel(user.plan)}
+                            </p>
+                            {user.agent_limit_source === "admin_override" ? (
+                              <p className="mt-1 text-[11px] font-medium text-slate-500">
+                                Default cap: {formatDefaultAgentCap(user)}
+                              </p>
+                            ) : null}
+
+                            <div className="mt-3 flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={limitDraft}
+                                onChange={(event) =>
+                                  setLimitDrafts((current) => ({
+                                    ...current,
+                                    [user.id]: event.target.value,
+                                  }))
+                                }
+                                placeholder={
+                                  user.role === "admin"
+                                    ? "Unlimited default"
+                                    : "Use default"
+                                }
+                                className="w-28 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-red-200 focus:bg-white"
+                              />
+                              <button
+                                disabled={!canSaveLimit || limitLoadingId === user.id}
+                                onClick={() => saveAgentLimit(user)}
+                                className="inline-flex min-w-[4.5rem] items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {limitLoadingId === user.id ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  "Save"
+                                )}
+                              </button>
+                              {user.agent_limit_override != null ? (
+                                <button
+                                  disabled={limitLoadingId === user.id}
+                                  onClick={() => clearAgentLimit(user)}
+                                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  Clear
+                                </button>
+                              ) : null}
+                            </div>
+
+                            <p className="mt-2 text-[11px] font-medium text-slate-500">
+                              {describeDefaultAgentCap(user)}
+                            </p>
+                          </div>
                         </td>
                         <td className="px-2 py-4 text-sm font-medium text-slate-500">
                           {formatDate(user.created_at)}

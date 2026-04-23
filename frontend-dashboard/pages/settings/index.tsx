@@ -9,6 +9,37 @@ import { fetchWithAuth } from "../../lib/api";
 import { useToast } from "../../components/Toast";
 import ActivationChecklist from "../../components/onboarding/ActivationChecklist";
 
+function formatPlanLabel(plan, { selfHosted = false } = {}) {
+  const normalized = String(plan || "free").trim().toLowerCase();
+  if (selfHosted || normalized === "selfhosted") return "Self-hosted";
+  if (!normalized) return "Free";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatAgentCap(limit, isUnlimited) {
+  if (isUnlimited) return "Unlimited";
+  if (Number.isInteger(limit)) return String(limit);
+  return "—";
+}
+
+function describeAgentCapSource(source) {
+  switch (source) {
+    case "admin_override":
+      return "Admin override";
+    case "admin_default_unlimited":
+      return "Admin default";
+    case "default":
+    default:
+      return "Default user cap";
+  }
+}
+
+function formatDefaultAgentCap(role, baseAgentLimit) {
+  if (role === "admin") return "Unlimited";
+  if (Number.isInteger(baseAgentLimit)) return String(baseAgentLimit);
+  return "—";
+}
+
 export default function SettingsPage() {
   const [profile, setProfile] = useState(null);
   const [subscription, setSubscription] = useState(null);
@@ -174,7 +205,20 @@ export default function SettingsPage() {
   }
 
   const plan = subscription?.plan || "free";
-  const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const planLabel = formatPlanLabel(plan, { selfHosted: isSelfHosted });
+  const effectiveAgentCap = formatAgentCap(
+    subscription?.agent_limit,
+    subscription?.is_unlimited
+  );
+  const defaultAgentCap = formatDefaultAgentCap(
+    profile?.role,
+    subscription?.base_agent_limit
+  );
+  const agentCapSource = describeAgentCapSource(
+    subscription?.agent_limit_source ||
+      (profile?.role === "admin" ? "admin_default_unlimited" : "default")
+  );
+  const selfHostedMaxAgents = platformConfig?.selfhosted?.max_agents || 50;
   const memberSince = profile?.created_at ? new Date(profile.created_at).toLocaleDateString("en-US", {
     year: "numeric", month: "long", day: "numeric"
   }) : "—";
@@ -418,8 +462,9 @@ export default function SettingsPage() {
                 </p>
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Agent Limit</label>
-                <p className="text-sm text-slate-900 mt-1 font-semibold">{subscription?.agent_limit || 3}</p>
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Effective Agent Cap</label>
+                <p className="text-sm text-slate-900 mt-1 font-semibold">{effectiveAgentCap}</p>
+                <p className="text-[11px] text-slate-400 mt-1">{agentCapSource}</p>
               </div>
               <div>
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resources per Agent</label>
@@ -438,6 +483,31 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
+            {subscription?.agent_limit_source === "admin_override" &&
+            ((Number.isInteger(subscription?.base_agent_limit) &&
+              subscription.base_agent_limit !== subscription.agent_limit) ||
+              profile?.role === "admin") ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-sm font-semibold text-amber-900">
+                  Admin override active
+                </p>
+                <p className="mt-1 text-sm text-amber-800">
+                  Your account is capped at {effectiveAgentCap} agents. The
+                  default cap for your role is {defaultAgentCap}.
+                </p>
+              </div>
+            ) : null}
+            {subscription?.is_unlimited ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm font-semibold text-slate-900">
+                  Admin default
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Admin accounts are uncapped by default. A finite per-user cap
+                  can still be applied from the admin panel when needed.
+                </p>
+              </div>
+            ) : null}
             <div className="flex gap-3 pt-4">
               {plan === "free" && (
                 <a
@@ -466,13 +536,35 @@ export default function SettingsPage() {
           <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-4">
               <Shield size={20} className="text-blue-600" />
-              <h2 className="text-lg font-bold text-slate-900">Resource Limits</h2>
+              <h2 className="text-lg font-bold text-slate-900">Usage & Resource Limits</h2>
             </div>
-            <p className="text-sm text-slate-400 mb-4">Self-hosted mode — limits set by your operator in the server configuration.</p>
+            <p className="text-sm text-slate-400 mb-4">
+              Self-hosted mode — admin accounts are uncapped by default, and
+              all other users default to 3 agents unless an admin sets an
+              override.
+            </p>
+            <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-4">
+              <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">
+                Your agent cap
+              </p>
+              <p className="mt-2 text-2xl font-black text-slate-900">
+                {effectiveAgentCap}
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-600">
+                {agentCapSource}
+              </p>
+              {subscription?.agent_limit_source === "admin_override" ? (
+                <p className="mt-2 text-sm text-slate-500">
+                  Default cap for your role is {defaultAgentCap}. The
+                  self-hosted finite-cap ceiling remains {selfHostedMaxAgents}{" "}
+                  agents.
+                </p>
+              ) : null}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-black text-slate-900">{platformConfig?.selfhosted?.max_agents || 50}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Max Agents</p>
+                <p className="text-2xl font-black text-slate-900">{selfHostedMaxAgents}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Finite Cap Ceiling</p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
                 <p className="text-2xl font-black text-slate-900">{platformConfig?.selfhosted?.max_vcpu || 16}</p>
