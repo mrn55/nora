@@ -1766,7 +1766,7 @@ function MigrationDraftPreview({ draft, busyAction, onDiscard }) {
       ]
     : [
         {
-          label: "Agent Files",
+          label: "Imported Files",
           value: draft.openclaw?.fileCount || draft.summary?.fileCount || 0,
         },
         {
