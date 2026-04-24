@@ -36,9 +36,14 @@ export default function LogViewer({
   useEffect(() => {
     if (!agentId) return;
 
-    const token = localStorage.getItem("token");
+    // The WebSocket upgrade is authenticated by the HttpOnly nora_auth cookie
+    // that the browser sends automatically on same-origin upgrades. For users
+    // still on legacy localStorage-only sessions (pre-cookie migration) we
+    // append ?token= so they keep working until their next login.
+    const legacy = localStorage.getItem("token");
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/ws/logs/${agentId}?token=${token}`;
+    const qs = legacy ? `?token=${encodeURIComponent(legacy)}` : "";
+    const url = `${proto}//${window.location.host}/api/ws/logs/${agentId}${qs}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;

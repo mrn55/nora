@@ -31,6 +31,7 @@ export default function Signup() {
     try {
       const signupRes = await fetch("/api/auth/signup", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
@@ -44,6 +45,7 @@ export default function Signup() {
 
       const loginRes = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
@@ -51,7 +53,9 @@ export default function Signup() {
       const loginData = await loginRes.json().catch(() => ({}));
 
       if (loginRes.ok && loginData.token) {
-        localStorage.setItem("token", loginData.token);
+        // Backend set an HttpOnly nora_auth cookie; we don't mirror the token
+        // into localStorage anymore. Any stale legacy token gets dropped here.
+        localStorage.removeItem("token");
         window.location.assign("/app/getting-started");
         return;
       }

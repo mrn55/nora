@@ -49,11 +49,20 @@ async function listProviders(userId) {
     "SELECT id, user_id, provider, api_key, model, config, is_default, created_at FROM llm_providers WHERE user_id = $1 ORDER BY created_at",
     [userId]
   );
-  return result.rows.map((row) => ({
-    ...row,
-    api_key_masked: maskKey(decrypt(row.api_key)),
-    api_key: undefined, // never return raw key
-  }));
+  return result.rows.map((row) => {
+    let masked;
+    try {
+      masked = maskKey(decrypt(row.api_key));
+    } catch (err) {
+      console.warn(`[llmProviders] Cannot decrypt key for provider ${row.provider} (user ${row.user_id}): ${err.message}`);
+      masked = "⚠ unreadable";
+    }
+    return {
+      ...row,
+      api_key_masked: masked,
+      api_key: undefined, // never return raw key
+    };
+  });
 }
 
 async function addProvider(userId, provider, apiKey, model, config = {}) {

@@ -267,15 +267,13 @@ export default function MetricsTab({ agentId }) {
         return;
       }
 
-      const token = localStorage.getItem("token");
-      if (!token) {
-        setStreamState("disconnected");
-        return;
-      }
-
+      // Upgrade carries the HttpOnly nora_auth cookie automatically. Legacy
+      // localStorage tokens are appended for backward compat during migration.
+      const legacy = localStorage.getItem("token");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const qs = legacy ? `?token=${encodeURIComponent(legacy)}` : "";
       socket = new WebSocket(
-        `${protocol}//${window.location.host}/api/ws/metrics/${agentId}?token=${token}`
+        `${protocol}//${window.location.host}/api/ws/metrics/${agentId}${qs}`
       );
 
       socket.onopen = () => {

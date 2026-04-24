@@ -11,17 +11,17 @@ function AdminAccessGate({ children }) {
     let active = true;
 
     async function verifyAdminAccess() {
-      const token = window.localStorage.getItem("token");
-      if (!token) {
-        window.location.replace("/login");
-        return;
-      }
+      // Primary auth is the HttpOnly nora_auth cookie, sent automatically.
+      // A legacy localStorage token is forwarded for users still on the
+      // pre-cookie session so they don't get kicked out mid-session.
+      const legacy = window.localStorage.getItem("token");
+      const headers: Record<string, string> = {};
+      if (legacy) headers["Authorization"] = `Bearer ${legacy}`;
 
       try {
         const response = await fetch("/api/auth/me", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          credentials: "include",
+          headers,
         });
 
         if (response.status === 401) {

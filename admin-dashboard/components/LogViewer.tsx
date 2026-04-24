@@ -20,9 +20,12 @@ export default function LogViewer({
   useEffect(() => {
     if (!agentId) return undefined;
 
-    const token = localStorage.getItem("token");
+    // Same-origin WS upgrade → HttpOnly nora_auth cookie is sent automatically.
+    // Legacy localStorage tokens are forwarded during the cookie migration.
+    const legacy = localStorage.getItem("token");
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/api/ws/logs/${agentId}?token=${token}`;
+    const qs = legacy ? `?token=${encodeURIComponent(legacy)}` : "";
+    const url = `${protocol}//${window.location.host}/api/ws/logs/${agentId}${qs}`;
 
     const socket = new WebSocket(url);
     socket.onopen = () => setConnected(true);

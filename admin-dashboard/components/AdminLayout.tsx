@@ -79,7 +79,13 @@ export default function AdminLayout({ children }) {
 
   function handleLogout() {
     localStorage.removeItem("token");
-    window.location.href = "/login";
+    // Clear the HttpOnly nora_auth cookie server-side before navigating so
+    // /login does not see a still-valid session and bounce back in.
+    fetch("/api/auth/logout", { method: "POST", credentials: "include" })
+      .catch(() => {})
+      .finally(() => {
+        window.location.href = "/login";
+      });
   }
 
   const showReleaseBanner = Boolean(release?.updateAvailable);

@@ -44,6 +44,62 @@ const db = new Pool({
   port: parseInt(process.env.DB_PORT || "5432"),
 });
 
+// Hash any agent ID (uuid string or integer) to a signed 64-bit BigInt suitable
+// for pg_try_advisory_lock(bigint). Uses FNV-1a over the string form. The lock
+// keyspace only needs to be collision-resistant within the active agent set.
+function advisoryLockKeyForAgent(agentId) {
+  const str = String(agentId);
+  let hash = 0xcbf29ce484222325n; // FNV-1a 64-bit offset basis
+  const prime = 0x100000001b3n;
+  const mask = 0xffffffffffffffffn;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash ^ BigInt(str.charCodeAt(i))) * prime) & mask;
+  }
+  // pg bigint is signed; fold the high bit so the value fits in int8 range.
+  return hash > 0x7fffffffffffffffn ? hash - 0x10000000000000000n : hash;
+}
+
+/**
+ * Acquire a per-agent session-level advisory lock so two concurrent provision
+ * jobs for the same agent ID (same worker or different worker replicas) cannot
+ * both call adapter.create() and double-provision containers.
+ *
+ * Returns a handle that must be released in a finally block. The lock is tied
+ * to the pg client's session: a worker crash drops the connection and the
+ * lock is released by Postgres automatically.
+ */
+async function acquireAgentProvisionLock(agentId) {
+  const client = await db.connect();
+  try {
+    const lockKey = advisoryLockKeyForAgent(agentId);
+    const res = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [lockKey.toString()]);
+    if (!res.rows[0]?.locked) {
+      client.release();
+      const err = new Error(`Agent ${agentId} is already being provisioned by another worker`);
+      err.code = "PROVISION_LOCK_BUSY";
+      throw err;
+    }
+    let released = false;
+    return {
+      release: async () => {
+        if (released) return;
+        released = true;
+        try {
+          await client.query("SELECT pg_advisory_unlock($1)", [lockKey.toString()]);
+        } catch (e) {
+          console.warn(`[provisioner] advisory unlock failed for agent ${agentId}: ${e.message}`);
+        } finally {
+          client.release();
+        }
+      },
+    };
+  } catch (err) {
+    // If connect() succeeded but lock acquisition threw after, the catch above
+    // already released the client. Re-throw.
+    throw err;
+  }
+}
+
 function parseTimeoutMs(rawValue, fallbackMs) {
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) && parsed >= 60000 ? parsed : fallbackMs;
@@ -373,8 +429,10 @@ async function fetchUserLlmEnvVars(userId) {
       if (!envName || !row.api_key) continue;
       try {
         llmEnvVars[envName] = decrypt(row.api_key);
-      } catch {
-        llmEnvVars[envName] = row.api_key;
+      } catch (err) {
+        console.warn(
+          `[provisioner] Skipping LLM key for user ${userId} provider ${row.provider}: ${err.message}`,
+        );
       }
     }
     return normalizeEnvValueMap(llmEnvVars);
@@ -969,6 +1027,12 @@ const worker = new Worker(
     const ram_mb = specs?.ram_mb || 1024;
     const disk_gb = specs?.disk_gb || 10;
 
+    // Per-agent advisory lock: prevents two concurrent provision jobs (same
+    // worker or cross-replica) from both calling adapter.create() and leaking
+    // one of the containers when the second UPDATE overwrites the first.
+    const provisionLock = await acquireAgentProvisionLock(id);
+    try {
+
     const agentRowResult = await db.query(
       `SELECT image, template_payload, sandbox_type, backend_type, runtime_family,
             deploy_target, sandbox_profile
@@ -1189,8 +1253,10 @@ const worker = new Worker(
         if (envName && row.access_token) {
           try {
             integrationEnvVars[envName] = decrypt(row.access_token);
-          } catch {
-            integrationEnvVars[envName] = row.access_token;
+          } catch (err) {
+            console.warn(
+              `[provisioner] Skipping integration token for agent ${id} provider ${row.provider}: ${err.message}`,
+            );
           }
         }
         // Config fields (URLs, usernames, IDs, secondary secrets)
@@ -1290,6 +1356,27 @@ const worker = new Worker(
       runtimePort = result.runtimePort || null;
       gatewayHost = result.gatewayHost || null;
       gatewayPort = result.gatewayPort || null;
+
+      // Persist container_id immediately so that if the worker crashes or the
+      // final status UPDATE fails below, the container can still be located
+      // and cleaned up by the failure catch, a reconciler, or a retry. Without
+      // this, a crash between create() and the final UPDATE leaves an orphan
+      // container that no DB row references.
+      if (containerId) {
+        try {
+          await db.query(
+            `UPDATE agents
+                SET container_id = $2,
+                    container_name = COALESCE($3, container_name)
+              WHERE id = $1`,
+            [id, containerId, containerName || null],
+          );
+        } catch (e) {
+          console.error(
+            `[provisioner] Failed to persist container_id for agent ${id} (will still attempt final update): ${e.message}`,
+          );
+        }
+      }
 
       // If network discovery failed, host may be "localhost" which is unreachable
       // from backend-api. Attempt to resolve the correct Compose network IP.
@@ -1529,6 +1616,10 @@ const worker = new Worker(
     } catch (err) {
       console.error("Failed to update agent status:", err.message);
       throw err;
+    }
+
+    } finally {
+      await provisionLock.release();
     }
   },
   { connection, concurrency: DEPLOYMENT_WORKER_CONCURRENCY },

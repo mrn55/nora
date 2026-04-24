@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const db = require("../db");
 const { authenticateToken } = require("../middleware/auth");
+const { setAuthCookie, clearAuthCookie } = require("../authCookie");
 const { normalizeEmail, normalizeProvider, verifyOAuthIdentity } = require("../oauthProviders");
 
 const router = express.Router();
@@ -21,6 +22,12 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many attempts, please try again later" },
 });
+
+// Precomputed bcrypt hash of a random high-entropy string. Used as a constant-
+// time dummy comparison target when a login attempt references a non-existent
+// user, so that timing does not reveal user existence. The plaintext is not
+// stored and is not recoverable from this hash.
+const DUMMY_BCRYPT_HASH = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8hV7FNHZi8jN2xq9YhU7C2c4SaB2Vu";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function validateEmail(email) {
@@ -96,19 +103,24 @@ router.post("/login", authLimiter, async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM users WHERE email=$1", [normalizedEmail]);
     const user = result.rows[0];
+    // Always run bcrypt.compare to keep response timing independent of whether
+    // the email exists. Without this, a missing user returns ~100ms faster than
+    // a wrong password, which lets attackers enumerate registered accounts.
+    const hashToCompare = user && user.password_hash ? user.password_hash : DUMMY_BCRYPT_HASH;
+    const passwordOk = await bcrypt.compare(password, hashToCompare);
     if (!user) return res.status(401).json({ error: "Invalid email or password" });
     if (!user.password_hash) {
       return res.status(401).json({
         error: `This account uses ${user.provider || "OAuth"} login. Please sign in with ${user.provider || "your OAuth provider"} instead.`,
       });
     }
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: "Invalid email or password" });
+    if (!passwordOk) return res.status(401).json({ error: "Invalid email or password" });
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn: "7d", algorithm: "HS256" },
     );
+    setAuthCookie(res, token, req);
     res.json({ token });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -208,8 +220,9 @@ router.post("/oauth-login", authLimiter, async (req, res) => {
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn: "7d", algorithm: "HS256" },
     );
+    setAuthCookie(res, token, req);
     res.json({ token, user });
   } catch (e) {
     if (/Unsupported OAuth provider/i.test(e.message)) {
@@ -310,6 +323,32 @@ router.patch("/profile", authenticateToken, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// POST /auth/session-upgrade — upgrade a Bearer token into an HttpOnly cookie.
+//
+// The NextAuth flow (frontend-marketing) talks to /auth/login and
+// /auth/oauth-login server-to-server, so the Set-Cookie response lands on the
+// NextAuth server rather than the user's browser. The callback bridge page
+// then hits this endpoint from the browser, passing its JWT in the
+// Authorization header, so the cookie can be set directly on the user's
+// session. The token is re-verified here — a forged Bearer gets rejected.
+//
+// Path avoids /auth/session because nginx routes /api/auth/session to
+// NextAuth's own session endpoint on the marketing site.
+router.post("/session-upgrade", authenticateToken, (req, res) => {
+  const authHeader = req.headers["authorization"] || "";
+  const [, token] = authHeader.split(" ");
+  if (!token) return res.status(400).json({ error: "Bearer token required" });
+  setAuthCookie(res, token, req);
+  res.json({ success: true });
+});
+
+// POST /auth/logout — clear the session cookie. No auth required so that a
+// page holding a stale/invalid cookie can still clean itself up.
+router.post("/logout", (req, res) => {
+  clearAuthCookie(res, req);
+  res.json({ success: true });
 });
 
 module.exports = router;

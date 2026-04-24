@@ -124,10 +124,15 @@ services:
     image: postgres:15
     restart: always
     ports:
-      - "5433:5432"
+      # Bind to localhost only — exposing Postgres on all interfaces turns every
+      # host-network peer into a potential attacker. Host-side tools still reach
+      # it via 127.0.0.1:5433; inter-container traffic uses the compose network.
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: ${DB_USER:-nora}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-nora}
+      # DB_PASSWORD is required. setup.sh generates a random 48-char hex secret;
+      # compose up will fail with a clear error if .env is missing or unset.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (run ./setup.sh or edit .env)}
       POSTGRES_DB: ${DB_NAME:-nora}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -155,7 +160,7 @@ services:
       PGHOST: postgres
       PGPORT: "5432"
       PGUSER: ${DB_USER:-nora}
-      PGPASSWORD: ${DB_PASSWORD:-nora}
+      PGPASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (run ./setup.sh or edit .env)}
       PGDATABASE: ${DB_NAME:-nora}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}

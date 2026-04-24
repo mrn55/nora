@@ -43,14 +43,26 @@ function encrypt(text) {
   return `${iv.toString("hex")}:${authTag}:${encrypted}`;
 }
 
+class DecryptionError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "DecryptionError";
+    this.statusCode = 500;
+  }
+}
+
 /**
  * Decrypt "iv:authTag:ciphertext" string back to plaintext.
- * If ENCRYPTION_KEY is not set or data doesn't look encrypted, returns as-is.
+ * Returns as-is when ENCRYPTION_KEY is unset, data is empty, or the string
+ * doesn't have the expected three-part shape (pre-encryption legacy rows).
+ * Throws DecryptionError when the shape matches but authenticated decryption
+ * fails — we must never return ciphertext to callers who think they're getting
+ * plaintext (it would leak into env vars, API responses, and migration exports).
  */
 function decrypt(data) {
   if (!ENCRYPTION_KEY || !data) return data;
   const parts = data.split(":");
-  if (parts.length !== 3) return data; // not encrypted
+  if (parts.length !== 3) return data; // not encrypted (legacy row)
   const [ivHex, authTagHex, encrypted] = parts;
   try {
     const key = Buffer.from(ENCRYPTION_KEY, "hex");
@@ -62,8 +74,8 @@ function decrypt(data) {
     return decrypted;
   } catch (err) {
     console.error("Decryption failed (key mismatch or corrupted data):", err.message);
-    return data; // return raw value so callers don't crash
+    throw new DecryptionError("Failed to decrypt stored credential — encryption key may have rotated or data is corrupted");
   }
 }
 
-module.exports = { encrypt, decrypt, isEncryptionConfigured, ensureEncryptionConfigured };
+module.exports = { encrypt, decrypt, isEncryptionConfigured, ensureEncryptionConfigured, DecryptionError };

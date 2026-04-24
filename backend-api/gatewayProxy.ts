@@ -894,7 +894,9 @@ function attachGatewayWS(server) {
 
     let payload;
     try {
-      payload = jwt.verify(cookieToken, process.env.JWT_SECRET);
+      payload = jwt.verify(cookieToken, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
     } catch {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();

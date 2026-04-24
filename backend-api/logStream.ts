@@ -5,10 +5,12 @@ const jwt = require("jsonwebtoken");
 const db = require("./db");
 const containerManager = require("./containerManager");
 const { resolveAgentBackendType } = require("./agentRuntimeFields");
+const { extractSessionTokenFromUpgrade } = require("./authCookie");
 
 /**
  * Attach the live-log WebSocket server to an existing HTTP server.
- * Clients connect to  ws://<host>/ws/logs/<agentId>?token=<jwt>
+ * Clients connect to  ws://<host>/ws/logs/<agentId> (cookie-authenticated)
+ * or the legacy  ws://<host>/ws/logs/<agentId>?token=<jwt>  form.
  *
  * Uses containerManager for multi-backend support (Docker, K8s, Proxmox).
  * Reconciles live container status before deciding to stream.
@@ -23,10 +25,12 @@ function attachLogStream(server) {
       return; // not ours — let other upgrade handlers (exec, etc.) handle it
     }
 
-    const token = url.searchParams.get("token");
+    const token = extractSessionTokenFromUpgrade(request, url.searchParams);
     let payload;
     try {
-      payload = jwt.verify(token, process.env.JWT_SECRET);
+      payload = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
     } catch {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();

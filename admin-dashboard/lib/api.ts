@@ -8,12 +8,17 @@ function hasHeader(headers: FetchHeaders | undefined, name: string) {
   return Object.keys(headers || {}).some((key) => key.toLowerCase() === needle);
 }
 
+// Session auth primarily rides on the HttpOnly `nora_auth` cookie that the
+// backend sets at /auth/login. credentials:"include" makes the browser attach
+// the cookie on every API call. The Authorization header is still sent when
+// a legacy localStorage token exists, so sessions from before the cookie
+// migration keep working until they expire or the user logs in again.
 export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
-  const token =
+  const legacyToken =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
   const headers: FetchHeaders = { ...(options.headers || {}) };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  if (legacyToken && !hasHeader(headers, "authorization")) {
+    headers["Authorization"] = `Bearer ${legacyToken}`;
   }
   if (
     options.body != null &&
@@ -22,7 +27,11 @@ export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
   ) {
     headers["Content-Type"] = "application/json";
   }
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(url, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
   if (res.status === 401 && typeof window !== "undefined") {
     localStorage.removeItem("token");
     window.location.href = "/login";
@@ -33,4 +42,17 @@ export async function fetchWithAuth(url: string, options: FetchOptions = {}) {
     throw new Error("Forbidden");
   }
   return res;
+}
+
+export async function logout() {
+  if (typeof window === "undefined") return;
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // best-effort
+  }
+  localStorage.removeItem("token");
 }

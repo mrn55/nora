@@ -104,12 +104,16 @@ export default function OpenClawUIPanel({ agentId }) {
     };
   }, [agentId]);
 
-  // Build the same-origin embed URL (proxied through the backend, no cross-origin issues)
+  // Build the same-origin embed URL (proxied through the backend, no cross-origin issues).
+  // The backend mints the embed-session cookie from the main HttpOnly nora_auth
+  // cookie that is sent automatically on this same-origin iframe load. A
+  // legacy ?token= is forwarded only when the user has not yet migrated to
+  // cookie sessions.
   function getEmbedUrl() {
     if (!gatewayInfo || !gatewayReady) return "";
-    const jwt = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (!jwt) return "";
-    return `/api/agents/${agentId}/gateway/embed?token=${encodeURIComponent(jwt)}`;
+    const legacy = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const qs = legacy ? `?token=${encodeURIComponent(legacy)}` : "";
+    return `/api/agents/${agentId}/gateway/embed${qs}`;
   }
 
   // Open the same-origin embedded gateway UI in a new window without exposing the gateway password.

@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 
-// Bridge page: extracts the platform JWT from NextAuth session,
-// stores it in localStorage so the dashboard's fetchWithAuth() works,
-// then redirects new users into the first-run activation flow.
+// Bridge page: after NextAuth finishes OAuth (or Credentials) and places the
+// platform JWT on the session, we hand that token to the backend over a
+// same-origin POST so it can set the HttpOnly nora_auth cookie on the user's
+// browser. From that point on, all API calls authenticate via the cookie and
+// the JWT never touches localStorage.
 export default function AuthCallback() {
   const { data: session, status } = useSession();
 
@@ -11,11 +13,11 @@ export default function AuthCallback() {
     if (status === "loading") return;
     const accessToken = (session as any)?.accessToken;
 
-    async function routeAfterLogin(token) {
+    async function routeAfterLogin() {
       try {
         const [providersRes, agentsRes] = await Promise.all([
-          fetch("/api/llm-providers", { headers: { Authorization: `Bearer ${token}` } }),
-          fetch("/api/agents", { headers: { Authorization: `Bearer ${token}` } }),
+          fetch("/api/llm-providers", { credentials: "include" }),
+          fetch("/api/agents", { credentials: "include" }),
         ]);
 
         const [providers, agents] = await Promise.all([
@@ -32,11 +34,32 @@ export default function AuthCallback() {
       }
     }
 
+    async function upgradeToCookie(token: string) {
+      try {
+        const res = await fetch("/api/auth/session-upgrade", {
+          method: "POST",
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        // Regardless of the cookie upgrade result, clear any legacy token so
+        // we don't leave the JWT lingering in localStorage.
+        localStorage.removeItem("token");
+        if (!res.ok) {
+          // Cookie upgrade failed — send the user back to login so they can
+          // retry cleanly rather than limping along with no usable session.
+          window.location.href = "/login";
+          return;
+        }
+        await routeAfterLogin();
+      } catch {
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+      }
+    }
+
     if (accessToken) {
-      localStorage.setItem("token", accessToken);
-      routeAfterLogin(accessToken);
+      upgradeToCookie(accessToken);
     } else {
-      // No session — redirect to login
       window.location.href = "/login";
     }
   }, [session, status]);

@@ -41,9 +41,13 @@ export default function OfficialDashboardPanel({
 
   const embedUrl = useMemo(() => {
     if (!dashboardReady) return "";
-    const jwt = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (!jwt) return "";
-    return `/api/agents/${agentId}/hermes-ui/embed?token=${encodeURIComponent(jwt)}`;
+    // Same-origin iframe → the main HttpOnly nora_auth cookie is sent with
+    // the embed request and the backend mints the embed-session cookie from
+    // it. We forward a legacy localStorage token only for sessions that
+    // predate the cookie migration.
+    const legacy = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const qs = legacy ? `?token=${encodeURIComponent(legacy)}` : "";
+    return `/api/agents/${agentId}/hermes-ui/embed${qs}`;
   }, [agentId, dashboardReady]);
 
   function handleRefresh() {

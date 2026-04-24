@@ -3,6 +3,7 @@ const { WebSocketServer } = require("ws");
 const jwt = require("jsonwebtoken");
 const db = require("./db");
 const { buildAgentStatsResponse } = require("./agentTelemetry");
+const { extractSessionTokenFromUpgrade } = require("./authCookie");
 
 const STREAM_INTERVAL_MS = 5000;
 
@@ -16,11 +17,13 @@ function attachMetricsStream(server) {
       return;
     }
 
-    const token = url.searchParams.get("token");
+    const token = extractSessionTokenFromUpgrade(request, url.searchParams);
     let payload;
 
     try {
-      payload = jwt.verify(token, process.env.JWT_SECRET);
+      payload = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
     } catch {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();

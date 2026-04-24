@@ -118,8 +118,19 @@ export const authOptions: AuthOptions = {
     },
 
     async redirect({ url, baseUrl }) {
-      // After sign-in, send users to the callback bridge page
-      if (url.startsWith(baseUrl)) return url;
+      // After sign-in, send users to the callback bridge page. Compare parsed
+      // origins rather than a prefix match — `url.startsWith(baseUrl)` would
+      // permit `https://app.example.com.attacker.tld/...` when baseUrl is
+      // `https://app.example.com`, opening a cross-origin redirect vector on
+      // OAuth flows. Relative URLs (`/app/...`) are explicitly allowed.
+      try {
+        if (url.startsWith("/")) return `${baseUrl}${url}`;
+        const parsed = new URL(url);
+        const base = new URL(baseUrl);
+        if (parsed.origin === base.origin) return url;
+      } catch {
+        // Malformed URL — fall through to safe default
+      }
       return `${baseUrl}/auth/callback`;
     },
   },

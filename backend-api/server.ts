@@ -363,19 +363,28 @@ async function resolveEmbedAccess(
   } = {},
 ) {
   const jwt = require("jsonwebtoken");
+  const { AUTH_COOKIE_NAME } = require("./authCookie");
   const agentId = req.params.agentId;
   const embedCookieName = getEmbedSessionCookieName(agentId, cookiePrefix);
   const cookies = parseCookieHeader(req.headers.cookie || "");
   const cookieToken = cookies[embedCookieName];
+  const mainAuthCookie = cookies[AUTH_COOKIE_NAME];
   const queryToken = allowQueryToken && typeof req.query.token === "string" ? req.query.token : "";
+  // A full user JWT may arrive either as a ?token= query parameter (legacy,
+  // from the iframe src) or as the main HttpOnly nora_auth cookie that
+  // same-origin iframe navigations carry automatically. Either minting path
+  // yields the same embed-scoped cookie on success.
+  const mintingToken = queryToken || mainAuthCookie || "";
 
   let userId;
   let relayToken;
 
-  if (queryToken) {
+  if (mintingToken) {
     let payload;
     try {
-      payload = jwt.verify(queryToken, process.env.JWT_SECRET);
+      payload = jwt.verify(mintingToken, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
     } catch {
       res.status(401).send("invalid token");
       return null;
@@ -392,7 +401,9 @@ async function resolveEmbedAccess(
   } else if (cookieToken) {
     let payload;
     try {
-      payload = jwt.verify(cookieToken, process.env.JWT_SECRET);
+      payload = jwt.verify(cookieToken, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
     } catch {
       res.status(401).send("invalid embed session");
       return null;
@@ -417,6 +428,7 @@ async function resolveEmbedAccess(
   if (!relayToken) {
     relayToken = jwt.sign({ id: userId, agentId, scope }, process.env.JWT_SECRET, {
       expiresIn: Math.floor(EMBED_SESSION_TTL_MS / 1000),
+      algorithm: "HS256",
     });
     res.cookie(embedCookieName, relayToken, {
       httpOnly: true,
@@ -461,6 +473,23 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use(globalLimiter);
+
+// State-changing operations (POST/PUT/PATCH/DELETE) get a tighter per-IP cap
+// on top of the global limit. The global limiter is generous so that chatty
+// read traffic doesn't get throttled; the mutation limiter is where the real
+// abuse protection lives — a leaked JWT cannot be used to spam destructive
+// calls (delete/restart/stop, admin writes, billing changes, channel mutations)
+// at more than 60 per minute from a single IP. Safe methods are skipped so
+// normal browsing is unaffected.
+const mutationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please slow down" },
+  skip: (req) => req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS",
+});
+app.use(mutationLimiter);
 
 // Stripe webhook needs raw body — must come before express.json()
 if (billing.BILLING_ENABLED) {

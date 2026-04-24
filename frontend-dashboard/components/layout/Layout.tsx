@@ -10,12 +10,25 @@ export default function Layout({ children }) {
   const [systemBanner, setSystemBanner] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      window.location.href = "/login";
-    } else {
-      setAuthChecked(true);
-    }
+    // Ask the server whether we're authenticated. The HttpOnly nora_auth
+    // cookie (if present) rides along automatically; any legacy localStorage
+    // token is sent as a Bearer fallback for sessions predating the cookie
+    // migration. If neither works we bounce to login.
+    const legacy = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (legacy) headers["Authorization"] = `Bearer ${legacy}`;
+    fetch("/api/auth/me", { credentials: "include", headers })
+      .then((res) => {
+        if (res.ok) {
+          setAuthChecked(true);
+        } else {
+          localStorage.removeItem("token");
+          window.location.href = "/login";
+        }
+      })
+      .catch(() => {
+        window.location.href = "/login";
+      });
     // Restore collapsed state
     const saved = localStorage.getItem("sidebar-collapsed");
     if (saved === "true") setSidebarCollapsed(true);

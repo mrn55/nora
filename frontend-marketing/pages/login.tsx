@@ -23,31 +23,41 @@ export default function Login() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-      return;
-    }
-
-    fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+    // Preferred path: session rides on the HttpOnly nora_auth cookie, so we
+    // just ask /auth/me with credentials included and see if the server
+    // recognizes us. This works without touching localStorage at all.
+    fetch("/api/auth/me", { credentials: "include" })
       .then((res) => {
         if (res.ok) {
           window.location.assign("/app/dashboard");
           return;
         }
-
-        localStorage.removeItem("token");
+        // Legacy migration: older sessions only have a token in localStorage
+        // and no cookie. Verify that token one last time; on success, let the
+        // user land in the app (their next login will set the cookie).
+        const legacy = localStorage.getItem("token");
+        if (!legacy) return;
+        fetch("/api/auth/me", {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${legacy}` },
+        })
+          .then((res2) => {
+            if (res2.ok) {
+              window.location.assign("/app/dashboard");
+            } else {
+              localStorage.removeItem("token");
+            }
+          })
+          .catch(() => localStorage.removeItem("token"));
       })
-      .catch(() => {
-        localStorage.removeItem("token");
-      });
+      .catch(() => {});
   }, []);
 
-  async function routeAfterLogin(token) {
+  async function routeAfterLogin() {
     try {
       const [providersRes, agentsRes] = await Promise.all([
-        fetch("/api/llm-providers", { headers: { Authorization: `Bearer ${token}` } }),
-        fetch("/api/agents", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/llm-providers", { credentials: "include" }),
+        fetch("/api/agents", { credentials: "include" }),
       ]);
 
       const [providers, agents] = await Promise.all([
@@ -73,6 +83,7 @@ export default function Login() {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
@@ -80,8 +91,11 @@ export default function Login() {
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.token) {
-        localStorage.setItem("token", data.token);
-        await routeAfterLogin(data.token);
+        // The backend set an HttpOnly nora_auth cookie in the response — the
+        // JWT is no longer stored client-side, which keeps it out of reach of
+        // any script (including XSS payloads). Clear any stale legacy token.
+        localStorage.removeItem("token");
+        await routeAfterLogin();
         return;
       }
 

@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const db = require("./db");
 const containerManager = require("./containerManager");
 const { resolveAgentBackendType } = require("./agentRuntimeFields");
+const { extractSessionTokenFromUpgrade } = require("./authCookie");
 
 // Direct Docker access needed for exec sessions (containerManager.exec returns
 // the raw exec object, but we need the Docker container object for full TTY support)
@@ -37,10 +38,12 @@ function attachExecStream(server) {
     const match = url.pathname.match(/^\/ws\/exec\/(.+)$/);
     if (!match) return; // not ours — let logStream or others handle it
 
-    const token = url.searchParams.get("token");
+    const token = extractSessionTokenFromUpgrade(request, url.searchParams);
     let payload;
     try {
-      payload = jwt.verify(token, process.env.JWT_SECRET);
+      payload = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
     } catch {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();

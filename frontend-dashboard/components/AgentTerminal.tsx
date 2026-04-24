@@ -121,9 +121,13 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
 
     setStatus("Connecting...");
 
-    const token = localStorage.getItem("token");
+    // Same-origin WebSocket upgrade — the browser attaches the HttpOnly
+    // nora_auth cookie automatically. Legacy localStorage tokens are passed
+    // via ?token= for backward compat while users migrate to cookie sessions.
+    const legacy = localStorage.getItem("token");
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/ws/exec/${agentId}?token=${token}`;
+    const qs = legacy ? `?token=${encodeURIComponent(legacy)}` : "";
+    const url = `${proto}//${window.location.host}/api/ws/exec/${agentId}${qs}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;

@@ -236,6 +236,65 @@ describe("POST /auth/login", () => {
     const decoded = jwt.verify(res.body.token, JWT_SECRET);
     expect(decoded).toHaveProperty("id", "uuid-1");
   });
+
+  it("sets an HttpOnly SameSite=Lax auth cookie on successful login", async () => {
+    const hash = await bcrypt.hash("correctpassword", 10);
+    mockDb.query.mockResolvedValueOnce({
+      rows: [{ id: "uuid-1", email: "user@example.com", password_hash: hash, role: "user" }],
+    });
+
+    const res = await request(app)
+      .post("/auth/login")
+      .send({ email: "user@example.com", password: "correctpassword" });
+
+    expect(res.status).toBe(200);
+    const setCookie = res.headers["set-cookie"] || [];
+    const authCookie = setCookie.find((c) => c.startsWith("nora_auth="));
+    expect(authCookie).toBeDefined();
+    expect(authCookie).toMatch(/HttpOnly/i);
+    expect(authCookie).toMatch(/SameSite=Lax/i);
+    expect(authCookie).toMatch(/Path=\//i);
+    // The token in the cookie must verify against the same secret.
+    const cookieToken = authCookie.match(/nora_auth=([^;]+)/)?.[1];
+    const decoded = jwt.verify(decodeURIComponent(cookieToken), JWT_SECRET);
+    expect(decoded).toHaveProperty("id", "uuid-1");
+  });
+});
+
+describe("Cookie-based authentication", () => {
+  it("authenticates protected routes via the nora_auth cookie", async () => {
+    const token = jwt.sign({ id: "user-1", role: "user" }, JWT_SECRET, { expiresIn: "1h" });
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "user-1",
+          email: "user@example.com",
+          name: "User",
+          role: "user",
+          provider: null,
+          avatar: null,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const res = await request(app)
+      .get("/auth/me")
+      .set("Cookie", `nora_auth=${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("id", "user-1");
+  });
+
+  it("POST /auth/logout clears the auth cookie", async () => {
+    const res = await request(app).post("/auth/logout");
+    expect(res.status).toBe(200);
+    const setCookie = res.headers["set-cookie"] || [];
+    const cleared = setCookie.find((c) => c.startsWith("nora_auth="));
+    expect(cleared).toBeDefined();
+    // clearCookie emits an Expires in the past and/or empty value.
+    expect(cleared).toMatch(/nora_auth=;|Expires=Thu, 01 Jan 1970/);
+  });
 });
 
 describe("Protected auth routes", () => {
@@ -602,6 +661,6 @@ describe("OAuth hardening", () => {
     const res = await request(app).get(`/auth/me?token=${encodeURIComponent(token)}`);
 
     expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/bearer token required/i);
+    expect(res.body.error).toMatch(/authentication required/i);
   });
 });

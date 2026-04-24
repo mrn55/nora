@@ -97,8 +97,20 @@ export default function Topbar({ onMenuClick }) {
                 className="flex items-center gap-3 p-3 text-red-600 hover:bg-red-50 rounded-xl transition-all text-sm font-medium cursor-pointer"
                 onClick={() => {
                   localStorage.removeItem("token");
-                  fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
-                  window.location.href = "/login";
+                  // Clear both the HttpOnly nora_auth cookie (server-side)
+                  // and the NextAuth session (if present). Navigate to login
+                  // only after the cookie clear round-trips, otherwise the
+                  // user can race back into an authed page.
+                  const clearAuth = fetch("/api/auth/logout", {
+                    method: "POST",
+                    credentials: "include",
+                  }).catch(() => {});
+                  const clearNextAuth = fetch("/api/auth/signout", {
+                    method: "POST",
+                  }).catch(() => {});
+                  Promise.all([clearAuth, clearNextAuth]).finally(() => {
+                    window.location.href = "/login";
+                  });
                 }}
               >
                 <LogOut size={16} />
