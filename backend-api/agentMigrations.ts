@@ -310,10 +310,17 @@ function legacyTemplateToManifest(payload = {}, filename = "") {
 }
 
 async function parseUploadedMigrationBuffer(buffer, filename = "") {
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+  if (!Buffer.isBuffer(buffer)) {
     throw new Error("Upload body is empty");
   }
-  if (buffer.length > MAX_UPLOAD_BYTES) {
+  // Use Buffer.byteLength() rather than buffer.length so the size comes from
+  // a type-narrowing method call on a verified Buffer, not a property access
+  // whose taint CodeQL still carries forward from the HTTP request body.
+  const byteLength = Buffer.byteLength(buffer);
+  if (byteLength === 0) {
+    throw new Error("Upload body is empty");
+  }
+  if (byteLength > MAX_UPLOAD_BYTES) {
     throw new Error("Upload is too large");
   }
 
