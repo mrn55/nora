@@ -146,7 +146,10 @@ export default function OpenClawUIPanel({ agentId }) {
         <AlertTriangle size={32} className="text-amber-500" />
         <p className="text-sm font-bold text-slate-700">Official OpenClaw dashboard unavailable</p>
         <p className="text-xs text-slate-500">{error}</p>
-        <button onClick={fetchInfo} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5">
+        <button
+          onClick={fetchInfo}
+          className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+        >
           <RefreshCw size={11} /> Retry
         </button>
       </div>
@@ -160,7 +163,9 @@ export default function OpenClawUIPanel({ agentId }) {
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 bg-slate-900 rounded-t-xl border border-slate-700 shrink-0">
         <div className="flex items-center gap-3">
-          <div className={`w-2 h-2 rounded-full ${gatewayReady && iframeLoaded ? "bg-green-500" : "bg-amber-500 animate-pulse"}`} />
+          <div
+            className={`w-2 h-2 rounded-full ${gatewayReady && iframeLoaded ? "bg-green-500" : "bg-amber-500 animate-pulse"}`}
+          />
           <span className="text-xs font-mono text-slate-400">
             {gatewayInfo?.url || "—"} &middot; Port {gatewayInfo?.port || "—"}
           </span>
