@@ -4,7 +4,7 @@ import { fetchWithAuth } from "../../../lib/api";
 
 const GATEWAY_READY_POLL_MS = 5000;
 const GATEWAY_BOOT_MESSAGE =
-  "Fresh deployments can take a couple of minutes while OpenClaw installs and starts.";
+  "Fresh OpenClaw deployments can take a couple of minutes while the official dashboard installs and starts.";
 
 export default function OpenClawUIPanel({ agentId }) {
   const [loading, setLoading] = useState(true);
@@ -144,7 +144,7 @@ export default function OpenClawUIPanel({ agentId }) {
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 flex flex-col items-center gap-3">
         <AlertTriangle size={32} className="text-amber-500" />
-        <p className="text-sm font-bold text-slate-700">Gateway UI unavailable</p>
+        <p className="text-sm font-bold text-slate-700">Official OpenClaw dashboard unavailable</p>
         <p className="text-xs text-slate-500">{error}</p>
         <button onClick={fetchInfo} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5">
           <RefreshCw size={11} /> Retry
@@ -177,7 +177,7 @@ export default function OpenClawUIPanel({ agentId }) {
             onClick={openInNewWindow}
             disabled={!embedUrl}
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-            title="Open embedded gateway UI in a new window"
+            title="Open the official OpenClaw dashboard in a new window"
           >
             <Maximize2 size={12} />
             New Window
@@ -194,7 +194,9 @@ export default function OpenClawUIPanel({ agentId }) {
               <Loader2 size={24} className="animate-spin text-blue-500" />
               <div className="space-y-1 text-center px-6">
                 <p className="text-xs text-slate-400">
-                  {gatewayReady ? "Connecting to gateway..." : "Preparing gateway..."}
+                  {gatewayReady
+                    ? "Connecting to official OpenClaw dashboard..."
+                    : "Preparing official OpenClaw dashboard..."}
                 </p>
                 {!gatewayReady && (
                   <p className="text-[11px] text-slate-500 max-w-md">
@@ -212,14 +214,14 @@ export default function OpenClawUIPanel({ agentId }) {
             src={embedUrl}
             className="w-full h-full border-0"
             allow="clipboard-write"
-            title={`OpenClaw Agent ${agentId}`}
+            title={`OpenClaw Dashboard ${agentId}`}
             onLoad={() => setIframeLoaded(true)}
           />
         ) : (
           <div className="flex items-center justify-center h-full bg-slate-900 text-slate-500 text-sm px-6 text-center">
             {gatewayReady
               ? "Unable to build embed URL — please log in again"
-              : "Waiting for the embedded control UI to become ready."}
+              : "Waiting for the official OpenClaw dashboard to become ready."}
           </div>
         )}
       </div>

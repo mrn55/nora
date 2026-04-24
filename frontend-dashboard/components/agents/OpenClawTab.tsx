@@ -1,5 +1,13 @@
-import { useState } from "react";
-import { MessageSquare, Radio, CalendarClock, Puzzle, MonitorPlay } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  CalendarClock,
+  LayoutDashboard,
+  MessageSquare,
+  MessagesSquare,
+  Puzzle,
+  Radio,
+} from "lucide-react";
+import ChannelsTab from "./ChannelsTab";
 import StatusPanel from "./openclaw/StatusPanel";
 import ChatPanel from "./openclaw/ChatPanel";
 import IntegrationsTab from "./IntegrationsTab";
@@ -8,13 +16,34 @@ import CronPanel from "./openclaw/CronPanel";
 import OpenClawUIPanel from "./openclaw/OpenClawUIPanel";
 
 const subTabs = [
+  { id: "official-dashboard", label: "Official Dashboard", icon: LayoutDashboard },
   { id: "status", label: "Status", icon: Radio },
   { id: "chat", label: "Chat", icon: MessageSquare },
   { id: "integrations", label: "Integrations", icon: Puzzle },
   { id: "clawhub", label: "ClawHub", icon: Puzzle },
   { id: "cron", label: "Cron", icon: CalendarClock },
-  { id: "ui", label: "UI", icon: MonitorPlay },
+  { id: "channels", label: "Channels", icon: MessagesSquare },
 ];
+
+function OpenClawChannelsPanel({ agentId }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-700">
+          Managed Channels
+        </p>
+        <p className="mt-1 text-sm font-bold text-slate-900">
+          These channels follow Nora&apos;s managed CLI-style channel workflow for OpenClaw agents.
+        </p>
+        <p className="mt-1 text-xs text-slate-600">
+          Create, test, and inspect channels here the same way you would through the managed CLI
+          path, without relying on Hermes-only runtime configuration.
+        </p>
+      </div>
+      <ChannelsTab agentId={agentId} />
+    </div>
+  );
+}
 
 export default function OpenClawTab({
   agentId,
@@ -22,7 +51,11 @@ export default function OpenClawTab({
   agentContainerId,
   onClawhubInstallSuccess,
 }) {
-  const [activeSubTab, setActiveSubTab] = useState("status");
+  const [activeSubTab, setActiveSubTab] = useState("official-dashboard");
+
+  useEffect(() => {
+    setActiveSubTab("official-dashboard");
+  }, [agentId]);
 
   if (agentStatus !== "running" && agentStatus !== "warning") {
     return (
@@ -65,6 +98,7 @@ export default function OpenClawTab({
 
       {/* Sub-panel content */}
       <div>
+        {activeSubTab === "official-dashboard" && <OpenClawUIPanel agentId={agentId} />}
         {activeSubTab === "status" && <StatusPanel agentId={agentId} />}
         {activeSubTab === "chat" && <ChatPanel agentId={agentId} />}
         {activeSubTab === "integrations" && <IntegrationsTab agentId={agentId} />}
@@ -76,7 +110,7 @@ export default function OpenClawTab({
           />
         )}
         {activeSubTab === "cron" && <CronPanel agentId={agentId} />}
-        {activeSubTab === "ui" && <OpenClawUIPanel agentId={agentId} />}
+        {activeSubTab === "channels" && <OpenClawChannelsPanel agentId={agentId} />}
       </div>
     </div>
   );
