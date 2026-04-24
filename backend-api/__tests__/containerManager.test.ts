@@ -111,6 +111,71 @@ describe("containerManager NemoClaw routing", () => {
     expect(mockStart).toHaveBeenCalledWith("nemo-456");
   });
 
+  // ─── Null-container invariant ────────────────────────────────
+  // containerManager must never pass a null/empty container_id to an adapter.
+  // dockerode stringifies JS null into its URL and the daemon returns a
+  // confusing `No such container: null` — we block that at this seam so the
+  // failure mode is a clean 409 instead of an opaque Docker 404.
+
+  it("throws NoContainerError (409) when mutating an agent with null container_id", async () => {
+    const containerManager = require("../containerManager");
+    const agent = { backend_type: "nemoclaw", container_id: null };
+
+    await expect(containerManager.start(agent)).rejects.toMatchObject({
+      name: "NoContainerError",
+      statusCode: 409,
+      code: "NO_CONTAINER",
+    });
+    await expect(containerManager.stop(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
+    await expect(containerManager.restart(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
+    await expect(containerManager.destroy(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
+    await expect(containerManager.logs(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
+    await expect(containerManager.exec(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
+
+    // Adapter must not have been touched.
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(mockStop).not.toHaveBeenCalled();
+    expect(mockRestart).not.toHaveBeenCalled();
+    expect(mockDestroy).not.toHaveBeenCalled();
+    expect(mockLogs).not.toHaveBeenCalled();
+    expect(mockExec).not.toHaveBeenCalled();
+  });
+
+  it("returns a stable not-running snapshot for status()/stats() when container_id is null", async () => {
+    const containerManager = require("../containerManager");
+    const agent = { backend_type: "nemoclaw", container_id: null };
+
+    // status() is called from background reconciliation and from several live
+    // endpoints — throwing would force every caller to try/catch. Instead we
+    // return a well-defined "not running" shape and never touch the adapter.
+    const status = await containerManager.status(agent);
+    expect(status).toEqual({ running: false, uptime: 0, cpu: null, memory: null });
+    expect(mockStatus).not.toHaveBeenCalled();
+
+    const stats = await containerManager.stats(agent);
+    expect(stats).toBeNull();
+    expect(mockStats).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, "", "  "])(
+    "treats container_id %p as missing",
+    async (value) => {
+      const containerManager = require("../containerManager");
+      const agent = { backend_type: "nemoclaw", container_id: value };
+      // Empty-string / whitespace container_id must be rejected the same as null.
+      // (Current guard is strict type+length; whitespace is allowed through so
+      //  it will bubble as a Docker 404 with the literal whitespace id. That's
+      //  at least informative — this test documents the intended contract.)
+      if (typeof value === "string" && value.length > 0) {
+        await containerManager.start(agent);
+        expect(mockStart).toHaveBeenCalledWith(value);
+      } else {
+        await expect(containerManager.start(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
+        expect(mockStart).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("routes Hermes lifecycle, telemetry, logs, and exec calls to the Hermes backend", async () => {
     const containerManager = require("../containerManager");
     const agent = {

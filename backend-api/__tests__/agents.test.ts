@@ -1012,6 +1012,28 @@ describe("Hermes WebUI routes", () => {
     );
   });
 
+  it("rejects a running Hermes agent with no container_id with an actionable 409", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "a-hermes-broken",
+          user_id: "user-1",
+          status: "running",
+          runtime_family: "hermes",
+          container_id: null,
+        },
+      ],
+    });
+
+    const res = await auth(request(app).get("/agents/a-hermes-broken/hermes-ui/channels"));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/no container assigned/i);
+    expect(res.body.error).toMatch(/redeploy/i);
+    // No downstream helper should run for a broken-state agent.
+    expect(mockListHermesChannels).not.toHaveBeenCalled();
+  });
+
   it("lists Hermes channels through the helper", async () => {
     mockDb.query.mockResolvedValueOnce({
       rows: [
@@ -1020,6 +1042,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
+          container_id: "hermes-container",
         },
       ],
     });
@@ -1045,6 +1068,7 @@ describe("Hermes WebUI routes", () => {
       user_id: "user-1",
       status: "running",
       runtime_family: "hermes",
+      container_id: "hermes-container",
     };
     mockDb.query.mockResolvedValueOnce({ rows: [agent] }).mockResolvedValueOnce({ rows: [agent] });
     mockSaveHermesChannel
@@ -1096,6 +1120,7 @@ describe("Hermes WebUI routes", () => {
       user_id: "user-1",
       status: "running",
       runtime_family: "hermes",
+      container_id: "hermes-container",
     };
     mockDb.query.mockResolvedValueOnce({ rows: [agent] }).mockResolvedValueOnce({ rows: [agent] });
     mockDeleteHermesChannel.mockResolvedValueOnce({

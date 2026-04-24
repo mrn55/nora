@@ -1419,10 +1419,21 @@ const worker = new Worker(
         const seedArchive = migrationManifest
           ? await buildHermesSeedArchive(migrationManifest).catch(() => null)
           : null;
-        if (seedArchive && provisioner?.docker) {
-          await provisioner.docker.getContainer(containerId).putArchive(seedArchive, {
-            path: "/",
-          });
+        // Require a real containerId — dockerode stringifies null/undefined
+        // into the URL as the literal word "null", which is what surfaces to
+        // the UI as `No such container: null`. Skip the seed step rather than
+        // emit that confusing error; the provision will continue without the
+        // seed archive (Hermes can run without imported migration state).
+        if (seedArchive && provisioner?.docker && typeof containerId === "string" && containerId.length > 0) {
+          try {
+            await provisioner.docker.getContainer(containerId).putArchive(seedArchive, {
+              path: "/",
+            });
+          } catch (e) {
+            console.warn(
+              `[provisioner] Hermes seed archive upload failed for agent ${id}: ${e.message}`,
+            );
+          }
         }
 
         if (

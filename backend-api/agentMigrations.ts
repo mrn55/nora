@@ -992,6 +992,14 @@ async function buildMigrationManifestFromAgent(agent, { userId }) {
     });
   }
 
+  if (typeof agent?.container_id !== "string" || agent.container_id.length === 0) {
+    const err = new Error(
+      "Cannot build Hermes migration manifest: agent has no container_id (still provisioning or destroyed)",
+    );
+    err.statusCode = 409;
+    err.code = "NO_CONTAINER";
+    throw err;
+  }
   const container = docker.getContainer(agent.container_id);
   const [workspaceFiles, providerEntries, overrideMap, liveSnapshot, persistedState] =
     await Promise.all([

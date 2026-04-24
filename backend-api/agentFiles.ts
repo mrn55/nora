@@ -23,6 +23,7 @@ function rootsForAgent(agent = {}) {
         label: "Workspace",
         path: "/opt/data/workspace",
         access: "rw",
+        kind: "directory",
         description: "Primary writable Hermes workspace.",
       },
       {
@@ -30,6 +31,7 @@ function rootsForAgent(agent = {}) {
         label: "Runtime Home",
         path: "/opt/data",
         access: "ro",
+        kind: "directory",
         description: "Hermes runtime home and support files.",
       },
       {
@@ -37,6 +39,7 @@ function rootsForAgent(agent = {}) {
         label: "Logs",
         path: "/opt/data/logs",
         access: "ro",
+        kind: "directory",
         description: "Hermes runtime logs.",
       },
     ];
@@ -48,14 +51,24 @@ function rootsForAgent(agent = {}) {
       label: "Workspace",
       path: "/root/.openclaw/workspace",
       access: "rw",
+      kind: "directory",
       description: "Primary writable OpenClaw workspace.",
     },
     {
-      id: "agent-files",
-      label: "Agent Files",
-      path: "/root/.openclaw/agents/main/agent",
+      id: "openclaw-config",
+      label: "OpenClaw Config",
+      path: "/root/.openclaw/openclaw.json",
+      access: "rw",
+      kind: "file",
+      description: "Dedicated writable access to the main OpenClaw config file.",
+    },
+    {
+      id: "agent-runtime",
+      label: "Agent Runtime",
+      path: "/root/.openclaw",
       access: "ro",
-      description: "OpenClaw agent core files and bootstrap content.",
+      kind: "directory",
+      description: "Read-only OpenClaw runtime home, including agent files, sessions, and support state.",
     },
   ];
 }
@@ -70,6 +83,14 @@ function resolveRoot(agent, rootId) {
   return root;
 }
 
+function isFileRoot(root) {
+  return String(root?.kind || "directory") === "file";
+}
+
+function fileRootRelativeName(root) {
+  return path.posix.basename(String(root?.path || ""));
+}
+
 function resolveAbsolutePath(root, relativePath = "", { allowEmpty = true } = {}) {
   const normalized = normalizeRelativePath(relativePath, { allowEmpty });
   if (normalized == null) {
@@ -77,12 +98,45 @@ function resolveAbsolutePath(root, relativePath = "", { allowEmpty = true } = {}
     error.statusCode = 400;
     throw error;
   }
+  if (isFileRoot(root)) {
+    if (!normalized) return root.path;
+    if (normalized === fileRootRelativeName(root)) return root.path;
+    const error = new Error("This filesystem root only exposes its dedicated config file");
+    error.statusCode = 403;
+    throw error;
+  }
   return normalized ? path.posix.join(root.path, normalized) : root.path;
 }
 
-function assertWritableRoot(root) {
+function isPathWritable(root, relativePath = "") {
+  if (root.access !== "rw") return false;
+  if (!isFileRoot(root)) return true;
+  const normalized = normalizeRelativePath(relativePath, { allowEmpty: true });
+  if (normalized == null) return false;
+  return !normalized || normalized === fileRootRelativeName(root);
+}
+
+function assertWritableRoot(root, relativePath = "", operation = "write") {
   if (root.access === "rw") return;
   const error = new Error("This filesystem root is read-only");
+  error.statusCode = 403;
+  throw error;
+}
+
+function assertWritableTarget(root, relativePath = "", operation = "write") {
+  assertWritableRoot(root, relativePath, operation);
+
+  if (!isFileRoot(root)) return;
+  if (operation !== "write") {
+    const error = new Error(
+      "This filesystem root only supports editing and downloading the OpenClaw config file"
+    );
+    error.statusCode = 403;
+    throw error;
+  }
+  if (isPathWritable(root, relativePath)) return;
+
+  const error = new Error("Only openclaw.json can be edited from this filesystem root");
   error.statusCode = 403;
   throw error;
 }
@@ -145,6 +199,48 @@ async function listFiles(agent, rootId, relativePath = "") {
   const root = resolveRoot(agent, rootId);
   const absolutePath = resolveAbsolutePath(root, relativePath);
 
+  if (isFileRoot(root)) {
+    const command = [
+      "set -eu",
+      buildInsideRootGuard({
+        rootPath: root.path,
+        targetPath: absolutePath,
+      }),
+      '[ -f "$target_real" ] || { echo "__NORA_NOT_FILE__"; exit 26; }',
+      'printf "%s\\0f\\0" "$(basename "$target_real")"',
+      'printf "%s\\0" "$(stat -c %s "$target_real")"',
+      'printf "%s\\0" "$(stat -c %Y "$target_real")"',
+    ].join("\n");
+
+    const { output } = await runFileCommand(agent, command, { timeout: 30000 });
+    const segments = output.split("\u0000").filter((segment) => segment.length > 0);
+    const name = segments[0] || fileRootRelativeName(root);
+    const size = Number.parseInt(segments[2], 10) || 0;
+    const mtime = Number.parseFloat(segments[3]);
+    const entryPath = fileRootRelativeName(root);
+
+    return {
+      root: {
+        id: root.id,
+        label: root.label,
+        access: root.access,
+        path: root.path,
+        kind: root.kind || "directory",
+      },
+      path: "",
+      entries: [
+        {
+          name,
+          path: entryPath,
+          type: "file",
+          size,
+          mtime: Number.isFinite(mtime) ? new Date(mtime * 1000).toISOString() : null,
+          writable: isPathWritable(root, entryPath),
+        },
+      ],
+    };
+  }
+
   const command = [
     "set -eu",
     buildInsideRootGuard({
@@ -177,7 +273,7 @@ async function listFiles(agent, rootId, relativePath = "") {
       type: type === "d" ? "directory" : "file",
       size,
       mtime: Number.isFinite(mtime) ? new Date(mtime * 1000).toISOString() : null,
-      writable: root.access === "rw",
+      writable: isPathWritable(root, entryPath),
     });
   }
 
@@ -187,6 +283,7 @@ async function listFiles(agent, rootId, relativePath = "") {
       label: root.label,
       access: root.access,
       path: root.path,
+      kind: root.kind || "directory",
     },
     path: normalizeRelativePath(relativePath) || "",
     entries: entries.sort((left, right) => {
@@ -232,13 +329,13 @@ async function readFile(agent, rootId, relativePath = "") {
     size,
     mode,
     contentBase64,
-    writable: root.access === "rw",
+    writable: isPathWritable(root, relativePath),
   };
 }
 
 async function writeFile(agent, rootId, relativePath = "", contentBase64 = "", mode = 0o644) {
   const root = resolveRoot(agent, rootId);
-  assertWritableRoot(root);
+  assertWritableTarget(root, relativePath, "write");
   const absolutePath = resolveAbsolutePath(root, relativePath, {
     allowEmpty: false,
   });
@@ -266,7 +363,7 @@ async function writeFile(agent, rootId, relativePath = "", contentBase64 = "", m
 
 async function createDirectory(agent, rootId, relativePath = "") {
   const root = resolveRoot(agent, rootId);
-  assertWritableRoot(root);
+  assertWritableTarget(root, relativePath, "mkdir");
   const absolutePath = resolveAbsolutePath(root, relativePath, {
     allowEmpty: false,
   });
@@ -291,7 +388,7 @@ async function createDirectory(agent, rootId, relativePath = "") {
 
 async function movePath(agent, rootId, fromPath = "", toPath = "") {
   const root = resolveRoot(agent, rootId);
-  assertWritableRoot(root);
+  assertWritableTarget(root, fromPath, "move");
   const absoluteFromPath = resolveAbsolutePath(root, fromPath, { allowEmpty: false });
   const absoluteToPath = resolveAbsolutePath(root, toPath, { allowEmpty: false });
 
@@ -315,7 +412,7 @@ async function movePath(agent, rootId, fromPath = "", toPath = "") {
 
 async function deletePath(agent, rootId, relativePath = "") {
   const root = resolveRoot(agent, rootId);
-  assertWritableRoot(root);
+  assertWritableTarget(root, relativePath, "delete");
   const normalizedPath = normalizeRelativePath(relativePath, { allowEmpty: false });
   if (!normalizedPath) {
     const error = new Error("A file or folder path is required");
@@ -365,7 +462,7 @@ async function downloadPath(agent, rootId, relativePath = "") {
   const normalizedPath = normalizeRelativePath(relativePath) || "";
   const name =
     normalizedPath.split("/").filter(Boolean).pop() ||
-    root.id;
+    (isFileRoot(root) ? fileRootRelativeName(root) : root.id);
 
   return {
     kind,
@@ -389,4 +486,5 @@ module.exports = {
   resolveRoot,
   rootsForAgent,
   writeFile,
+  isPathWritable,
 };

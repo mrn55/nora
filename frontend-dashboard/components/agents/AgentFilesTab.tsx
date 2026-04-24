@@ -70,6 +70,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
   const [activeRootId, setActiveRootId] = useState("");
   const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState([]);
+  const [entriesRootId, setEntriesRootId] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [editorValue, setEditorValue] = useState("");
   const [editorDirty, setEditorDirty] = useState(false);
@@ -78,6 +79,8 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
     () => roots.find((root) => root.id === activeRootId) || null,
     [roots, activeRootId]
   );
+  const activeRootIsSingleFile = activeRoot?.kind === "file";
+  const canMutateCurrentRoot = activeRoot?.access === "rw" && !activeRootIsSingleFile;
   const breadcrumbs = useMemo(
     () => buildBreadcrumbs(currentPath),
     [currentPath]
@@ -113,6 +116,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
         throw new Error(data.error || "Failed to load files");
       }
       startTransition(() => {
+        setEntriesRootId(rootId);
         setEntries(Array.isArray(data?.entries) ? data.entries : []);
       });
     } catch (error) {
@@ -139,6 +143,14 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
     resetFileSelection();
     loadTree(activeRootId, currentPath);
   }, [activeRootId, currentPath]);
+
+  useEffect(() => {
+    if (!activeRootIsSingleFile) return;
+    if (entriesRootId !== activeRootId) return;
+    if (entries.length !== 1 || entries[0]?.type !== "file") return;
+    if (selectedFile?.path === entries[0].path) return;
+    openFile(entries[0]);
+  }, [activeRootId, activeRootIsSingleFile, entries, entriesRootId, selectedFile]);
 
   async function openFile(entry) {
     setFileLoading(true);
@@ -375,13 +387,13 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
               Live Filesystem
             </p>
             <h3 className="mt-2 text-lg font-black text-slate-900">
-              Workspace stays writable. System paths stay visible but locked.
+              Workspace stays fully writable. System paths stay constrained.
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-500">
-              Use the workspace root for upload, edit, and delete. Curated runtime
-              paths stay browse and download only, so operators can inspect the real
-              container state without turning the rest of the filesystem into a write
-              surface.
+              Use the workspace root for broad edits, uploads, and cleanup. Curated
+              runtime paths stay browse-first, and dedicated config roots can expose
+              a single live file for safe in-place changes without widening the rest
+              of the write surface.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -409,7 +421,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
             <button
               type="button"
               onClick={() => uploadInputRef.current?.click()}
-              disabled={activeRoot?.access !== "rw" || busyAction === "upload"}
+              disabled={!canMutateCurrentRoot || busyAction === "upload"}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-900 px-3 py-2 text-xs font-bold text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busyAction === "upload" ? (
@@ -422,7 +434,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
             <button
               type="button"
               onClick={createFolder}
-              disabled={activeRoot?.access !== "rw" || busyAction === "mkdir"}
+              disabled={!canMutateCurrentRoot || busyAction === "mkdir"}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-900 px-3 py-2 text-xs font-bold text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busyAction === "mkdir" ? (
@@ -465,7 +477,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                       : "bg-slate-100 text-slate-500"
                   }`}
                 >
-                  {root.access === "rw" ? "RW" : "RO"}
+                  {root.access === "rw" ? (root.kind === "file" ? "RW FILE" : "RW") : "RO"}
                 </span>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-slate-500">
@@ -534,8 +546,10 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                   <div className="px-5 py-8">
                     <p className="text-sm font-bold text-slate-900">Nothing in this path yet.</p>
                     <p className="mt-1 text-sm text-slate-500">
-                      {activeRoot?.access === "rw"
+                      {canMutateCurrentRoot
                         ? "Upload a file or create a folder in the workspace to start shaping the runtime."
+                        : activeRootIsSingleFile
+                          ? "This dedicated config root only exposes one live file for editing."
                         : "This read-only path is currently empty."}
                     </p>
                   </div>
@@ -581,7 +595,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                         >
                           <Download size={14} />
                         </button>
-                        {activeRoot?.access === "rw" ? (
+                        {entry.writable && !activeRootIsSingleFile ? (
                           <button
                             type="button"
                             onClick={() => removeEntry(entry)}
@@ -616,7 +630,11 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                 </h4>
                 <p className="mt-1 text-xs text-slate-500">
                   {formatBytes(selectedFile.size)} • mode {selectedFile.mode} •{" "}
-                  {selectedFile.writable ? "workspace-writable" : "read-only root"}
+                  {selectedFile.writable
+                    ? activeRootIsSingleFile
+                      ? "config-writable"
+                      : "workspace-writable"
+                    : "read-only root"}
                 </p>
               </>
             ) : (
@@ -638,8 +656,10 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-slate-500">
                   Nora reads the live runtime filesystem rather than a synthetic
-                  database view. Text files under the workspace can be edited in
-                  place. Binary files and read-only system roots stay download only.
+                  database view. Workspace files can be edited in place, and
+                  dedicated config roots can expose a single live file without
+                  opening broader runtime paths for mutation. Binary files and
+                  read-only roots stay download only.
                 </p>
               </div>
             ) : selectedFile.isText ? (
@@ -682,7 +702,9 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                     </p>
                   ) : (
                     <p className="text-xs text-slate-500">
-                      Workspace edits write back to the live runtime path immediately.
+                      {activeRootIsSingleFile
+                        ? "Config updates write back to the live runtime file immediately."
+                        : "Workspace edits write back to the live runtime path immediately."}
                     </p>
                   )}
                 </div>

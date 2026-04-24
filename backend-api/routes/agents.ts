@@ -379,7 +379,19 @@ router.get(
     // the control-plane host for Docker and local kind NodePort verification.
     let hostPort = agent.gateway_host_port;
     const backendType = runtimeFields.backend_type;
-    if (!hostPort && agent.container_id && ["docker", "nemoclaw"].includes(backendType)) {
+    // Only inspect once the agent has fully settled — the worker's early
+    // container_id write means the id is in the DB before the container's port
+    // bindings are ready. Trying to inspect during 'queued'/'deploying' can
+    // transiently 404 or return empty bindings; callers treat an absent URL as
+    // "still starting up" rather than as a fatal error.
+    const READY_STATUSES = new Set(["running", "warning"]);
+    if (
+      !hostPort &&
+      typeof agent.container_id === "string" &&
+      agent.container_id.length > 0 &&
+      READY_STATUSES.has(agent.status) &&
+      ["docker", "nemoclaw"].includes(backendType)
+    ) {
       try {
         const Docker = require("dockerode");
         const docker = new Docker({ socketPath: "/var/run/docker.sock" });
@@ -387,7 +399,13 @@ router.get(
         const portBindings = info.NetworkSettings?.Ports?.[`${OPENCLAW_GATEWAY_PORT}/tcp`];
         hostPort = portBindings?.[0]?.HostPort || null;
       } catch (e) {
-        return res.status(502).json({ error: "Could not inspect container", details: e.message });
+        // Don't bubble raw Docker error strings — they can contain the literal
+        // word "null" on id-coercion paths which is confusing in the UI. Log
+        // for operators, respond with a generic message for the user.
+        console.warn(
+          `[agents.ui-info] inspect failed for agent ${agent.id} (container_id=${agent.container_id}): ${e.message}`,
+        );
+        return res.status(502).json({ error: "Could not inspect container" });
       }
     }
 
@@ -460,6 +478,19 @@ async function loadHermesUiAgent(req) {
 
   if (!isGatewayAvailableStatus(agent.status)) {
     throw createStatusCodeError("Hermes WebUI is only available while the agent is running", 409);
+  }
+
+  // Belt-and-braces: gateway-available status should imply container_id is set
+  // (the worker writes both atomically in the final UPDATE). If they've drifted
+  // — e.g. the row was touched directly, a failed redeploy left it half-cleared,
+  // or a legacy migration — every downstream Hermes call (exec/inspect/restart)
+  // would otherwise trip the NoContainerError guard with an opaque message.
+  // Fail early with an actionable redeploy hint.
+  if (typeof agent.container_id !== "string" || agent.container_id.length === 0) {
+    throw createStatusCodeError(
+      "Hermes runtime is marked running but has no container assigned. Redeploy the agent to recover.",
+      409,
+    );
   }
 
   return agent;
