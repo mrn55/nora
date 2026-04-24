@@ -37,6 +37,7 @@ import {
   visibleRuntimeFamiliesFromConfig,
 } from "../../lib/runtime";
 import {
+  clearDeployDraft,
   loadDeployDraft,
   normalizeDeployDraftResources,
   saveDeployDraft,
@@ -375,6 +376,7 @@ export default function Deploy() {
     selectedRuntimeFamily ||
     defaultRuntimeFamily?.id ||
     "openclaw";
+  const usesClawHubStep = effectiveRuntimeFamily === "openclaw";
   const isHermes = effectiveRuntimeFamily === "hermes";
   const showSandboxSelection = visibleSandboxOptions.length > 1;
   const showRuntimeFamilySelection = visibleRuntimeFamilies.length > 1;
@@ -467,12 +469,12 @@ export default function Deploy() {
     visibleSandboxOptions,
   ]);
 
-  function goToClawHubSelection() {
-    if (atLimit) return;
+  function buildCurrentDeployDraft() {
     if (deploymentMode === "migrate" && !migrationDraft?.id) {
       toast.error("Prepare a migration draft before deploying.");
-      return;
+      return null;
     }
+
     const normalizedResources = normalizeDeployDraftResources(
       {
         vcpu: selVcpu,
@@ -489,7 +491,7 @@ export default function Deploy() {
       },
     );
 
-    saveDeployDraft({
+    const nextDraft = {
       name,
       containerName,
       runtimeFamily: effectiveRuntimeFamily,
@@ -503,9 +505,82 @@ export default function Deploy() {
       vcpu: isSelfHosted ? normalizedResources.vcpu : 0,
       ramMb: isSelfHosted ? normalizedResources.ramMb : 0,
       diskGb: isSelfHosted ? normalizedResources.diskGb : 0,
-      clawhubSkills: loadDeployDraft()?.clawhubSkills || [],
+      clawhubSkills: usesClawHubStep ? loadDeployDraft()?.clawhubSkills || [] : [],
+    };
+
+    deployDraftRef.current = nextDraft;
+    return nextDraft;
+  }
+
+  async function deployPreparedDraft(nextDraft) {
+    const normalizedResources = normalizeDeployDraftResources(nextDraft, {
+      defaultVcpu: deploymentDefaults.vcpu,
+      defaultRamMb: deploymentDefaults.ram_mb,
+      defaultDiskGb: deploymentDefaults.disk_gb,
+      maxVcpu: platformConfig?.selfhosted?.max_vcpu || 16,
+      maxRamMb: platformConfig?.selfhosted?.max_ram_mb || 32768,
+      maxDiskGb: platformConfig?.selfhosted?.max_disk_gb || 500,
     });
-    router.push("/clawhub");
+
+    setLoading(true);
+    try {
+      const res = await fetchWithAuth("/api/agents/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: nextDraft.name,
+          runtime_family: nextDraft.runtimeFamily,
+          deploy_target: nextDraft.deployTarget,
+          sandbox_profile: nextDraft.sandboxProfile || "standard",
+          ...(nextDraft.containerName.trim()
+            ? { container_name: nextDraft.containerName.trim() }
+            : {}),
+          ...(nextDraft.model ? { model: nextDraft.model } : {}),
+          ...(nextDraft.deploymentMode === "migrate" && nextDraft.migrationDraft?.id
+            ? { migration_draft_id: nextDraft.migrationDraft.id }
+            : {}),
+          ...(nextDraft.vcpu ? { vcpu: normalizedResources.vcpu } : {}),
+          ...(nextDraft.ramMb ? { ram_mb: normalizedResources.ramMb } : {}),
+          ...(nextDraft.diskGb ? { disk_gb: normalizedResources.diskGb } : {}),
+          clawhub_skills: [],
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        clearDeployDraft();
+        window.location.href = data?.id ? `/app/agents/${data.id}` : "/app/agents";
+        return;
+      }
+
+      if (res.status === 402) {
+        toast.error(data.error || fallbackLimitErrorMessage());
+        return;
+      }
+
+      toast.error(data.error || "Deployment failed. Please try again.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Network error during deployment.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePrimaryAction() {
+    if (loading || atLimit || !name.trim() || !canDeployExecutionTarget) return;
+
+    const nextDraft = buildCurrentDeployDraft();
+    if (!nextDraft) return;
+
+    saveDeployDraft(nextDraft);
+
+    if (usesClawHubStep) {
+      router.push("/clawhub");
+      return;
+    }
+
+    await deployPreparedDraft(nextDraft);
   }
 
   async function uploadMigrationFile(file) {
@@ -1554,7 +1629,7 @@ export default function Deploy() {
             </div>
 
             <button
-              onClick={goToClawHubSelection}
+              onClick={handlePrimaryAction}
               disabled={
                 loading ||
                 atLimit ||
@@ -1575,9 +1650,9 @@ export default function Deploy() {
                   ? "Prepare Migration Draft First"
                   : !canDeployExecutionTarget
                     ? "Selected Runtime Path Unavailable"
-                    : deploymentMode === "migrate"
+                    : usesClawHubStep
                       ? "Next: Choose Skills"
-                      : "Next: Choose Skills"}
+                      : "Deploy Agent"}
             </button>
           </div>
 

@@ -79,8 +79,24 @@ export default function ClawHubDeployPage() {
       return;
     }
 
-    setDraft(nextDraft);
-    setSelectedSkills(Array.isArray(nextDraft.clawhubSkills) ? nextDraft.clawhubSkills : []);
+    const draftRuntimeFamily = String(nextDraft.runtimeFamily || "openclaw")
+      .trim()
+      .toLowerCase();
+    if (draftRuntimeFamily !== "openclaw") {
+      toast.error("ClawHub skills are only available for OpenClaw agents right now.");
+      router.replace("/deploy");
+      return;
+    }
+
+    const normalizedDraft = {
+      ...nextDraft,
+      runtimeFamily: draftRuntimeFamily,
+    };
+
+    setDraft(normalizedDraft);
+    setSelectedSkills(
+      Array.isArray(normalizedDraft.clawhubSkills) ? normalizedDraft.clawhubSkills : [],
+    );
   }, [router, toast]);
 
   useEffect(() => {
@@ -351,11 +367,11 @@ export default function ClawHubDeployPage() {
                 ClawHub Selection
               </div>
               <h1 className="text-3xl font-black text-slate-900">
-                Choose skills for this new agent
+                Choose skills for this OpenClaw agent
               </h1>
               <p className="max-w-3xl text-sm leading-6 text-slate-600">
                 Search ClawHub, inspect each skill’s README and requirements, and attach only the
-                skills you want saved on this agent at deploy time.
+                skills you want saved on this OpenClaw agent at deploy time.
               </p>
             </div>
 
