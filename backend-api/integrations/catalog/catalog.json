@@ -189,6 +189,19 @@
     "capabilities": ["read", "write", "webhook"]
   },
   {
+    "id": "telegram",
+    "name": "Telegram",
+    "icon": "send",
+    "category": "communication",
+    "description": "Connect a Telegram bot for operator messaging and notifications",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "bot_token", "label": "Bot Token", "type": "password", "required": true },
+      { "key": "operator_user_id", "label": "Operator User ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read", "write", "webhook"]
+  },
+  {
     "id": "teams",
     "name": "Microsoft Teams",
     "icon": "message-square",
@@ -627,6 +640,20 @@
       { "key": "page_id", "label": "Page ID", "type": "text", "required": true }
     ],
     "capabilities": ["read", "write", "webhook"]
+  },
+  {
+    "id": "instagram",
+    "name": "Instagram Graph",
+    "icon": "instagram",
+    "category": "social",
+    "description": "Read Instagram account data, insights, comments, and media through Meta Graph APIs",
+    "authType": "api_key",
+    "configFields": [
+      { "key": "access_token", "label": "Access Token", "type": "password", "required": true },
+      { "key": "business_account_id", "label": "Business Account ID", "type": "text", "required": true },
+      { "key": "page_id", "label": "Facebook Page ID", "type": "text", "required": false }
+    ],
+    "capabilities": ["read"]
   },
   {
     "id": "google-analytics",

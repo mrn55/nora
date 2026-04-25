@@ -15,6 +15,34 @@ function parseConfig(config) {
   return typeof config === "string" ? JSON.parse(config) : (config || {});
 }
 
+function restoreRedactedConfigValue(nextValue, currentValue) {
+  if (nextValue === REDACTED_SECRET) {
+    return currentValue;
+  }
+
+  if (Array.isArray(nextValue)) {
+    const currentItems = Array.isArray(currentValue) ? currentValue : [];
+    return nextValue.map((entry, index) =>
+      restoreRedactedConfigValue(entry, currentItems[index]),
+    );
+  }
+
+  if (nextValue && typeof nextValue === "object") {
+    const currentObject =
+      currentValue && typeof currentValue === "object" && !Array.isArray(currentValue)
+        ? currentValue
+        : {};
+    return Object.fromEntries(
+      Object.entries(nextValue).map(([key, value]) => [
+        key,
+        restoreRedactedConfigValue(value, currentObject[key]),
+      ]),
+    );
+  }
+
+  return nextValue;
+}
+
 function getSensitiveChannelKeys(type) {
   const adapter = getAdapter(type);
   return new Set(
@@ -159,7 +187,11 @@ async function updateChannel(channelId, agentId, updates) {
     params.push(updates.name);
   }
   if (updates.config !== undefined) {
-    const { secured, hasSensitiveMaterial } = protectChannelConfig(existing.type, updates.config);
+    const restoredConfig = restoreRedactedConfigValue(
+      parseConfig(updates.config),
+      revealChannelConfig(existing.type, existing.config),
+    );
+    const { secured, hasSensitiveMaterial } = protectChannelConfig(existing.type, restoredConfig);
     sets.push(`config = $${idx++}`);
     params.push(JSON.stringify(secured));
     if (hasSensitiveMaterial) {

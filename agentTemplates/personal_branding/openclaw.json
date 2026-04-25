@@ -1,0 +1,108 @@
+{
+  "$schema": "https://openclaw.ai/schema/config.v1.json",
+  "version": "1.0",
+
+  "channels": {
+    "_comment": "Connect messaging providers from this agent's Nora Integrations tab after installing the template."
+  },
+
+  "bootstrap": {
+    "script": "BOOTSTRAP.md",
+    "completedFlagPath": "PROFILE.md#bootstrap_completed",
+    "runOnFirstMessage": true
+  },
+
+  "agents": {
+    "list": [
+      {
+        "id": "echo",
+        "name": "Echo",
+        "_comment_name": "Default name. Operator can rename during bootstrap; if they do, update this field and any references in SOUL.md.",
+        "role": "personal-branding",
+        "workspace": "~/.openclaw/workspaces/echo-personal-brand",
+        "provider": "anthropic",
+        "model": "claude-opus-4-7",
+        "temperature": 0.7,
+        "routines": {
+          "analysis": {
+            "model": "claude-opus-4-7",
+            "temperature": 0.3,
+            "useFor": ["voice-analysis", "engagement-classification", "weekly-review"]
+          },
+          "quickTasks": {
+            "model": "claude-sonnet-4-6",
+            "temperature": 0.3,
+            "useFor": ["summary", "analytics-pull", "formatting"]
+          }
+        },
+        "skills": [
+          "x-read",
+          "x-analytics",
+          "linkedin-read",
+          "linkedin-analytics",
+          "web-fetch",
+          "web-search",
+          "telegram-send",
+          "file-read",
+          "file-write"
+        ],
+        "deniedSkills": [
+          "x-post",
+          "x-reply",
+          "x-dm-send",
+          "x-follow",
+          "x-unfollow",
+          "x-like",
+          "x-repost",
+          "linkedin-post",
+          "linkedin-comment",
+          "linkedin-reaction",
+          "linkedin-connect",
+          "linkedin-dm-send",
+          "linkedin-profile-edit"
+        ],
+        "bindings": [],
+        "notes": "All publishing and engagement actions are DENIED as standing skills. This is by design. Operator publishes manually. If the operator wants to enable scheduled publishing in the future, they can grant specific skills interactively per action — never as standing permission."
+      }
+    ]
+  },
+
+  "scheduler": {
+    "enabled": true,
+    "timezone": "${OPERATOR_TIMEZONE}",
+    "_comment_timezone": "Set from PROFILE.md during bootstrap. Defaults to America/New_York until set.",
+    "heartbeatFile": "HEARTBEAT.md",
+    "pauseUntilBootstrapComplete": true
+  },
+
+  "security": {
+    "treatToolOutputAsUntrusted": true,
+    "requireConfirmationFor": [
+      "post-x",
+      "post-linkedin",
+      "send-dm",
+      "reply-comment",
+      "change-bio",
+      "change-profile",
+      "follow-account",
+      "unfollow-account",
+      "accept-connection",
+      "like-post",
+      "repost"
+    ],
+    "secretsProvider": "nora-integrations",
+    "_comment_secretsProvider": "Provider credentials are stored through this agent's Nora Integrations tab.",
+    "redactInLogs": ["access_token", "api_key", "client_secret", "bearer", "password", "bot_token"]
+  },
+
+  "memory": {
+    "dailyFilePattern": "memory/YYYY-MM-DD.md",
+    "longTermFile": "MEMORY.md",
+    "voiceFile": "VOICE.md",
+    "profileFile": "PROFILE.md",
+    "pruneAfterDays": 180,
+    "digestWeeklyOn": "sunday"
+  },
+
+  "_comment_credentials": "Connect LLM, Telegram, X, and LinkedIn credentials from the agent Integrations tab. Posting APIs are intentionally not configured; the operator posts manually."
+}

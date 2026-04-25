@@ -769,8 +769,112 @@ describe("Hermes WebUI routes", () => {
         "This Hermes image (Hermes Agent v0.8.0 (2026.4.8)) does not include the official dashboard yet. Pull a current Hermes image and redeploy this agent.",
     });
     expect(mockRunContainerCommand).toHaveBeenCalledTimes(1);
-    expect(mockRunContainerCommand.mock.calls[0][1]).toContain(">> /proc/1/fd/1 2>> /proc/1/fd/2");
-    expect(mockRunContainerCommand.mock.calls[0][1]).not.toContain("dashboard.log");
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain("setsid");
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain('gosu hermes "$HERMES_BIN" dashboard');
+    expect(mockRunContainerCommand.mock.calls[0][1]).not.toContain("hermes_cli.web_server");
+  });
+
+  it("recovers a cold Hermes dashboard by starting the current CLI inside the running container", async () => {
+    mockReadHermesRuntimeSnapshot.mockResolvedValueOnce({
+      runtimeStatus: {
+        gateway_state: "running",
+        active_agents: 1,
+        updated_at: "2026-04-12T12:00:00.000Z",
+        platforms: {},
+      },
+      directory: {
+        updated_at: "2026-04-12T12:00:00.000Z",
+        platforms: {},
+      },
+      platformDetails: {},
+      jobsCount: 0,
+      modelConfig: {
+        defaultModel: "gpt-5.4",
+        provider: "custom",
+        baseUrl: "https://api.openai.com/v1",
+      },
+    });
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "a-hermes-ui-recover",
+          user_id: "user-1",
+          status: "running",
+          runtime_family: "hermes",
+          backend_type: "hermes",
+          container_id: "hermes-container",
+          runtime_host: "10.0.0.42",
+          runtime_port: 8642,
+          gateway_token: "hermes-token",
+        },
+      ],
+    });
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createMockFetchResponse({
+          body: { status: "ok", platform: "hermes-agent" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockFetchResponse({
+          body: {
+            object: "list",
+            data: [{ id: "desk-bot", object: "model" }],
+          },
+        }),
+      )
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(
+        createMockFetchResponse({
+          body: {
+            version: "0.11.0",
+            gateway_running: true,
+            gateway_state: "running",
+            active_sessions: 0,
+          },
+        }),
+      );
+    mockRunContainerCommand.mockResolvedValueOnce({
+      exitCode: 0,
+      output: [
+        "Hermes Web UI → http://0.0.0.0:9119",
+        "STATUS=started",
+        "VERSION=Hermes Agent v0.11.0 (2026.4.23)",
+        "",
+      ].join("\n"),
+    });
+
+    const res = await auth(request(app).get("/agents/a-hermes-ui-recover/hermes-ui"));
+
+    expect(res.status).toBe(200);
+    expect(res.body.dashboard).toEqual({
+      ready: true,
+      url: "http://10.0.0.42:9119",
+      port: 9119,
+      health: {
+        version: "0.11.0",
+        gatewayRunning: true,
+        gatewayState: "running",
+        activeSessions: 0,
+      },
+      retryable: false,
+      error: null,
+    });
+    expect(mockRunContainerCommand).toHaveBeenCalledTimes(1);
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain("setsid");
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain('gosu hermes "$HERMES_BIN" dashboard');
+    expect(mockRunContainerCommand.mock.calls[0][1]).not.toContain("hermes_cli.web_server");
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      4,
+      "http://10.0.0.42:9119/api/status",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+        }),
+      }),
+    );
   });
 
   it("proxies Hermes chat requests through the runtime API", async () => {

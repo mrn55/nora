@@ -1,0 +1,9 @@
+{
+  "templateKey": "iris-instagram",
+  "name": "Iris Instagram Manager",
+  "description": "Plans Instagram content, drafts captions and reply queues, tracks trends, and keeps the operator in the approval loop for every publish action.",
+  "price": "Free",
+  "category": "Marketing",
+  "starterType": "marketing",
+  "extraFiles": ["BRAND.md", "README.md"]
+}

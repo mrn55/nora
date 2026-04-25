@@ -118,4 +118,51 @@ describe("channel secret redaction", () => {
       channel: "#ops",
     });
   });
+
+  it("preserves existing secret values when the update payload keeps them redacted", async () => {
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "ch-4",
+          agent_id: "agent-1",
+          type: "telegram",
+          name: "Ops Telegram",
+          config: {
+            bot_token: "enc(123:secret)",
+            chat_id: "42",
+          },
+          enabled: true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "ch-4",
+          agent_id: "agent-1",
+          type: "telegram",
+          name: "Ops Telegram",
+          config: {
+            bot_token: "enc(123:secret)",
+            chat_id: "99",
+          },
+          enabled: true,
+        }],
+      });
+
+    const result = await channels.updateChannel("ch-4", "agent-1", {
+      config: {
+        bot_token: "[REDACTED]",
+        chat_id: "99",
+      },
+    });
+
+    expect(mockEncrypt).not.toHaveBeenCalledWith("[REDACTED]");
+    expect(JSON.parse(mockDb.query.mock.calls[1][1][0])).toEqual({
+      bot_token: "enc(123:secret)",
+      chat_id: "99",
+    });
+    expect(result.config).toEqual({
+      bot_token: "[REDACTED]",
+      chat_id: "99",
+    });
+  });
 });

@@ -4,6 +4,8 @@ Built-in agent templates available on the Nora marketplace. Each template is a r
 
 Every template follows the same structure: a set of markdown files that define the agent's identity, behavior, memory, and working style. Templates can be used as-is or customized to fit a specific context.
 
+Credentials are not part of a marketplace template. When a preset needs provider access, connect that provider from the installed agent's Integrations tab so Nora stores and syncs the secret material outside the template files.
+
 ---
 
 ## Templates
@@ -82,3 +84,25 @@ Maintaining a consistent social media presence takes time that most small busine
 The Social Media & Market Signal Claw researches trending topics in a defined space, identifies signals worth reacting to, and drafts posts for review. Content is organized by platform (LinkedIn, Instagram, and others). Nothing is published automatically — the agent drafts and stages content, and a human approves before anything goes live.
 
 **Good for:** Founders and operators building a personal or business brand, and anyone who wants consistent social visibility without spending hours on it each week.
+
+---
+
+### Iris Instagram Manager
+**Category:** Marketing
+
+Instagram rewards consistency, strong hooks, and a real understanding of the audience, but most operators do not have time to keep a full content system running every week. The work is not just writing captions; it is planning formats, watching trends, tracking performance, and keeping reply drafts ready without sliding into bot-like engagement.
+
+Iris Instagram Manager is a single-account Instagram operator built around that workflow. It reads the brand rules, plans a weekly calendar, drafts captions and hashtag sets, prepares DM and comment replies for approval, monitors trends, and compiles weekly performance reviews. Publishing stays manual by design, so the operator remains in control of every post, Story, Reel, comment, and DM.
+
+**Good for:** Creators, small brands, indie founders, and marketing leads who want a disciplined Instagram drafting workflow without automating risky engagement behavior.
+
+---
+
+### Echo Personal Branding
+**Category:** Marketing
+
+Personal branding breaks down when every post sounds generic or the operator cannot keep a steady cadence across platforms. The missing layer is usually not ideas alone; it is a system that remembers how the operator actually sounds, adapts that voice to each platform, and keeps drafts moving without taking over publishing.
+
+Echo Personal Branding is a ghostwriting-oriented preset for X and LinkedIn. It runs a bootstrap flow, builds `VOICE.md` from real writing samples, tracks what lands, drafts multiple post angles, prepares engagement replies for review, and keeps platform-specific playbooks close to the daily workflow. The operator stays the publisher and final decision-maker the whole time.
+
+**Good for:** Founders, consultants, engineers, and operators building a public voice on X, LinkedIn, or both without handing the account to an autoposting bot.

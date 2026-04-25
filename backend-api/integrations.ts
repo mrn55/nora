@@ -37,8 +37,10 @@ const INTEGRATION_ENV_MAP = {
   pagerduty:            'PAGERDUTY_TOKEN',
   dropbox:              'DROPBOX_ACCESS_TOKEN',
   twilio:               'TWILIO_AUTH_TOKEN',
+  telegram:             'TELEGRAM_BOT_TOKEN',
   shopify:              'SHOPIFY_ACCESS_TOKEN',
   linkedin:             'LINKEDIN_ACCESS_TOKEN',
+  instagram:            'INSTAGRAM_ACCESS_TOKEN',
   salesforce:           'SALESFORCE_ACCESS_TOKEN',
   twitter:              'TWITTER_BEARER_TOKEN',
   digitalocean:         'DIGITALOCEAN_TOKEN',
@@ -102,6 +104,7 @@ const INTEGRATION_CONFIG_ENV_MAP = {
   'twilio.account_sid':               'TWILIO_ACCOUNT_SID',
   'twilio.phone_number':              'TWILIO_PHONE_NUMBER',
   'sendgrid.from_email':              'SENDGRID_FROM_EMAIL',
+  'telegram.operator_user_id':        'OPERATOR_TELEGRAM_ID',
   // AI / ML
   'openai.org_id':                    'OPENAI_ORG_ID',
   'huggingface.model_id':             'HF_DEFAULT_MODEL',
@@ -179,6 +182,8 @@ const INTEGRATION_CONFIG_ENV_MAP = {
   'twitter.api_key':                  'TWITTER_API_KEY',
   'twitter.api_secret':               'TWITTER_API_SECRET',
   'facebook.page_id':                 'FACEBOOK_PAGE_ID',
+  'instagram.business_account_id':    'INSTAGRAM_BUSINESS_ACCOUNT_ID',
+  'instagram.page_id':                'INSTAGRAM_PAGE_ID',
   // Analytics
   'mixpanel.project_token':           'MIXPANEL_PROJECT_TOKEN',
   'google-analytics.service_account_json': 'GOOGLE_ANALYTICS_SA_JSON',
@@ -938,6 +943,17 @@ async function testIntegration(integrationId, agentId) {
       if (!res.ok) throw new Error(`Twilio API returned ${res.status}`);
       return { success: true, message: "Connected to Twilio" };
     },
+    telegram: async () => {
+      const botToken = String(token || "").trim();
+      if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken)) {
+        throw new Error("Invalid Telegram bot token format");
+      }
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+      if (!res.ok) throw new Error(`Telegram API returned ${res.status}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(`Telegram: ${data.description || "validation failed"}`);
+      return { success: true, message: `Connected as @${data.result?.username || "bot"}` };
+    },
     shopify: async () => {
       const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});
       const shop = config.shop_domain;
@@ -976,6 +992,19 @@ async function testIntegration(integrationId, agentId) {
       if (!res.ok) throw new Error(`Facebook API returned ${res.status}`);
       const data = await res.json();
       return { success: true, message: `Connected as ${data.name || "verified"}` };
+    },
+    instagram: async () => {
+      const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});
+      const accountId = String(config.business_account_id || "").trim();
+      const path = accountId
+        ? `${encodeURIComponent(accountId)}?fields=id,username`
+        : "me?fields=id,name";
+      const res = await fetch(
+        `https://graph.facebook.com/v18.0/${path}&access_token=${encodeURIComponent(token)}`
+      );
+      if (!res.ok) throw new Error(`Instagram Graph API returned ${res.status}`);
+      const data = await res.json();
+      return { success: true, message: `Connected as ${data.username || data.name || data.id || "verified"}` };
     },
     "docker-hub": async () => {
       const config = typeof integration.config === "string" ? JSON.parse(integration.config) : (integration.config || {});

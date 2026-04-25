@@ -6,7 +6,23 @@ const GATEWAY_READY_POLL_MS = 5000;
 const GATEWAY_BOOT_MESSAGE =
   "Fresh OpenClaw deployments can take a couple of minutes while the official dashboard installs and starts.";
 
-export default function OpenClawUIPanel({ agentId }) {
+function normalizeEmbedPath(path = "") {
+  return String(path || "").trim().replace(/^\/+/, "");
+}
+
+type OpenClawUIPanelProps = {
+  agentId: string;
+  path?: string;
+  surfaceLabel?: string;
+  newWindowLabel?: string;
+};
+
+export default function OpenClawUIPanel({
+  agentId,
+  path = "",
+  surfaceLabel = "official OpenClaw dashboard",
+  newWindowLabel = "New Window",
+}: OpenClawUIPanelProps) {
   const [loading, setLoading] = useState(true);
   const [gatewayReady, setGatewayReady] = useState(false);
   const [gatewayBootMessage, setGatewayBootMessage] = useState("");
@@ -16,6 +32,7 @@ export default function OpenClawUIPanel({ agentId }) {
   const iframeRef = useRef(null);
   const readyPollRef = useRef(null);
   const cancelledRef = useRef(false);
+  const normalizedPath = normalizeEmbedPath(path);
 
   function clearReadyPoll() {
     if (readyPollRef.current) {
@@ -113,7 +130,10 @@ export default function OpenClawUIPanel({ agentId }) {
     if (!gatewayInfo || !gatewayReady) return "";
     const legacy = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const qs = legacy ? `?token=${encodeURIComponent(legacy)}` : "";
-    return `/api/agents/${agentId}/gateway/embed${qs}`;
+    const base = normalizedPath
+      ? `/api/agents/${agentId}/gateway/embed/${normalizedPath}`
+      : `/api/agents/${agentId}/gateway/embed`;
+    return `${base}${qs}`;
   }
 
   // Open the same-origin embedded gateway UI in a new window without exposing the gateway password.
@@ -182,10 +202,10 @@ export default function OpenClawUIPanel({ agentId }) {
             onClick={openInNewWindow}
             disabled={!embedUrl}
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-            title="Open the official OpenClaw dashboard in a new window"
+            title={`Open the ${surfaceLabel.toLowerCase()} in a new window`}
           >
             <Maximize2 size={12} />
-            New Window
+            {newWindowLabel}
           </button>
         </div>
       </div>
@@ -200,8 +220,8 @@ export default function OpenClawUIPanel({ agentId }) {
               <div className="space-y-1 text-center px-6">
                 <p className="text-xs text-slate-400">
                   {gatewayReady
-                    ? "Connecting to official OpenClaw dashboard..."
-                    : "Preparing official OpenClaw dashboard..."}
+                    ? `Connecting to ${surfaceLabel.toLowerCase()}...`
+                    : `Preparing ${surfaceLabel.toLowerCase()}...`}
                 </p>
                 {!gatewayReady && (
                   <p className="text-[11px] text-slate-500 max-w-md">
@@ -219,14 +239,14 @@ export default function OpenClawUIPanel({ agentId }) {
             src={embedUrl}
             className="w-full h-full border-0"
             allow="clipboard-write"
-            title={`OpenClaw Dashboard ${agentId}`}
+            title={`${surfaceLabel} ${agentId}`}
             onLoad={() => setIframeLoaded(true)}
           />
         ) : (
           <div className="flex items-center justify-center h-full bg-slate-900 text-slate-500 text-sm px-6 text-center">
             {gatewayReady
               ? "Unable to build embed URL — please log in again"
-              : "Waiting for the official OpenClaw dashboard to become ready."}
+              : `Waiting for the ${surfaceLabel.toLowerCase()} to become ready.`}
           </div>
         )}
       </div>

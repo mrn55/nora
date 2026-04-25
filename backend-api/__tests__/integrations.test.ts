@@ -154,4 +154,59 @@ describe("integration secret handling", () => {
     ]);
     expect(tools[0].nora.invokeCommand).toContain("nora-integration-tool github_list_repositories");
   });
+
+  it("maps marketplace template credentials from integrations into runtime env", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          provider: "telegram",
+          access_token: "enc(telegram-token)",
+          config: JSON.stringify({ operator_user_id: "12345" }),
+        },
+        {
+          provider: "instagram",
+          access_token: "enc(instagram-token)",
+          config: JSON.stringify({
+            business_account_id: "17890000000000000",
+            page_id: "page-1",
+          }),
+        },
+      ],
+    });
+
+    const envVars = await integrations.getIntegrationEnvVars("agent-1");
+
+    expect(envVars).toEqual({
+      TELEGRAM_BOT_TOKEN: "dec(enc(telegram-token))",
+      OPERATOR_TELEGRAM_ID: "12345",
+      INSTAGRAM_ACCESS_TOKEN: "dec(enc(instagram-token))",
+      INSTAGRAM_BUSINESS_ACCOUNT_ID: "17890000000000000",
+      INSTAGRAM_PAGE_ID: "page-1",
+    });
+  });
+
+  it("exposes marketplace communication credentials through the integration catalog", async () => {
+    mockDb.query.mockRejectedValueOnce(new Error("catalog table unavailable"));
+
+    const catalog = await integrations.getCatalog();
+
+    expect(catalog).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "telegram",
+          configFields: expect.arrayContaining([
+            expect.objectContaining({ key: "bot_token", type: "password" }),
+            expect.objectContaining({ key: "operator_user_id", type: "text" }),
+          ]),
+        }),
+        expect.objectContaining({
+          id: "instagram",
+          configFields: expect.arrayContaining([
+            expect.objectContaining({ key: "access_token", type: "password" }),
+            expect.objectContaining({ key: "business_account_id", type: "text" }),
+          ]),
+        }),
+      ])
+    );
+  });
 });

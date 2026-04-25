@@ -15,14 +15,15 @@ const {
 } = require("../../../agent-runtime/lib/contracts");
 const {
   buildContainerBootstrap,
+  shellSingleQuote,
   toDockerLaunch,
 } = require("../../../agent-runtime/lib/containerCommand");
 
 const HERMES_RUNTIME_PORT = 8642;
 const HERMES_HOME = "/opt/data";
-const HERMES_LOG_DIR = `${HERMES_HOME}/logs`;
 const HERMES_WORKSPACE = `${HERMES_HOME}/workspace`;
 const HERMES_ENTRYPOINT = "/opt/hermes/docker/entrypoint.sh";
+const HERMES_BIN = "/opt/hermes/.venv/bin/hermes";
 const CONTAINER_STDOUT_FD = "/proc/1/fd/1";
 const CONTAINER_STDERR_FD = "/proc/1/fd/2";
 
@@ -38,16 +39,19 @@ function isMutableImageReference(imgName) {
 }
 
 function buildHermesStartCommand() {
+  const hermesRuntimeCommand = [
+    "set -eu",
+    `HERMES_BIN="${HERMES_BIN}"`,
+    '[ -x "$HERMES_BIN" ] || HERMES_BIN="$(command -v hermes)"',
+    `nohup "$HERMES_BIN" dashboard --host 0.0.0.0 --insecure --no-open >> ${CONTAINER_STDOUT_FD} 2>> ${CONTAINER_STDERR_FD} &`,
+    'exec "$HERMES_BIN" gateway run',
+  ].join("\n");
+
   return [
     "set -eu",
-    `if [ -d ${HERMES_LOG_DIR} ]; then`,
-    `  chown -R hermes:hermes ${HERMES_LOG_DIR} 2>/dev/null || true`,
-    "else",
-    `  mkdir -p ${HERMES_LOG_DIR}`,
-    `  chown hermes:hermes ${HERMES_LOG_DIR} 2>/dev/null || true`,
-    "fi",
-    `nohup ${HERMES_ENTRYPOINT} dashboard --host 0.0.0.0 --insecure --no-open >> ${CONTAINER_STDOUT_FD} 2>> ${CONTAINER_STDERR_FD} &`,
-    `exec ${HERMES_ENTRYPOINT} gateway run`,
+    // Bootstrap the mounted Hermes home once, then fork dashboard and gateway
+    // from that initialized session so first-run file seeding cannot race.
+    `exec ${HERMES_ENTRYPOINT} bash -lc ${shellSingleQuote(hermesRuntimeCommand)}`,
   ].join("\n");
 }
 

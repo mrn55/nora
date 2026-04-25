@@ -5,7 +5,8 @@ async function findOwnedAgent(agentId, userId) {
   if (!agentId) return null;
   const result = await db.query(
     `SELECT id, user_id, name, status, host, container_id, backend_type, runtime_family,
-            deploy_target, sandbox_profile, clawhub_skills
+            deploy_target, sandbox_profile, clawhub_skills, gateway_token,
+            gateway_host_port, gateway_host, gateway_port, runtime_host, runtime_port
        FROM agents
       WHERE id = $1 AND user_id = $2`,
     [agentId, userId],

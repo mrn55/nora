@@ -7,12 +7,12 @@ import {
   Puzzle,
   Radio,
 } from "lucide-react";
-import ChannelsTab from "./ChannelsTab";
 import StatusPanel from "./openclaw/StatusPanel";
 import ChatPanel from "./openclaw/ChatPanel";
 import IntegrationsTab from "./IntegrationsTab";
 import ClawHubTab from "./openclaw/ClawHubTab";
 import CronPanel from "./openclaw/CronPanel";
+import ChannelsTab from "./ChannelsTab";
 import OpenClawUIPanel from "./openclaw/OpenClawUIPanel";
 
 const subTabs = [
@@ -24,26 +24,6 @@ const subTabs = [
   { id: "cron", label: "Cron", icon: CalendarClock },
   { id: "channels", label: "Channels", icon: MessagesSquare },
 ];
-
-function OpenClawChannelsPanel({ agentId }) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-700">
-          Managed Channels
-        </p>
-        <p className="mt-1 text-sm font-bold text-slate-900">
-          These channels follow Nora&apos;s managed CLI-style channel workflow for OpenClaw agents.
-        </p>
-        <p className="mt-1 text-xs text-slate-600">
-          Create, test, and inspect channels here the same way you would through the managed CLI
-          path, without relying on Hermes-only runtime configuration.
-        </p>
-      </div>
-      <ChannelsTab agentId={agentId} />
-    </div>
-  );
-}
 
 export default function OpenClawTab({
   agentId,
@@ -110,7 +90,7 @@ export default function OpenClawTab({
           />
         )}
         {activeSubTab === "cron" && <CronPanel agentId={agentId} />}
-        {activeSubTab === "channels" && <OpenClawChannelsPanel agentId={agentId} />}
+        {activeSubTab === "channels" && <ChannelsTab agentId={agentId} />}
       </div>
     </div>
   );

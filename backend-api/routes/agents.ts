@@ -27,7 +27,10 @@ const {
   materializeManagedMigrationState,
 } = require("../agentMigrations");
 const { isGatewayAvailableStatus, reconcileAgentStatus } = require("../agentStatus");
-const { OPENCLAW_GATEWAY_PORT } = require("../../agent-runtime/lib/contracts");
+const {
+  HERMES_DASHBOARD_PORT,
+  OPENCLAW_GATEWAY_PORT,
+} = require("../../agent-runtime/lib/contracts");
 const {
   resolveGatewayAddress,
   resolveHermesDashboardAddress,
@@ -546,17 +549,15 @@ function buildHermesDashboardUnsupportedMessage(versionLine = "") {
 function buildHermesDashboardEnsureCommand() {
   return [
     'HERMES_BIN="/opt/hermes/.venv/bin/hermes"',
-    'LOG_DIR="/opt/data/logs"',
     '[ -x "$HERMES_BIN" ] || HERMES_BIN="$(command -v hermes 2>/dev/null || true)"',
     'if [ -z "$HERMES_BIN" ]; then echo "STATUS=missing-cli"; exit 0; fi',
     'VERSION="$("$HERMES_BIN" version 2>/dev/null | head -n 1 || true)"',
     'if ! "$HERMES_BIN" --help 2>/dev/null | grep -q "dashboard"; then echo "STATUS=missing-dashboard"; printf "VERSION=%s\\n" "$VERSION"; exit 0; fi',
-    'if ! python3 -c \'import importlib.util,sys;sys.exit(0 if importlib.util.find_spec("hermes_cli.web_server") else 1)\'; then echo "STATUS=missing-web-server"; printf "VERSION=%s\\n" "$VERSION"; exit 0; fi',
-    'if python3 -c \'import socket,sys;s=socket.socket();s.settimeout(1);rc=s.connect_ex(("127.0.0.1",9119));s.close();sys.exit(0 if rc==0 else 1)\'; then echo "STATUS=already-running"; printf "VERSION=%s\\n" "$VERSION"; exit 0; fi',
-    'if [ -d "$LOG_DIR" ]; then chown -R hermes:hermes "$LOG_DIR" 2>/dev/null || true; else mkdir -p "$LOG_DIR"; chown hermes:hermes "$LOG_DIR" 2>/dev/null || true; fi',
-    "nohup /opt/hermes/docker/entrypoint.sh dashboard --host 0.0.0.0 --insecure --no-open >> /proc/1/fd/1 2>> /proc/1/fd/2 &",
-    "sleep 2",
-    'if python3 -c \'import socket,sys;s=socket.socket();s.settimeout(1);rc=s.connect_ex(("127.0.0.1",9119));s.close();sys.exit(0 if rc==0 else 1)\'; then echo "STATUS=started"; else echo "STATUS=start-failed"; fi',
+    `if python3 -c 'import socket,sys;s=socket.socket();s.settimeout(1);rc=s.connect_ex(("127.0.0.1",${HERMES_DASHBOARD_PORT}));s.close();sys.exit(0 if rc==0 else 1)'; then echo "STATUS=already-running"; printf "VERSION=%s\\n" "$VERSION"; exit 0; fi`,
+    'if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1; then setsid gosu hermes "$HERMES_BIN" dashboard --host 0.0.0.0 --insecure --no-open < /dev/null & else setsid "$HERMES_BIN" dashboard --host 0.0.0.0 --insecure --no-open < /dev/null & fi',
+    'started=0',
+    `for _attempt in 1 2 3 4 5; do if python3 -c 'import socket,sys;s=socket.socket();s.settimeout(1);rc=s.connect_ex(("127.0.0.1",${HERMES_DASHBOARD_PORT}));s.close();sys.exit(0 if rc==0 else 1)'; then started=1; break; fi; sleep 1; done`,
+    'if [ "$started" = "1" ]; then echo "STATUS=started"; else echo "STATUS=start-failed"; fi',
     'printf "VERSION=%s\\n" "$VERSION"',
   ].join("; ");
 }

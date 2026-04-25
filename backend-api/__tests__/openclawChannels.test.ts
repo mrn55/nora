@@ -1,0 +1,402 @@
+// @ts-nocheck
+const mockRpcCall = jest.fn();
+const mockRunContainerCommand = jest.fn();
+
+jest.mock("../gatewayProxy", () => ({
+  rpcCall: (...args) => mockRpcCall(...args),
+}));
+
+jest.mock("../authSync", () => ({
+  runContainerCommand: (...args) => mockRunContainerCommand(...args),
+}));
+
+const {
+  connectOpenClawChannel,
+  deleteOpenClawChannel,
+  listOpenClawChannels,
+  saveOpenClawChannel,
+} = require("../channels/openclaw");
+
+describe("openclaw channel catalog compatibility", () => {
+  const agent = {
+    id: "agent-openclaw-1",
+    runtime_family: "openclaw",
+    status: "running",
+  };
+
+  beforeEach(() => {
+    mockRpcCall.mockReset();
+    mockRunContainerCommand.mockReset();
+  });
+
+  it("builds available channel types from metadata maps when channel order is missing", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [
+          {
+            id: "telegram",
+            label: "Telegram",
+            detailLabel: "Telegram (Bot API)",
+          },
+        ],
+        channelLabels: {
+          whatsapp: "WhatsApp (QR link)",
+        },
+        channelDetailLabels: {
+          whatsapp: "WhatsApp (QR link)",
+        },
+        channelSystemImages: {
+          whatsapp: "systems/whatsapp.png",
+        },
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-1",
+        config: { channels: {} },
+      });
+
+    const payload = await listOpenClawChannels(agent);
+
+    expect(payload.runtime).toBe("openclaw");
+    expect(payload.channels).toEqual([]);
+    expect(payload.availableTypes).toEqual([
+      expect.objectContaining({
+        type: "telegram",
+        label: "Telegram (Bot API)",
+        detailLabel: "Telegram (Bot API)",
+      }),
+      expect.objectContaining({
+        type: "whatsapp",
+        label: "WhatsApp (QR link)",
+        detailLabel: "WhatsApp (QR link)",
+        systemImage: "systems/whatsapp.png",
+      }),
+    ]);
+  });
+
+  it("allows creating a metadata-only OpenClaw channel", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [{ id: "telegram", label: "Telegram" }],
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-2",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        restart: "requested",
+      });
+
+    const result = await saveOpenClawChannel(
+      agent,
+      "telegram",
+      {
+        config: {
+          botToken: "secret-token",
+        },
+      },
+      { create: true },
+    );
+
+    expect(result).toEqual({
+      success: true,
+      channel: "telegram",
+      restart: "requested",
+    });
+    expect(mockRpcCall).toHaveBeenCalledTimes(3);
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      3,
+      agent,
+      "config.patch",
+      {
+        raw: JSON.stringify({
+          channels: {
+            telegram: {
+              enabled: true,
+              botToken: "secret-token",
+            },
+          },
+        }),
+        baseHash: "cfg-2",
+      },
+      undefined,
+    );
+  });
+
+  it("seeds WhatsApp config before starting QR login", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [{ id: "whatsapp", label: "WhatsApp" }],
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-connect",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        restart: "requested",
+      })
+      .mockResolvedValueOnce({
+        qrDataUrl: "data:image/png;base64,qr",
+        message: "Scan this QR in WhatsApp.",
+      });
+
+    const result = await connectOpenClawChannel(agent, "whatsapp", {
+      force: true,
+      timeoutMs: 30000,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      channel: "whatsapp",
+      restart: "requested",
+      qrDataUrl: "data:image/png;base64,qr",
+      login: {
+        qrDataUrl: "data:image/png;base64,qr",
+      },
+    });
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      3,
+      agent,
+      "config.patch",
+      {
+        raw: JSON.stringify({
+          channels: {
+            whatsapp: {
+              enabled: true,
+              accounts: {
+                default: {
+                  enabled: true,
+                },
+              },
+            },
+          },
+        }),
+        baseHash: "cfg-connect",
+      },
+      undefined,
+    );
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      4,
+      agent,
+      "web.login.start",
+      {
+        force: true,
+        timeoutMs: 30000,
+      },
+      undefined,
+    );
+  });
+
+  it("installs and restarts the WhatsApp provider when QR login is not loaded yet", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [{ id: "whatsapp", label: "WhatsApp" }],
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-connect-install",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        restart: "requested",
+      })
+      .mockRejectedValueOnce(
+        Object.assign(new Error("web login provider is not available"), {
+          code: "INVALID_REQUEST",
+        }),
+      )
+      .mockResolvedValueOnce({
+        qrDataUrl: "data:image/png;base64,qr-after-install",
+        message: "Scan this QR in WhatsApp.",
+      });
+    mockRunContainerCommand.mockResolvedValueOnce({
+      exitCode: 0,
+      output: "installed",
+    });
+
+    const result = await connectOpenClawChannel(agent, "whatsapp", {
+      force: true,
+      accountId: "default",
+      timeoutMs: 30000,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      channel: "whatsapp",
+      qrDataUrl: "data:image/png;base64,qr-after-install",
+    });
+    expect(mockRunContainerCommand).toHaveBeenCalledWith(
+      agent,
+      expect.stringContaining("plugins install @openclaw/whatsapp --force"),
+      { timeout: 240000 },
+    );
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain("gateway restart");
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      5,
+      agent,
+      "web.login.start",
+      {
+        force: true,
+        accountId: "default",
+        timeoutMs: 30000,
+      },
+      undefined,
+    );
+  });
+
+  it("lists channel types from the config schema when runtime status exposes no catalog", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [],
+        channelOrder: [],
+        channels: {},
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-2b",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        path: "channels",
+        children: [
+          {
+            key: "signal",
+            path: "channels.signal",
+            required: false,
+            hasChildren: true,
+            hint: {
+              label: "Signal",
+              help: "Signal bridge settings.",
+            },
+          },
+          {
+            key: "telegram",
+            path: "channels.telegram",
+            required: false,
+            hasChildren: true,
+            hint: {
+              label: "Telegram",
+              help: "Telegram bot settings.",
+            },
+          },
+        ],
+      });
+
+    const payload = await listOpenClawChannels(agent);
+
+    expect(payload.availableTypes).toEqual([
+      expect.objectContaining({
+        type: "signal",
+      }),
+      expect.objectContaining({
+        type: "telegram",
+      }),
+    ]);
+  });
+
+  it("allows creating a schema-only OpenClaw channel", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [],
+        channelOrder: [],
+        channels: {},
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-2c",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        path: "channels",
+        children: [
+          {
+            key: "signal",
+            path: "channels.signal",
+            required: false,
+            hasChildren: true,
+            hint: {
+              label: "Signal",
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        restart: "requested",
+      });
+
+    const result = await saveOpenClawChannel(
+      agent,
+      "signal",
+      {
+        config: {
+          socketPath: "/tmp/signal.sock",
+        },
+      },
+      { create: true },
+    );
+
+    expect(result).toEqual({
+      success: true,
+      channel: "signal",
+      restart: "requested",
+    });
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      4,
+      agent,
+      "config.patch",
+      {
+        raw: JSON.stringify({
+          channels: {
+            signal: {
+              enabled: true,
+              socketPath: "/tmp/signal.sock",
+            },
+          },
+        }),
+        baseHash: "cfg-2c",
+      },
+      undefined,
+    );
+  });
+
+  it("allows deleting a channel that only exists in the config snapshot", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [],
+        channelOrder: [],
+        channels: {},
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-3",
+        config: {
+          channels: {
+            discord: {
+              enabled: true,
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        restart: null,
+      });
+
+    const result = await deleteOpenClawChannel(agent, "discord");
+
+    expect(result).toEqual({
+      success: true,
+      channel: "discord",
+      restart: null,
+    });
+    expect(mockRpcCall).toHaveBeenCalledTimes(3);
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      3,
+      agent,
+      "config.patch",
+      {
+        raw: JSON.stringify({
+          channels: {
+            discord: null,
+          },
+        }),
+        baseHash: "cfg-3",
+      },
+      undefined,
+    );
+  });
+});

@@ -15,6 +15,8 @@ const CORE_FILES = [
   "MEMORY.md",
   "BOOTSTRAP.md",
 ];
+const CORE_FILE_SET = new Set(CORE_FILES);
+const RESERVED_FILENAMES = new Set(["manifest.json"]);
 
 function textFile(filePath, content) {
   return {
@@ -23,9 +25,39 @@ function textFile(filePath, content) {
   };
 }
 
-function buildStarterPayload(coreFiles, metadata = {}) {
+function normalizeManifestFileList(value = []) {
+  const files = [];
+  const seen = new Set();
+  for (const entry of Array.isArray(value) ? value : []) {
+    if (typeof entry !== "string") continue;
+    const normalized = path.posix
+      .normalize(entry.trim().replace(/\\/g, "/"))
+      .replace(/^\/+/, "");
+    if (
+      !normalized ||
+      normalized === "." ||
+      normalized.startsWith("../") ||
+      RESERVED_FILENAMES.has(normalized) ||
+      CORE_FILE_SET.has(normalized) ||
+      seen.has(normalized)
+    ) {
+      continue;
+    }
+    seen.add(normalized);
+    files.push(normalized);
+  }
+  return files;
+}
+
+function readTemplateFiles(dir, filePaths = []) {
+  return filePaths
+    .filter((filePath) => fs.existsSync(path.join(dir, filePath)))
+    .map((filePath) => textFile(filePath, fs.readFileSync(path.join(dir, filePath), "utf8")));
+}
+
+function buildStarterPayload(templateFiles, metadata = {}) {
   return normalizeTemplatePayload({
-    files: coreFiles,
+    files: templateFiles,
     memoryFiles: [],
     wiring: { channels: [], integrations: [] },
     metadata,
@@ -67,14 +99,23 @@ function loadTemplatesFromDisk() {
     if (!fs.existsSync(manifestPath)) continue;
 
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    const { templateKey, name, description, price, category, starterType } = manifest;
+    const {
+      templateKey,
+      name,
+      description,
+      price,
+      category,
+      starterType,
+      extraFiles = [],
+    } = manifest;
     if (!templateKey) continue;
 
-    const coreFiles = CORE_FILES.filter((f) => fs.existsSync(path.join(dir, f))).map((f) =>
-      textFile(f, fs.readFileSync(path.join(dir, f), "utf8")),
-    );
+    const templateFiles = readTemplateFiles(dir, [
+      ...CORE_FILES,
+      ...normalizeManifestFileList(extraFiles),
+    ]);
 
-    const payload = buildStarterPayload(coreFiles, { starterType });
+    const payload = buildStarterPayload(templateFiles, { starterType });
 
     templates.push({
       templateKey,
