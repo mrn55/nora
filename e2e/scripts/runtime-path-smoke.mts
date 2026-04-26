@@ -90,11 +90,11 @@ async function waitForGateway(agentId, token) {
   throw new Error(`Timed out waiting for gateway readiness on agent ${agentId}`);
 }
 
-async function waitForMarketplaceListing(token) {
+async function waitForAgentHubListing(token) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
-    const { body } = await api("/marketplace", { token });
+    const { body } = await api("/agent-hub", { token });
     const listing = Array.isArray(body)
       ? body.find((entry) => entry?.status === "published") || body[0]
       : null;
@@ -102,7 +102,7 @@ async function waitForMarketplaceListing(token) {
     await sleep(POLL_INTERVAL_MS);
   }
 
-  throw new Error("Timed out waiting for starter marketplace listings");
+  throw new Error("Timed out waiting for starter Agent Hub listings");
 }
 
 function assertRuntimePath(agent, {
@@ -236,8 +236,8 @@ async function main() {
     });
     assertK8sResources(sourceId);
 
-    const listing = await waitForMarketplaceListing(token);
-    const installDeploy = await api("/marketplace/install", {
+    const listing = await waitForAgentHubListing(token);
+    const installDeploy = await api("/agent-hub/install", {
       method: "POST",
       token,
       body: {
@@ -274,7 +274,7 @@ async function main() {
           sourceAgentId: sourceId,
           duplicateAgentId: duplicateId,
           installedAgentId: installedId,
-          marketplaceListingId: listing.id,
+          agentHubListingId: listing.id,
         },
         null,
         2

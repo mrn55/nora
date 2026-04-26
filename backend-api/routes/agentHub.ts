@@ -6,6 +6,8 @@ const billing = require("../billing");
 const marketplace = require("../marketplace");
 const { scanTemplatePayloadForSecrets } = require("../marketplaceSafety");
 const { buildMarketplaceTemplateUpdate } = require("../marketplaceTemplateEdits");
+const { fetchCatalog, fetchListing, submitListing } = require("../agentHubRemote");
+const { getAgentHubSettings } = require("../platformSettings");
 const snapshots = require("../snapshots");
 const scheduler = require("../scheduler");
 const monitoring = require("../monitoring");
@@ -44,7 +46,7 @@ const {
 } = require("../agentRuntimeFields");
 
 const router = express.Router();
-router.use(createMutationFailureAuditMiddleware("marketplace"));
+router.use(createMutationFailureAuditMiddleware("agent_hub"));
 
 function stripAsciiControlCharacters(value) {
   return Array.from(value)
@@ -71,6 +73,30 @@ function normalizeListingCategory(value) {
 
 function normalizeListingPrice(value) {
   return "Free";
+}
+
+function normalizeShareTarget(value, fallback = marketplace.LISTING_SHARE_TARGET_BOTH) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === marketplace.LISTING_SHARE_TARGET_INTERNAL) return normalized;
+  if (normalized === marketplace.LISTING_SHARE_TARGET_COMMUNITY) return normalized;
+  if (normalized === marketplace.LISTING_SHARE_TARGET_BOTH) return normalized;
+  return fallback || marketplace.LISTING_SHARE_TARGET_BOTH;
+}
+
+function shareTargetIncludesInternal(shareTarget) {
+  return (
+    shareTarget === marketplace.LISTING_SHARE_TARGET_INTERNAL ||
+    shareTarget === marketplace.LISTING_SHARE_TARGET_BOTH
+  );
+}
+
+function shareTargetIncludesCommunity(shareTarget) {
+  return (
+    shareTarget === marketplace.LISTING_SHARE_TARGET_COMMUNITY ||
+    shareTarget === marketplace.LISTING_SHARE_TARGET_BOTH
+  );
 }
 
 function resolveRequestedImage({
@@ -189,7 +215,13 @@ async function getOwnedAgent(agentId, userId) {
 
 function canAccessPublishedListing(listing, userId) {
   if (!listing) return false;
-  if (listing.status === marketplace.LISTING_STATUS_PUBLISHED) return true;
+  if (
+    listing.status === marketplace.LISTING_STATUS_PUBLISHED &&
+    (listing.source_type === marketplace.LISTING_SOURCE_PLATFORM ||
+      listing.local_visibility === marketplace.LISTING_LOCAL_VISIBILITY_INTERNAL)
+  ) {
+    return true;
+  }
   return listing.owner_user_id && listing.owner_user_id === userId;
 }
 
@@ -214,7 +246,7 @@ function buildSnapshotConfigFromAgent(agent, templatePayload) {
   };
 }
 
-function marketplaceAuditMetadata(req, context = {}) {
+function agentHubAuditMetadata(req, context = {}) {
   return buildAuditMetadata(req, context);
 }
 
@@ -267,11 +299,109 @@ async function buildListingTemplateDetail(listing, options = {}) {
   };
 }
 
+function isRemoteListingId(value) {
+  return String(value || "").startsWith("hub:");
+}
+
+function buildRemoteTemplateDetail(remoteDetail, options = {}) {
+  const templatePayload = remoteDetail.templatePayload || remoteDetail.template_payload || {};
+  const template = summarizeTemplatePayload(templatePayload, {
+    includeContent: options.includeContent === true,
+  });
+  return {
+    ...remoteDetail,
+    id: remoteDetail.id || `hub:${remoteDetail.remote_id}`,
+    remote: true,
+    source_type: "community",
+    status: "published",
+    defaults: remoteDetail.defaults || {},
+    snapshot: remoteDetail.snapshot || null,
+    template:
+      options.includeContent === true
+        ? template
+        : {
+            fileCount: template.fileCount,
+            memoryFileCount: template.memoryFileCount,
+            integrationCount: template.integrationCount,
+            channelCount: template.channelCount,
+            requiredCoreCount: template.requiredCoreCount,
+            presentRequiredCoreCount: template.presentRequiredCoreCount,
+            missingRequiredCoreFiles: template.missingRequiredCoreFiles,
+            hasBootstrap: template.hasBootstrap,
+            extraFilesCount: template.extraFilesCount,
+            coreFiles: template.coreFiles.map((file) => ({
+              path: file.path,
+              label: file.label,
+              required: file.required,
+              present: file.present,
+              bytes: file.bytes,
+              lineCount: file.lineCount,
+              preview: file.preview,
+            })),
+          },
+  };
+}
+
+function buildCentralSubmissionPayload(listing, snapshot, templatePayload) {
+  return {
+    listing: {
+      id: listing.id,
+      slug: listing.slug,
+      name: listing.name,
+      description: listing.description,
+      category: listing.category,
+      price: listing.price,
+      sourceType: listing.source_type,
+      ownerName: listing.owner_name || listing.owner_email || "Nora user",
+      version: listing.current_version || 1,
+    },
+    snapshot: {
+      id: snapshot.id,
+      kind: snapshot.kind,
+      templateKey: snapshot.template_key || null,
+    },
+    defaults: extractTemplateDefaultsFromSnapshot(snapshot),
+    templatePayload,
+  };
+}
+
+async function submitToCentralHub(listing, snapshot, templatePayload) {
+  const settings = await getAgentHubSettings();
+  try {
+    const response = await submitListing(
+      settings,
+      buildCentralSubmissionPayload(listing, snapshot, templatePayload),
+    );
+    return {
+      status: marketplace.CENTRAL_SHARE_STATUS_SUBMITTED,
+      centralListingId: response?.id || response?.listingId || response?.listing?.id || null,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      status: marketplace.CENTRAL_SHARE_STATUS_FAILED,
+      centralListingId: null,
+      error: error.message,
+    };
+  }
+}
+
 router.get(
   "/",
   asyncHandler(async (_req, res) => {
-    const listings = await marketplace.listMarketplace();
+    const listings = await marketplace.listAgentHubLocalListings();
     res.json(await Promise.all(listings.map((listing) => buildListingTemplateDetail(listing))));
+  }),
+);
+
+router.get(
+  "/community",
+  asyncHandler(async (req, res) => {
+    const settings = await getAgentHubSettings();
+    const catalog = await fetchCatalog(settings, {
+      refresh: req.query.refresh === "true",
+    });
+    res.json(catalog);
   }),
 );
 
@@ -283,8 +413,15 @@ router.get(
   }),
 );
 
+router.get(
+  "/settings",
+  asyncHandler(async (_req, res) => {
+    res.json(await getAgentHubSettings());
+  }),
+);
+
 router.post(
-  "/publish",
+  "/share",
   asyncHandler(async (req, res) => {
     const { agentId, listingId = null } = req.body || {};
     if (!agentId) {
@@ -317,11 +454,19 @@ router.post(
     const issues = scanTemplatePayloadForSecrets(templatePayload);
     if (issues.length > 0) {
       return res.status(400).json({
-        error: "Potential secrets were detected in this template. Remove them before publishing.",
+        error: "Potential secrets were detected in this template. Remove them before sharing.",
         issues,
       });
     }
 
+    const settings = await getAgentHubSettings();
+    const shareTarget = normalizeShareTarget(req.body.shareTarget, settings.defaultShareTarget);
+    const localVisibility = shareTargetIncludesInternal(shareTarget)
+      ? marketplace.LISTING_LOCAL_VISIBILITY_INTERNAL
+      : marketplace.LISTING_LOCAL_VISIBILITY_OWNER;
+    const centralShareStatus = shareTargetIncludesCommunity(shareTarget)
+      ? marketplace.CENTRAL_SHARE_STATUS_QUEUED
+      : marketplace.CENTRAL_SHARE_STATUS_NOT_SHARED;
     const listingName = normalizeListingName(
       req.body.name,
       existingListing?.name || agent.name || "Untitled Template",
@@ -355,21 +500,38 @@ router.post(
       category: listingCategory,
       builtIn: false,
       sourceType: marketplace.LISTING_SOURCE_COMMUNITY,
-      status: marketplace.LISTING_STATUS_PENDING_REVIEW,
+      status: marketplace.LISTING_STATUS_PUBLISHED,
       visibility: marketplace.LISTING_VISIBILITY_PUBLIC,
+      shareTarget,
+      localVisibility,
+      centralShareStatus,
+      centralListingId: null,
+      centralLastSyncedAt: null,
+      centralError: null,
       cloneMode: "files_only",
     });
 
+    let finalListing = listing;
+    if (shareTargetIncludesCommunity(shareTarget)) {
+      const centralResult = await submitToCentralHub(listing, snapshot, templatePayload);
+      finalListing =
+        (await marketplace.updateCentralShareStatus(listing.id, {
+          status: centralResult.status,
+          centralListingId: centralResult.centralListingId,
+          error: centralResult.error,
+        })) || listing;
+    }
+
     await monitoring.logEvent(
-      "marketplace_submitted",
+      "agent_hub_shared",
       existingListing
-        ? `Marketplace listing "${listing.name}" resubmitted for review`
-        : `Marketplace listing "${listing.name}" submitted for review`,
-      marketplaceAuditMetadata(req, {
+        ? `Agent Hub listing "${finalListing.name}" was updated`
+        : `Agent Hub listing "${finalListing.name}" was shared`,
+      agentHubAuditMetadata(req, {
         ...buildAgentContext(agent, {
           ownerEmail: req.user.email || null,
         }),
-        ...buildListingContext(listing, {
+        ...buildListingContext(finalListing, {
           snapshotId: snapshot.id,
           ownerUserId: req.user.id,
           ownerEmail: req.user.email || null,
@@ -379,12 +541,14 @@ router.post(
           name: snapshot.name,
         },
         result: {
-          action: existingListing ? "resubmitted" : "submitted",
+          action: existingListing ? "updated" : "shared",
+          shareTarget,
+          centralShareStatus: finalListing.central_share_status || centralShareStatus,
         },
       }),
     );
 
-    res.json(await marketplace.getListing(listing.id));
+    res.json(await marketplace.getListing(finalListing.id));
   }),
 );
 
@@ -403,14 +567,39 @@ router.post(
       return res.status(402).json({ error: limits.error, subscription: limits.subscription });
     }
 
-    const listing = await marketplace.getListing(listingId);
-    if (!listing || !canAccessPublishedListing(listing, req.user.id)) {
-      return res.status(404).json({ error: "listing not found" });
+    let listing;
+    let snap;
+    let defaults;
+    let templatePayload;
+    let remoteInstall = false;
+
+    if (isRemoteListingId(listingId)) {
+      const settings = await getAgentHubSettings();
+      const remoteDetail = await fetchListing(settings, listingId);
+      const detail = buildRemoteTemplateDetail(remoteDetail, { includeContent: true });
+      listing = detail;
+      snap = {
+        id: detail.snapshot?.id || detail.remote_id || listingId,
+        name: detail.name,
+        template_key: detail.snapshot?.templateKey || detail.snapshot?.template_key || null,
+      };
+      defaults = detail.defaults || {};
+      templatePayload = remoteDetail.templatePayload || remoteDetail.template_payload || {};
+      remoteInstall = true;
+    } else {
+      listing = await marketplace.getListing(listingId);
+      if (!listing || !canAccessPublishedListing(listing, req.user.id)) {
+        return res.status(404).json({ error: "listing not found" });
+      }
+
+      snap = await snapshots.getSnapshot(listing.snapshot_id);
+      if (!snap) return res.status(404).json({ error: "snapshot missing" });
+      defaults = extractTemplateDefaultsFromSnapshot(snap);
+      templatePayload = extractTemplatePayloadFromSnapshot(snap, {
+        includeBootstrap: true,
+      });
     }
     res.locals.auditContext = buildListingContext(listing);
-
-    const snap = await snapshots.getSnapshot(listing.snapshot_id);
-    if (!snap) return res.status(404).json({ error: "snapshot missing" });
 
     const name = sanitizeAgentName(requestedName, snap.name || listing.name || "OpenClaw-Agent");
     if (name.length > 100) {
@@ -424,7 +613,6 @@ router.post(
         error: `Unsupported runtime_family. Nora currently supports only "${DEFAULT_RUNTIME_FAMILY}".`,
       });
     }
-    const defaults = extractTemplateDefaultsFromSnapshot(snap);
     const runtimeFields = resolveRequestedRuntimeFields({
       request: {
         ...requestBody,
@@ -448,9 +636,6 @@ router.post(
       runtimeFields,
       fallbackImage: defaults.image,
       fallbackRuntimeFields,
-    });
-    const templatePayload = extractTemplatePayloadFromSnapshot(snap, {
-      includeBootstrap: true,
     });
     const node = await scheduler.selectNode({
       fallback: runtimeFields.deploy_target,
@@ -489,7 +674,9 @@ router.post(
 
     await materializeTemplateWiring(agent.id, templatePayload);
     await db.query("INSERT INTO deployments(agent_id, status) VALUES($1, 'queued')", [agent.id]);
-    await marketplace.recordInstall(listingId);
+    if (!remoteInstall) {
+      await marketplace.recordInstall(listingId);
+    }
     await addDeploymentJob({
       id: agent.id,
       name: agent.name,
@@ -502,9 +689,9 @@ router.post(
       image,
     });
     await monitoring.logEvent(
-      "marketplace_install",
+      "agent_hub_install",
       `Installed "${listing.name}" as "${agent.name}"`,
-      marketplaceAuditMetadata(req, {
+      agentHubAuditMetadata(req, {
         ...buildAgentContext(agent, {
           ownerEmail: req.user.email || null,
         }),
@@ -514,7 +701,10 @@ router.post(
         snapshot: {
           id: snap.id,
           name: snap.name,
-          templateKey: listing.template_key || null,
+          templateKey: listing.template_key || snap.template_key || null,
+        },
+        hub: {
+          remote: remoteInstall,
         },
         deploy: {
           runtimeFamily: runtimeFields.runtime_family,
@@ -559,8 +749,20 @@ router.patch(
       });
     }
 
-    await snapshots.updateSnapshot(snapshot.id, update.snapshot);
-    await marketplace.upsertListing({
+    const nextShareTarget = normalizeShareTarget(req.body.shareTarget, listing.share_target);
+    const nextLocalVisibility = shareTargetIncludesInternal(nextShareTarget)
+      ? marketplace.LISTING_LOCAL_VISIBILITY_INTERNAL
+      : marketplace.LISTING_LOCAL_VISIBILITY_OWNER;
+    const nextCentralShareStatus = shareTargetIncludesCommunity(nextShareTarget)
+      ? marketplace.CENTRAL_SHARE_STATUS_QUEUED
+      : marketplace.CENTRAL_SHARE_STATUS_NOT_SHARED;
+    const updatedSnapshot = (await snapshots.updateSnapshot(snapshot.id, update.snapshot)) || {
+      ...snapshot,
+      ...update.snapshot,
+      config: update.snapshot.config,
+      template_key: update.snapshot.templateKey ?? snapshot.template_key,
+    };
+    const savedListing = await marketplace.upsertListing({
       listingId: listing.id,
       snapshotId: snapshot.id,
       ownerUserId: req.user.id,
@@ -572,14 +774,32 @@ router.patch(
       currentVersion: update.listing.currentVersion,
       builtIn: false,
       sourceType: marketplace.LISTING_SOURCE_COMMUNITY,
-      status: marketplace.LISTING_STATUS_PENDING_REVIEW,
+      status: marketplace.LISTING_STATUS_PUBLISHED,
       visibility: marketplace.LISTING_VISIBILITY_PUBLIC,
+      shareTarget: nextShareTarget,
+      localVisibility: nextLocalVisibility,
+      centralShareStatus: nextCentralShareStatus,
+      centralListingId: null,
+      centralLastSyncedAt: null,
+      centralError: null,
     });
 
+    let finalListing = savedListing;
+    if (shareTargetIncludesCommunity(nextShareTarget)) {
+      const templatePayload = update.snapshot.config?.templatePayload || {};
+      const centralResult = await submitToCentralHub(savedListing, updatedSnapshot, templatePayload);
+      finalListing =
+        (await marketplace.updateCentralShareStatus(savedListing.id, {
+          status: centralResult.status,
+          centralListingId: centralResult.centralListingId,
+          error: centralResult.error,
+        })) || savedListing;
+    }
+
     await monitoring.logEvent(
-      "marketplace_submitted",
-      `Marketplace listing "${update.listing.name}" updated and resubmitted for review`,
-      marketplaceAuditMetadata(req, {
+      "agent_hub_shared",
+      `Agent Hub listing "${update.listing.name}" was updated`,
+      agentHubAuditMetadata(req, {
         ...buildListingContext(listing, {
           ownerUserId: req.user.id,
           ownerEmail: req.user.email || null,
@@ -589,8 +809,10 @@ router.patch(
           name: update.snapshot.name,
         },
         result: {
-          action: "updated_and_resubmitted",
+          action: "updated",
           currentVersion: update.listing.currentVersion,
+          shareTarget: nextShareTarget,
+          centralShareStatus: finalListing.central_share_status || nextCentralShareStatus,
         },
       }),
     );
@@ -607,6 +829,12 @@ router.patch(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
+    if (isRemoteListingId(req.params.id)) {
+      const settings = await getAgentHubSettings();
+      const remoteDetail = await fetchListing(settings, req.params.id);
+      return res.json(buildRemoteTemplateDetail(remoteDetail, { includeContent: true }));
+    }
+
     const listing = await marketplace.getListing(req.params.id);
     if (!listing || !canAccessPublishedListing(listing, req.user.id)) {
       return res.status(404).json({ error: "Listing not found" });
@@ -619,6 +847,33 @@ router.get(
 router.get(
   "/:id/download",
   asyncHandler(async (req, res) => {
+    if (isRemoteListingId(req.params.id)) {
+      const settings = await getAgentHubSettings();
+      const remoteDetail = await fetchListing(settings, req.params.id);
+      const detail = buildRemoteTemplateDetail(remoteDetail, { includeContent: true });
+      const payload = {
+        listing: {
+          id: detail.remote_id || detail.id,
+          slug: detail.slug,
+          name: detail.name,
+          description: detail.description,
+          category: detail.category,
+          price: detail.price,
+          sourceType: detail.source_type,
+          ownerName: detail.owner_name || "Nora Community",
+          version: detail.current_version || 1,
+        },
+        snapshot: detail.snapshot || null,
+        defaults: detail.defaults || {},
+        templatePayload: remoteDetail.templatePayload || remoteDetail.template_payload || {},
+      };
+      const filenameSeed = detail.slug || detail.name || "nora-agent-hub-template";
+      const filename = `${filenameSeed.replace(/[^a-z0-9-]+/gi, "-").toLowerCase() || "nora-agent-hub-template"}.nora-template.json`;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      return res.json(payload);
+    }
+
     const listing = await marketplace.getListing(req.params.id);
     if (!listing || !canAccessPublishedListing(listing, req.user.id)) {
       return res.status(404).json({ error: "Listing not found" });
@@ -631,9 +886,9 @@ router.get(
 
     await marketplace.recordDownload(listing.id);
     await monitoring.logEvent(
-      "marketplace_download",
+      "agent_hub_download",
       `Downloaded template package for "${listing.name}"`,
-      marketplaceAuditMetadata(req, {
+      agentHubAuditMetadata(req, {
         ...buildListingContext(listing),
         snapshot: {
           id: snapshot.id,
@@ -677,7 +932,7 @@ router.post(
   "/:id/report",
   asyncHandler(async (req, res) => {
     const listing = await marketplace.getListing(req.params.id);
-    if (!listing || listing.status !== marketplace.LISTING_STATUS_PUBLISHED) {
+    if (!listing || !canAccessPublishedListing(listing, req.user.id)) {
       return res.status(404).json({ error: "Listing not found" });
     }
     res.locals.auditContext = buildListingContext(listing);
@@ -702,9 +957,9 @@ router.post(
       });
 
       await monitoring.logEvent(
-        "marketplace_reported",
-        `Marketplace listing "${listing.name}" was reported`,
-        marketplaceAuditMetadata(req, {
+        "agent_hub_reported",
+        `Agent Hub listing "${listing.name}" was reported`,
+        agentHubAuditMetadata(req, {
           ...buildListingContext(listing),
           ...buildReportContext(report, {
             reporterUserId: req.user.id,

@@ -9,7 +9,7 @@ import {
   uniqueEmail,
   uniqueName,
   waitForAdminAuditEvent,
-  waitForMarketplaceListingByName,
+  waitForAgentHubListingByName,
   waitForOwnedListingByName,
   waitForUserEvent,
 } from "./support/app";
@@ -154,7 +154,7 @@ test.describe("Complete platform journey", () => {
     await expect(page.getByText(primaryAgent.name)).toBeVisible();
   });
 
-  test("agent detail supports rename, duplicate, and marketplace publishing", async ({
+  test("agent detail supports rename, duplicate, and Agent Hub sharing", async ({
     page,
     request,
   }) => {
@@ -200,12 +200,12 @@ test.describe("Complete platform journey", () => {
 
     publishedListing = {
       id: "",
-      name: uniqueName("Marketplace Template"),
+      name: uniqueName("Agent Hub Template"),
     };
-    await duplicateSettingsSection.getByRole("button", { name: /publish to marketplace/i }).click();
+    await duplicateSettingsSection.getByRole("button", { name: /share to agent hub/i }).click();
 
     const publishDialog = page.getByRole("dialog", {
-      name: /publish to marketplace/i,
+      name: /share to agent hub/i,
     });
     await expect(publishDialog).toBeVisible();
     await publishDialog.getByLabel(/template name/i).fill(publishedListing.name);
@@ -214,10 +214,10 @@ test.describe("Complete platform journey", () => {
       .fill("Community-ready OpenClaw template used to verify the full Nora platform journey.");
 
     await Promise.all([
-      page.waitForURL(/\/app\/marketplace(\?tab=my)?$/, {
+      page.waitForURL(/\/app\/agent-hub(\?tab=my)?$/, {
         waitUntil: "domcontentloaded",
       }),
-      publishDialog.getByRole("button", { name: /submit for review/i }).click(),
+      publishDialog.getByRole("button", { name: /share template/i }).click(),
     ]);
 
     await expect(page.getByText(publishedListing.name)).toBeVisible();
@@ -230,12 +230,12 @@ test.describe("Complete platform journey", () => {
     publishedListing.id = storedListing.id;
   });
 
-  test("the operator can inspect the pending marketplace listing", async ({ page }) => {
-    await authenticatePage(page, admin.token, "/app/marketplace?tab=my");
+  test("the operator can inspect the shared Agent Hub listing", async ({ page }) => {
+    await authenticatePage(page, admin.token, "/app/agent-hub?tab=my");
     await expect(page.getByText(publishedListing.name)).toBeVisible();
 
-    await page.locator(`a[href="/app/marketplace/${publishedListing.id}"]`).first().click();
-    await page.waitForURL(new RegExp(`/app/marketplace/${publishedListing.id}$`), {
+    await page.locator(`a[href="/app/agent-hub/${publishedListing.id}"]`).first().click();
+    await page.waitForURL(new RegExp(`/app/agent-hub/${publishedListing.id}$`), {
       waitUntil: "domcontentloaded",
     });
 
@@ -309,9 +309,9 @@ test.describe("Complete platform journey", () => {
       page.getByRole("row").filter({ hasText: secondaryUser.email }).first(),
     ).toBeVisible();
 
-    await page.goto("/admin/marketplace", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: /marketplace moderation/i })).toBeVisible();
-    await page.goto(`/admin/marketplace/${publishedListing.id}`, {
+    await page.goto("/admin/agent-hub", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: /agent hub moderation/i })).toBeVisible();
+    await page.goto(`/admin/agent-hub/${publishedListing.id}`, {
       waitUntil: "domcontentloaded",
     });
     await expect(
@@ -320,8 +320,8 @@ test.describe("Complete platform journey", () => {
     await expect(page.getByText("Template Files", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /approve listing/i })).toBeVisible();
 
-    await page.goto("/admin/marketplace", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: /marketplace moderation/i })).toBeVisible();
+    await page.goto("/admin/agent-hub", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: /agent-hub moderation/i })).toBeVisible();
 
     const listingRow = page.getByRole("row").filter({ hasText: publishedListing.name }).first();
     await expect(listingRow).toBeVisible();
@@ -338,7 +338,7 @@ test.describe("Complete platform journey", () => {
       .getByPlaceholder(/message, source, actor, owner, request, or error/i)
       .fill(publishedListing.name);
     await expect(
-      page.getByText(`Marketplace listing "${publishedListing.name}" marked published`, {
+      page.getByText(`Agent Hub listing "${publishedListing.name}" marked published`, {
         exact: true,
       }),
     ).toBeVisible();
@@ -351,7 +351,7 @@ test.describe("Complete platform journey", () => {
     page,
     request,
   }) => {
-    const publishedListingForCommunity = await waitForMarketplaceListingByName(
+    const publishedListingForCommunity = await waitForAgentHubListingByName(
       request,
       secondaryUser.token,
       publishedListing.name,
@@ -363,16 +363,16 @@ test.describe("Complete platform journey", () => {
     });
     await expect(page.getByRole("heading", { name: /system overview/i })).toBeVisible();
 
-    await authenticatePage(page, secondaryUser.token, "/app/marketplace?tab=community");
+    await authenticatePage(page, secondaryUser.token, "/app/agent-hub");
     await expect(
-      page.locator(`a[href="/app/marketplace/${publishedListingForCommunity.id}"]`).first(),
+      page.locator(`a[href="/app/agent-hub/${publishedListingForCommunity.id}"]`).first(),
     ).toBeVisible();
 
     await page
-      .locator(`a[href="/app/marketplace/${publishedListingForCommunity.id}"]`)
+      .locator(`a[href="/app/agent-hub/${publishedListingForCommunity.id}"]`)
       .first()
       .click();
-    await page.waitForURL(new RegExp(`/app/marketplace/${publishedListingForCommunity.id}$`), {
+    await page.waitForURL(new RegExp(`/app/agent-hub/${publishedListingForCommunity.id}$`), {
       waitUntil: "domcontentloaded",
     });
 

@@ -43,8 +43,10 @@ const {
 } = require("../agentRuntimeFields");
 const {
   getDeploymentDefaults,
+  getAgentHubSettings,
   getSystemBanner,
   parseRequiredDeploymentDefaults,
+  updateAgentHubSettings,
   updateDeploymentDefaults,
   updateSystemBanner,
 } = require("../platformSettings");
@@ -636,6 +638,41 @@ router.put(
 );
 
 router.get(
+  "/settings/agent-hub",
+  asyncHandler(async (_req, res) => {
+    res.json(await getAgentHubSettings());
+  }),
+);
+
+router.put(
+  "/settings/agent-hub",
+  asyncHandler(async (req, res) => {
+    const currentSettings = await getAgentHubSettings();
+    res.locals.auditContext = {
+      settings: {
+        kind: "agent_hub",
+      },
+    };
+
+    const nextSettings = await updateAgentHubSettings(req.body || {});
+
+    await monitoring.logEvent(
+      "admin_agent_hub_settings_updated",
+      `Admin updated Agent Hub sharing defaults`,
+      adminAuditMetadata(req, {
+        settings: {
+          kind: "agent_hub",
+          previous: currentSettings,
+          next: nextSettings,
+        },
+      }),
+    );
+
+    res.json(nextSettings);
+  }),
+);
+
+router.get(
   "/users",
   asyncHandler(async (_req, res) => {
     const deploymentDefaults = billing.IS_PAAS ? await getDeploymentDefaults() : null;
@@ -1092,14 +1129,14 @@ router.delete(
 );
 
 router.delete(
-  "/marketplace/:id",
+  "/agent-hub/:id",
   asyncHandler(async (req, res) => {
     const listing = await marketplace.getListing(req.params.id);
     res.locals.auditContext = buildListingContext(listing || { id: req.params.id });
     await marketplace.deleteListing(req.params.id);
     await monitoring.logEvent(
-      "admin_marketplace_listing_deleted",
-      `Admin removed marketplace listing "${listing?.name || req.params.id}"`,
+      "admin_agent_hub_listing_deleted",
+      `Admin removed Agent Hub listing "${listing?.name || req.params.id}"`,
       adminListingAuditMetadata(req, listing || { id: req.params.id }, {
         result: { deleted: true },
       }),
@@ -1109,7 +1146,7 @@ router.delete(
 );
 
 router.get(
-  "/marketplace",
+  "/agent-hub",
   asyncHandler(async (_req, res) => {
     const listings = await marketplace.listAdminListings();
     res.json(await Promise.all(listings.map((listing) => buildAdminListingDetail(listing))));
@@ -1117,22 +1154,22 @@ router.get(
 );
 
 router.get(
-  "/marketplace/reports",
+  "/agent-hub/reports",
   asyncHandler(async (_req, res) => {
     res.json(await marketplace.listReports());
   }),
 );
 
 router.patch(
-  "/marketplace/reports/:id",
+  "/agent-hub/reports/:id",
   asyncHandler(async (req, res) => {
     const nextStatus = typeof req.body?.status === "string" ? req.body.status.trim() : "";
     const report = await marketplace.resolveReport(req.params.id, req.user.id, nextStatus);
     if (!report) return res.status(404).json({ error: "Report not found" });
 
     await monitoring.logEvent(
-      "marketplace_report_resolved",
-      `Marketplace report ${report.id} marked ${report.status}`,
+      "agent_hub_report_resolved",
+      `Agent Hub report ${report.id} marked ${report.status}`,
       adminAuditMetadata(req, {
         ...buildListingContext({
           id: report.listing_id,
@@ -1152,7 +1189,7 @@ router.patch(
 );
 
 router.patch(
-  "/marketplace/:id/status",
+  "/agent-hub/:id/status",
   asyncHandler(async (req, res) => {
     const nextStatus = typeof req.body?.status === "string" ? req.body.status.trim() : "";
     if (!nextStatus) {
@@ -1169,8 +1206,8 @@ router.patch(
 
     const refreshed = await marketplace.getListing(listing.id);
     await monitoring.logEvent(
-      "marketplace_reviewed",
-      `Marketplace listing "${refreshed?.name || listing.name}" marked ${listing.status}`,
+      "agent_hub_reviewed",
+      `Agent Hub listing "${refreshed?.name || listing.name}" marked ${listing.status}`,
       adminListingAuditMetadata(req, refreshed || listing, {
         review: {
           notes: typeof req.body?.reviewNotes === "string" ? req.body.reviewNotes.trim() : null,
@@ -1183,7 +1220,7 @@ router.patch(
 );
 
 router.post(
-  "/marketplace/publish",
+  "/agent-hub/publish",
   asyncHandler(async (req, res) => {
     const { snapshotId } = req.body || {};
     if (!snapshotId) {
@@ -1219,8 +1256,8 @@ router.post(
     });
 
     await monitoring.logEvent(
-      "marketplace_published",
-      `Snapshot "${snapshot.name}" published to marketplace`,
+      "agent_hub_published",
+      `Snapshot "${snapshot.name}" published to Agent Hub`,
       adminListingAuditMetadata(req, listing, {
         snapshot: {
           id: snapshot.id,
@@ -1235,7 +1272,7 @@ router.post(
 );
 
 router.patch(
-  "/marketplace/:id",
+  "/agent-hub/:id",
   asyncHandler(async (req, res) => {
     const listing = await marketplace.getListing(req.params.id);
     if (!listing) return res.status(404).json({ error: "Listing not found" });
@@ -1281,8 +1318,8 @@ router.patch(
     });
 
     await monitoring.logEvent(
-      "marketplace_reviewed",
-      `Marketplace listing "${update.listing.name}" metadata was updated by admin`,
+      "agent_hub_reviewed",
+      `Agent Hub listing "${update.listing.name}" metadata was updated by admin`,
       adminListingAuditMetadata(req, listing, {
         snapshot: {
           id: snapshot.id,
@@ -1317,7 +1354,7 @@ router.patch(
 );
 
 router.get(
-  "/marketplace/:id",
+  "/agent-hub/:id",
   asyncHandler(async (req, res) => {
     const listing = await marketplace.getListing(req.params.id);
     if (!listing) return res.status(404).json({ error: "Listing not found" });

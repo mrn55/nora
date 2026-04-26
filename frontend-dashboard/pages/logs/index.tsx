@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Download,
   FileText,
   FilterX,
   Loader2,
@@ -37,7 +38,19 @@ const EVENT_ICONS = {
     icon: ShoppingBag,
     color: "text-violet-600 bg-violet-50",
   },
+  agent_hub_install: {
+    icon: ShoppingBag,
+    color: "text-violet-600 bg-violet-50",
+  },
+  agent_hub_download: {
+    icon: Download,
+    color: "text-violet-600 bg-violet-50",
+  },
   marketplace_submitted: {
+    icon: ShoppingBag,
+    color: "text-amber-600 bg-amber-50",
+  },
+  agent_hub_shared: {
     icon: ShoppingBag,
     color: "text-amber-600 bg-amber-50",
   },
@@ -45,9 +58,17 @@ const EVENT_ICONS = {
     icon: AlertCircle,
     color: "text-rose-600 bg-rose-50",
   },
+  agent_hub_reported: {
+    icon: AlertCircle,
+    color: "text-rose-600 bg-rose-50",
+  },
   admin_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
   agent_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
   marketplace_action_failed: {
+    icon: AlertCircle,
+    color: "text-red-600 bg-red-50",
+  },
+  agent_hub_action_failed: {
     icon: AlertCircle,
     color: "text-red-600 bg-red-50",
   },
@@ -551,7 +572,7 @@ export default function LogsPage() {
             </h1>
             <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
               Review only the events tied to your account, your owned agents,
-              and your marketplace activity. Filter by date range and event
+              and your Agent Hub activity. Filter by date range and event
               type, then page through the full history.
             </p>
           </div>

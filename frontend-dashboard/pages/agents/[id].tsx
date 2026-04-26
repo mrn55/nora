@@ -64,9 +64,11 @@ export default function AgentDetail() {
   const [publishName, setPublishName] = useState("");
   const [publishDescription, setPublishDescription] = useState("");
   const [publishCategory, setPublishCategory] = useState("General");
+  const [publishShareTarget, setPublishShareTarget] = useState("both");
   const [publishIssues, setPublishIssues] = useState([]);
   const [showRestartBanner, setShowRestartBanner] = useState(false);
   const [backendConfig, setBackendConfig] = useState(null);
+  const [agentHubSettings, setAgentHubSettings] = useState(null);
   const [viewerRole, setViewerRole] = useState("user");
   const toast = useToast();
 
@@ -108,10 +110,15 @@ export default function AgentDetail() {
       fetch("/api/config/backends")
         .then((res) => (res.ok ? res.json() : null))
         .catch(() => null),
-    ]).then(([profile, config]) => {
+      fetchWithAuth("/api/agent-hub/settings")
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+    ]).then(([profile, config, hubSettings]) => {
       if (cancelled) return;
       setViewerRole(profile?.role || "user");
       setBackendConfig(config);
+      setAgentHubSettings(hubSettings);
+      setPublishShareTarget(hubSettings?.defaultShareTarget || "both");
     });
 
     return () => {
@@ -170,6 +177,7 @@ export default function AgentDetail() {
       `Shared template built from ${agent?.name || "this agent"}. Review the included instructions before installing.`,
     );
     setPublishCategory("General");
+    setPublishShareTarget(agentHubSettings?.defaultShareTarget || "both");
     setShowPublishDialog(true);
   }
 
@@ -411,7 +419,7 @@ export default function AgentDetail() {
     setActionLoading("publish");
     setPublishIssues([]);
     try {
-      const res = await fetchWithAuth("/api/marketplace/publish", {
+      const res = await fetchWithAuth("/api/agent-hub/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -420,13 +428,14 @@ export default function AgentDetail() {
           description: trimmedDescription,
           category: trimmedCategory || "General",
           price: "Free",
+          shareTarget: publishShareTarget,
         }),
       });
 
       if (res.ok) {
         setShowPublishDialog(false);
-        toast.success("Marketplace listing submitted for review");
-        router.push("/marketplace?tab=my");
+        toast.success("Agent shared to Agent Hub");
+        router.push("/agent-hub?tab=my");
         return;
       }
 
@@ -434,10 +443,10 @@ export default function AgentDetail() {
       if (Array.isArray(data.issues) && data.issues.length > 0) {
         setPublishIssues(data.issues);
       }
-      toast.error(data.error || "Failed to publish marketplace listing");
+      toast.error(data.error || "Failed to share Agent Hub listing");
     } catch (err) {
       console.error(err);
-      toast.error("Failed to publish marketplace listing");
+      toast.error("Failed to share Agent Hub listing");
     } finally {
       setActionLoading("");
     }
@@ -786,17 +795,19 @@ export default function AgentDetail() {
         onConfirm={handleRedeploy}
       />
 
-      <PublishMarketplaceDialog
+      <PublishAgentHubDialog
         open={showPublishDialog}
         name={publishName}
         description={publishDescription}
         category={publishCategory}
+        shareTarget={publishShareTarget}
         issues={publishIssues}
         loading={actionLoading === "publish"}
         sourceName={agent.name}
         onNameChange={setPublishName}
         onDescriptionChange={setPublishDescription}
         onCategoryChange={setPublishCategory}
+        onShareTargetChange={setPublishShareTarget}
         onCancel={() => {
           if (actionLoading === "publish") return;
           setShowPublishDialog(false);
@@ -1016,17 +1027,19 @@ function RedeployAgentDialog({
   );
 }
 
-function PublishMarketplaceDialog({
+function PublishAgentHubDialog({
   open,
   name,
   description,
   category,
+  shareTarget,
   issues,
   loading,
   sourceName,
   onNameChange,
   onDescriptionChange,
   onCategoryChange,
+  onShareTargetChange,
   onCancel,
   onConfirm,
 }) {
@@ -1037,7 +1050,7 @@ function PublishMarketplaceDialog({
       className="fixed inset-0 z-[9998] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="publish-marketplace-dialog-title"
+      aria-labelledby="share-agent-hub-dialog-title"
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 space-y-5">
@@ -1046,13 +1059,13 @@ function PublishMarketplaceDialog({
             <Share2 size={18} className="text-blue-600" />
           </div>
           <div className="flex-1">
-            <h3 id="publish-marketplace-dialog-title" className="text-lg font-bold text-slate-900">
-              Publish to Marketplace
+            <h3 id="share-agent-hub-dialog-title" className="text-lg font-bold text-slate-900">
+              Share to Agent Hub
             </h3>
             <p className="text-sm text-slate-500 mt-1 leading-relaxed">
               Share <span className="font-semibold text-slate-700">{sourceName}</span> as a
-              community template. Nora publishes only the template files and runs a secret scan
-              before submission.
+              reusable template. Nora shares only template files and runs a secret scan before
+              saving the listing.
             </p>
           </div>
           <button
@@ -1067,7 +1080,7 @@ function PublishMarketplaceDialog({
         {issues.length > 0 && (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
             <p className="text-xs font-black uppercase tracking-widest text-red-700">
-              Publish blocked
+              Share blocked
             </p>
             <div className="mt-2 space-y-2">
               {issues.map((issue, index) => (
@@ -1082,13 +1095,13 @@ function PublishMarketplaceDialog({
         <div className="grid grid-cols-1 gap-4">
           <div>
             <label
-              htmlFor="publish-marketplace-template-name"
+              htmlFor="share-agent-hub-template-name"
               className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1"
             >
               Template Name
             </label>
             <input
-              id="publish-marketplace-template-name"
+              id="share-agent-hub-template-name"
               type="text"
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
@@ -1097,13 +1110,13 @@ function PublishMarketplaceDialog({
           </div>
           <div>
             <label
-              htmlFor="publish-marketplace-category"
+              htmlFor="share-agent-hub-category"
               className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1"
             >
               Category
             </label>
             <input
-              id="publish-marketplace-category"
+              id="share-agent-hub-category"
               type="text"
               value={category}
               onChange={(e) => onCategoryChange(e.target.value)}
@@ -1112,13 +1125,31 @@ function PublishMarketplaceDialog({
           </div>
           <div>
             <label
-              htmlFor="publish-marketplace-description"
+              htmlFor="share-agent-hub-target"
+              className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1"
+            >
+              Share Target
+            </label>
+            <select
+              id="share-agent-hub-target"
+              value={shareTarget}
+              onChange={(e) => onShareTargetChange(e.target.value)}
+              className="w-full text-sm border border-slate-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="both">Internal users and Nora community</option>
+              <option value="internal">Internal users only</option>
+              <option value="community">Nora community only</option>
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="share-agent-hub-description"
               className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1"
             >
               Description
             </label>
             <textarea
-              id="publish-marketplace-description"
+              id="share-agent-hub-description"
               value={description}
               onChange={(e) => onDescriptionChange(e.target.value)}
               rows={5}
@@ -1128,7 +1159,7 @@ function PublishMarketplaceDialog({
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          Credentials, session memory, integrations, and channels are not published. If Nora detects
+          Credentials, session memory, integrations, and channels are not shared. If Nora detects
           `.env`, token-like values, or private keys, the submission is blocked until you remove
           them.
         </div>
@@ -1147,7 +1178,7 @@ function PublishMarketplaceDialog({
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-sm font-bold text-white rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 inline-flex items-center gap-2"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-            Submit for Review
+            Share Template
           </button>
         </div>
       </div>

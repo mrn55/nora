@@ -12,7 +12,12 @@ const DEFAULT_SYSTEM_BANNER = Object.freeze({
   title: "",
   message: "",
 });
+const DEFAULT_AGENT_HUB_SETTINGS = Object.freeze({
+  defaultShareTarget: "both",
+  url: "https://nora.solomontsao.com",
+});
 const SYSTEM_BANNER_SEVERITIES = new Set(["warning", "critical"]);
+const AGENT_HUB_SHARE_TARGETS = new Set(["internal", "community", "both"]);
 
 function parseInteger(value) {
   const parsed = Number.parseInt(value, 10);
@@ -36,6 +41,21 @@ function clampInteger(value, min, max = Number.MAX_SAFE_INTEGER) {
 
 function normalizeText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeUrl(value, fallback = DEFAULT_AGENT_HUB_SETTINGS.url) {
+  const normalized = normalizeText(value);
+  if (!normalized) return fallback;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return fallback;
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizeDeploymentDefaults(
@@ -157,6 +177,61 @@ function parseRequiredSystemBanner(input = {}) {
   return next;
 }
 
+function normalizeAgentHubSettings(input = {}, fallback = DEFAULT_AGENT_HUB_SETTINGS) {
+  const rawShareTarget = normalizeText(
+    input.agent_hub_default_share_target ?? input.defaultShareTarget,
+  ).toLowerCase();
+  const defaultShareTarget = AGENT_HUB_SHARE_TARGETS.has(rawShareTarget)
+    ? rawShareTarget
+    : fallback.defaultShareTarget;
+
+  return {
+    defaultShareTarget,
+    url: normalizeUrl(input.agent_hub_url ?? input.url, fallback.url),
+  };
+}
+
+function resolveAgentHubSettingsPayload(settings) {
+  return {
+    ...settings,
+    envUrl: normalizeUrl(process.env.NORA_AGENT_HUB_URL, settings.url),
+  };
+}
+
+function parseRequiredAgentHubSettings(input = {}) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    const error = new Error("agent hub settings payload must be an object");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rawShareTarget = normalizeText(input.defaultShareTarget).toLowerCase();
+  if (!AGENT_HUB_SHARE_TARGETS.has(rawShareTarget)) {
+    const error = new Error("defaultShareTarget must be internal, community, or both");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rawUrl = normalizeText(input.url);
+  if (rawUrl.length > 500) {
+    const error = new Error("url must be 500 characters or fewer");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedUrl = normalizeUrl(rawUrl, "");
+  if (!normalizedUrl) {
+    const error = new Error("url must be a valid http or https URL");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    defaultShareTarget: rawShareTarget,
+    url: normalizedUrl,
+  };
+}
+
 async function getDeploymentDefaults() {
   const result = await db.query(
     `SELECT default_vcpu, default_ram_mb, default_disk_gb
@@ -181,6 +256,19 @@ async function getSystemBanner() {
   return resolveSystemBannerPayload(
     result.rows[0] || DEFAULT_SYSTEM_BANNER
   );
+}
+
+async function getAgentHubSettings() {
+  const result = await db.query(
+    `SELECT agent_hub_default_share_target,
+            agent_hub_url
+       FROM platform_settings
+      WHERE singleton = TRUE
+      LIMIT 1`,
+  );
+
+  const settings = normalizeAgentHubSettings(result.rows[0] || DEFAULT_AGENT_HUB_SETTINGS);
+  return resolveAgentHubSettingsPayload(settings);
 }
 
 async function updateDeploymentDefaults(defaults = {}, limits = {}) {
@@ -234,19 +322,47 @@ async function updateSystemBanner(banner = {}) {
   return resolveSystemBannerPayload(result.rows[0] || next);
 }
 
+async function updateAgentHubSettings(settings = {}) {
+  const next = parseRequiredAgentHubSettings(settings);
+  const result = await db.query(
+    `INSERT INTO platform_settings(
+       singleton,
+       agent_hub_default_share_target,
+       agent_hub_url,
+       updated_at
+     )
+     VALUES(TRUE, $1, $2, NOW())
+     ON CONFLICT (singleton) DO UPDATE SET
+       agent_hub_default_share_target = EXCLUDED.agent_hub_default_share_target,
+       agent_hub_url = EXCLUDED.agent_hub_url,
+       updated_at = NOW()
+     RETURNING agent_hub_default_share_target,
+               agent_hub_url`,
+    [next.defaultShareTarget, next.url],
+  );
+
+  return resolveAgentHubSettingsPayload(normalizeAgentHubSettings(result.rows[0] || next));
+}
+
 module.exports = {
   DEFAULT_DEPLOYMENT_DEFAULTS,
+  DEFAULT_AGENT_HUB_SETTINGS,
   DEFAULT_SYSTEM_BANNER,
+  AGENT_HUB_SHARE_TARGETS,
   SYSTEM_BANNER_SEVERITIES,
   clampDeploymentDefaults,
+  getAgentHubSettings,
   getDeploymentDefaults,
   getSystemBanner,
   isSystemBannerFeatureEnabled,
+  normalizeAgentHubSettings,
   normalizeDeploymentDefaults,
   normalizeSystemBanner,
+  parseRequiredAgentHubSettings,
   parseRequiredDeploymentDefaults,
   parseRequiredSystemBanner,
   resolveSystemBannerPayload,
+  updateAgentHubSettings,
   updateDeploymentDefaults,
   updateSystemBanner,
 };

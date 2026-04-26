@@ -88,7 +88,7 @@ Primary implementation focus:
 - `backend-api/clawhubClient.js`
 - read-only route handlers in `backend-api/routes/clawhub.js`
 - route registration in `backend-api/server.js`
-- shared JSON/error handling conventions in `backend-api/routes/marketplace.js`
+- shared JSON/error handling conventions in `backend-api/routes/agentHub.ts`
 - request/response wrapper patterns in `backend-api/routes/integrations.js`
 
 Implementation details:
@@ -102,7 +102,7 @@ Implementation details:
   - call the client
   - translate client/network failures into Nora errors
   - always return the Nora response shape expected by the frontend
-- Follow the same flat `res.status(...).json({ error, message })` style already used in `backend-api/routes/marketplace.js` and `backend-api/routes/integrations.js`
+- Follow the same flat `res.status(...).json({ error, message })` style already used in `backend-api/routes/agentHub.ts` and `backend-api/routes/integrations.js`
 - Add any ClawHub-specific helpers in `backend-api/clawhubClient.js` rather than embedding fetch/parse logic directly in the route file
 
 #### 2. Install Preparation And Download Orchestration
@@ -163,7 +163,7 @@ Primary implementation focus:
 - existing agent ownership checks in `backend-api/middleware/ownership.js`
 - agent lifecycle patterns in `backend-api/routes/agents.js`
 - runtime/service lookup patterns in `backend-api/routes/integrations.js`
-- agent creation and deploy persistence in `backend-api/routes/agents.js` and `backend-api/routes/marketplace.js`
+- agent creation and deploy persistence in `backend-api/routes/agents.js` and `backend-api/routes/agentHub.ts`
 
 Implementation details:
 - In `backend-api/routes/clawhub.js`, implement agent lookup and validation using the same style as `backend-api/routes/agents.js` and `backend-api/routes/integrations.js`
@@ -304,11 +304,11 @@ Page layout decisions:
 - Submit search only when the user presses `Enter`
 - Present selected skills in a sticky summary panel so the user can always see what will be deployed
 - Let users select skills directly from cards and also from the detail panel
-- Keep the overall page feeling like a normal Nora operator page, not a marketing marketplace clone
+- Keep the overall page feeling like a normal Nora operator page, not a marketing catalog clone
 
 #### 1. Existing-Agent ClawHub Tab
 This is the top-level UI surface for browsing and installing skills on an already running agent.
-It should feel like part of the agent detail page, not a separate marketplace site.
+It should feel like part of the agent detail page, not a separate catalog site.
 
 Responsibilities:
 - Add a visible `ClawHub` tab on the agent detail page

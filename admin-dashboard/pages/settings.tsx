@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Rocket,
   Save,
+  Share2,
   SlidersHorizontal,
   TriangleAlert,
 } from "lucide-react";
@@ -29,6 +30,10 @@ const DEFAULT_BANNER_FORM = {
   title: "",
   message: "",
 };
+const DEFAULT_AGENT_HUB_FORM = {
+  defaultShareTarget: "both",
+  url: "https://nora.solomontsao.com",
+};
 
 function buildForm(defaults) {
   return {
@@ -45,6 +50,19 @@ function buildBannerForm(banner) {
     title: banner?.title || "",
     message: banner?.message || "",
   };
+}
+
+function buildAgentHubForm(settings) {
+  return {
+    defaultShareTarget: settings?.defaultShareTarget || DEFAULT_AGENT_HUB_FORM.defaultShareTarget,
+    url: settings?.url || DEFAULT_AGENT_HUB_FORM.url,
+  };
+}
+
+function formatShareTargetLabel(value) {
+  if (value === "internal") return "Internal users only";
+  if (value === "community") return "Nora community only";
+  return "Internal users and Nora community";
 }
 
 function formatRamLabel(ramMb) {
@@ -140,18 +158,22 @@ export default function AdminSettingsPage() {
   const [defaults, setDefaults] = useState(null);
   const [systemBanner, setSystemBanner] = useState(null);
   const [bannerForm, setBannerForm] = useState(DEFAULT_BANNER_FORM);
+  const [agentHubSettings, setAgentHubSettings] = useState(null);
+  const [agentHubForm, setAgentHubForm] = useState(DEFAULT_AGENT_HUB_FORM);
   const [platformConfig, setPlatformConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bannerSaving, setBannerSaving] = useState(false);
+  const [agentHubSaving, setAgentHubSaving] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const [defaultsRes, platformRes, bannerRes] = await Promise.all([
+      const [defaultsRes, platformRes, bannerRes, agentHubRes] = await Promise.all([
         fetchWithAuth("/api/admin/settings/deployment-defaults"),
         fetch("/api/config/platform"),
         fetchWithAuth("/api/admin/settings/system-banner"),
+        fetchWithAuth("/api/admin/settings/agent-hub"),
       ]);
 
       const defaultsPayload = await defaultsRes.json().catch(() => ({}));
@@ -172,6 +194,14 @@ export default function AdminSettingsPage() {
       setSystemBanner(bannerPayload);
       setBannerForm(buildBannerForm(bannerPayload));
 
+      const agentHubPayload = await agentHubRes.json().catch(() => ({}));
+      if (!agentHubRes.ok) {
+        throw new Error(agentHubPayload.error || "Failed to load Agent Hub settings");
+      }
+
+      setAgentHubSettings(agentHubPayload);
+      setAgentHubForm(buildAgentHubForm(agentHubPayload));
+
       if (platformRes.ok) {
         setPlatformConfig(await platformRes.json());
       }
@@ -180,6 +210,7 @@ export default function AdminSettingsPage() {
       toast.error(error.message || "Failed to load platform settings");
       setDefaults(null);
       setSystemBanner(null);
+      setAgentHubSettings(null);
     } finally {
       setLoading(false);
     }
@@ -195,6 +226,10 @@ export default function AdminSettingsPage() {
 
   function updateBannerField(field, value) {
     setBannerForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateAgentHubField(field, value) {
+    setAgentHubForm((current) => ({ ...current, [field]: value }));
   }
 
   async function handleSave() {
@@ -254,6 +289,33 @@ export default function AdminSettingsPage() {
       toast.error(error.message || "Failed to save system banner");
     } finally {
       setBannerSaving(false);
+    }
+  }
+
+  async function handleSaveAgentHub() {
+    setAgentHubSaving(true);
+    try {
+      const response = await fetchWithAuth("/api/admin/settings/agent-hub", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          defaultShareTarget: agentHubForm.defaultShareTarget,
+          url: agentHubForm.url,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to save Agent Hub settings");
+      }
+
+      setAgentHubSettings(payload);
+      setAgentHubForm(buildAgentHubForm(payload));
+      toast.success("Agent Hub settings updated");
+    } catch (error) {
+      console.error("Failed to save Agent Hub settings:", error);
+      toast.error(error.message || "Failed to save Agent Hub settings");
+    } finally {
+      setAgentHubSaving(false);
     }
   }
 
@@ -733,6 +795,107 @@ export default function AdminSettingsPage() {
               </div>
             </section>
 
+            <section
+              id="agent-hub"
+              className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    Agent Hub
+                  </p>
+                  <h2 className="mt-2 flex items-center gap-3 text-xl font-black tracking-tight text-slate-950">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                      <Share2 size={20} />
+                    </span>
+                    Sharing defaults and hosted catalog
+                  </h2>
+                  <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
+                    Choose the default target for user-shared agent templates and configure the
+                    hosted Agent Hub used for the community catalog.
+                  </p>
+                </div>
+
+                <div className="inline-flex items-center gap-2 self-start rounded-full bg-slate-100 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-slate-700">
+                  <Share2 size={14} />
+                  {formatShareTargetLabel(agentHubSettings?.defaultShareTarget)}
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr,0.95fr]">
+                <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5">
+                  <label className="block rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Default Share Target
+                    </span>
+                    <select
+                      value={agentHubForm.defaultShareTarget}
+                      onChange={(event) =>
+                        updateAgentHubField("defaultShareTarget", event.target.value)
+                      }
+                      className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-red-300"
+                    >
+                      <option value="both">Internal users and Nora community</option>
+                      <option value="internal">Internal users only</option>
+                      <option value="community">Nora community only</option>
+                    </select>
+                  </label>
+
+                  <label className="mt-4 block rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Hosted Hub URL
+                    </span>
+                    <input
+                      type="url"
+                      value={agentHubForm.url}
+                      onChange={(event) => updateAgentHubField("url", event.target.value)}
+                      placeholder="https://nora.solomontsao.com"
+                      className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-red-300"
+                    />
+                  </label>
+
+                  <div className="mt-6 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={handleSaveAgentHub}
+                      disabled={agentHubSaving || loading}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition-all hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {agentHubSaving ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Save size={16} />
+                      )}
+                      Save Agent Hub
+                    </button>
+                  </div>
+                </section>
+
+                <aside className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-5">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    Saved State
+                  </p>
+                  <div className="mt-4 space-y-4">
+                    <div className="rounded-[1.25rem] bg-slate-50 px-4 py-4">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {formatShareTargetLabel(agentHubSettings?.defaultShareTarget)}
+                      </p>
+                      <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                        Users can still override this target when sharing a specific agent.
+                      </p>
+                    </div>
+                    <div className="rounded-[1.25rem] bg-slate-50 px-4 py-4">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {agentHubSettings?.url || DEFAULT_AGENT_HUB_FORM.url}
+                      </p>
+                      <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                        Community catalog pulls and best-effort submissions use this host.
+                      </p>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </section>
+
             <div className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
               <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
                 <div>
@@ -877,7 +1040,7 @@ export default function AdminSettingsPage() {
                     </p>
                     <p>
                       Admin changes do not rewrite existing agents, redeploys,
-                      or marketplace listing defaults already stored elsewhere.
+                      or Agent Hub listing defaults already stored elsewhere.
                     </p>
                   </div>
                 </section>

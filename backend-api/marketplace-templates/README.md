@@ -1,10 +1,10 @@
-# Nora Marketplace Templates
+# Nora Agent Hub Templates
 
-Built-in agent templates available on the Nora marketplace. Each template is a ready-to-use OpenClaw agent designed around a common, recurring problem that small businesses and solo developers deal with regularly.
+Built-in agent templates available on the Nora Agent Hub. Each template is a ready-to-use OpenClaw agent designed around a common, recurring problem that small businesses and solo developers deal with regularly.
 
 Every template follows the same structure: a set of markdown files that define the agent's identity, behavior, memory, and working style. Templates can be used as-is or customized to fit a specific context.
 
-Credentials are not part of a marketplace template. When a preset needs provider access, connect that provider from the installed agent's Integrations tab so Nora stores and syncs the secret material outside the template files.
+Credentials are not part of an Agent Hub template. When a preset needs provider access, connect that provider from the installed agent's Integrations tab so Nora stores and syncs the secret material outside the template files.
 
 ---
 

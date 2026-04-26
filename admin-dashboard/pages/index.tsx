@@ -22,6 +22,14 @@ const EVENT_STYLES = {
     icon: FileText,
     tone: "text-violet-600 bg-violet-50",
   },
+  agent_hub_published: {
+    icon: FileText,
+    tone: "text-violet-600 bg-violet-50",
+  },
+  agent_hub_shared: {
+    icon: FileText,
+    tone: "text-violet-600 bg-violet-50",
+  },
   default: { icon: Activity, tone: "text-slate-500 bg-slate-100" },
 };
 

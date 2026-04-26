@@ -37,7 +37,7 @@
 
 Nora is the open-source operations platform for running autonomous agent fleets on infrastructure you control, whether you standardize on OpenClaw, Hermes, or keep both available in the same operator surface.
 
-Most teams running agents in production eventually rebuild the same layer around the runtime itself: deploy workflows, secrets handling, monitoring, logs, terminal access, marketplace-style templating, and a separate admin surface. Nora exists so that layer does not need to be rewritten every time the runtime conversation changes.
+Most teams running agents in production eventually rebuild the same layer around the runtime itself: deploy workflows, secrets handling, monitoring, logs, terminal access, Agent Hub templating, and a separate admin surface. Nora exists so that layer does not need to be rewritten every time the runtime conversation changes.
 
 Nora gives technical teams one place to:
 
@@ -46,7 +46,7 @@ Nora gives technical teams one place to:
 - manage provider keys and sync them to running runtimes
 - validate agents through runtime-specific surfaces, logs, and terminal access
 - browse the live runtime filesystem, edit the writable workspace, and export Nora-managed agents as migration bundles
-- install built-in starter templates or publish marketplace listings
+- install built-in starter templates or share Agent Hub listings
 - review account-scoped event history and monitoring
 - connect channels and integrations from the same control plane
 - separate operator workflows under `/app` from platform-wide admin workflows under `/admin`
@@ -158,14 +158,14 @@ Screenshots below were captured from the current local Nora stack and reflect th
 |---|---|
 | ![System overview](.github/readme-assets/proof-operator-dashboard.png) **System overview** | ![Fleet management](.github/readme-assets/proof-operator-fleet.png) **Fleet management** |
 | ![Deploy flow](.github/readme-assets/proof-operator-deploy-flow.png) **Deploy flow** | ![Agent detail](.github/readme-assets/proof-operator-agent-detail.png) **Agent detail** |
-| ![Provider setup](.github/readme-assets/proof-operator-settings-provider-setup.png) **Provider setup** | ![Marketplace browse](.github/readme-assets/proof-operator-marketplace.png) **Marketplace browse** |
-| ![Marketplace template detail](.github/readme-assets/proof-operator-marketplace-detail.png) **Marketplace template detail** | ![Account event log](.github/readme-assets/proof-operator-account-event-log.png) **Account event log** |
+| ![Provider setup](.github/readme-assets/proof-operator-settings-provider-setup.png) **Provider setup** | ![Agent Hub browse](.github/readme-assets/proof-operator-agent-hub.png) **Agent Hub browse** |
+| ![Agent Hub template detail](.github/readme-assets/proof-operator-agent-hub-detail.png) **Agent Hub template detail** | ![Account event log](.github/readme-assets/proof-operator-account-event-log.png) **Account event log** |
 
 ### Admin Workspace
 
 | | |
 |---|---|
-| ![Marketplace moderation](.github/readme-assets/proof-admin-marketplace.png) **Marketplace moderation** | ![Admin template editor](.github/readme-assets/proof-admin-marketplace-detail.png) **Admin template editor** |
+| ![Agent Hub moderation](.github/readme-assets/proof-admin-agent-hub.png) **Agent Hub moderation** | ![Admin template editor](.github/readme-assets/proof-admin-agent-hub-detail.png) **Admin template editor** |
 
 ## Open-Source Usage Paths
 
@@ -354,14 +354,14 @@ docker compose up -d
 
    OpenClaw and Hermes do not expose exactly the same runtime contract, but both are visible from the same Nora control plane.
 
-5. **Browse the marketplace**
+5. **Browse Agent Hub**
 
    Once one agent is healthy:
 
-   - open **Marketplace**
+   - open **Agent Hub**
    - inspect a built-in starter template or published listing
    - install a listing as a new agent
-   - publish a reusable agent configuration from the operator surface when appropriate
+   - share a reusable agent configuration internally or with the hosted Nora community catalog when appropriate
 
 ## What You Can Do In Nora
 
@@ -385,9 +385,9 @@ Use the Files tab to work against the actual runtime filesystem with a writable 
 
 Store provider credentials centrally, sync them to running runtimes, configure channels, and browse integration options without leaving the control plane.
 
-### Install Platform Presets And Publish Community Templates
+### Install Platform Presets And Share Agent Templates
 
-Browse built-in starter templates, install marketplace listings as new agents, and publish reusable agent setups from the operator UI.
+Browse built-in starter templates, install Agent Hub listings as new agents, and share reusable agent setups internally or with the hosted Nora community catalog from the operator UI.
 
 ### Review Account Activity And Monitoring
 
@@ -395,7 +395,7 @@ Users see their own agents, installs, submissions, monitoring data, and related 
 
 ### Run Admin Operations
 
-Admins get separate platform-wide views for marketplace moderation, listing detail, fleet operations, and settings changes that should not live in the operator workspace.
+Admins get separate platform-wide views for Agent Hub moderation, listing detail, fleet operations, and settings changes that should not live in the operator workspace.
 
 ## Architecture
 
@@ -416,9 +416,9 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 ### Core Components
 
 - `frontend-marketing/` — landing page, login, signup, and the public OSS / license / PaaS explanation
-- `frontend-dashboard/` — operator dashboard for agents, migration/import, live filesystem access, marketplace, logs, monitoring, settings, and runtime interaction
-- `admin-dashboard/` — admin surfaces for fleet, queue, audit, users, and marketplace moderation
-- `backend-api/` — auth, provisioning, migration draft import/export, live filesystem routes, key management, monitoring, marketplace logic, runtime coordination, and proxy routes
+- `frontend-dashboard/` — operator dashboard for agents, migration/import, live filesystem access, Agent Hub, logs, monitoring, settings, and runtime interaction
+- `admin-dashboard/` — admin surfaces for fleet, queue, audit, users, and Agent Hub moderation
+- `backend-api/` — auth, provisioning, migration draft import/export, live filesystem routes, key management, monitoring, Agent Hub logic, runtime coordination, and proxy routes
 - `agent-runtime/` — shared runtime contracts, endpoint conventions, bootstrap files, and backend catalog metadata
 - `workers/provisioner/` — deployment workers for Docker, Kubernetes, Proxmox, NemoClaw, and Hermes-backed paths
 - `e2e/` — Playwright end-to-end and smoke coverage
@@ -503,7 +503,7 @@ NemoClaw in this repo is a Docker-hosted sandbox backend with OpenShell policy c
 - improve first-run operator flow and activation UX
 - deepen account-scoped monitoring and onboarding clarity
 - harden auth, key sync, runtime recovery, and operator workflows
-- expand runtime-aware marketplace and template ergonomics
+- expand runtime-aware Agent Hub and template ergonomics
 
 ### Planned
 

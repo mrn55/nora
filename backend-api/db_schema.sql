@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   system_banner_severity TEXT NOT NULL DEFAULT 'warning',
   system_banner_title TEXT NOT NULL DEFAULT '',
   system_banner_message TEXT NOT NULL DEFAULT '',
+  agent_hub_default_share_target TEXT NOT NULL DEFAULT 'both',
+  agent_hub_url TEXT NOT NULL DEFAULT 'https://nora.solomontsao.com',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -136,6 +138,12 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
   source_type TEXT DEFAULT 'platform',
   status TEXT DEFAULT 'published',
   visibility TEXT DEFAULT 'public',
+  share_target TEXT DEFAULT 'internal',
+  local_visibility TEXT DEFAULT 'internal',
+  central_share_status TEXT DEFAULT 'not_shared',
+  central_listing_id TEXT,
+  central_last_synced_at TIMESTAMP,
+  central_error TEXT,
   slug TEXT,
   current_version INTEGER DEFAULT 1,
   published_at TIMESTAMP,

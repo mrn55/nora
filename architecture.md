@@ -40,10 +40,10 @@ flowchart LR
 | Component | Repo surface | Role |
 |---|---|---|
 | Public and auth UI | `frontend-marketing/` | Landing pages, signup, login, and public entrypoint routes. |
-| Operator workspace | `frontend-dashboard/` | Deployments, migration/import, fleet operations, filesystem access, logs, settings, marketplace, and runtime interaction surfaces. |
+| Operator workspace | `frontend-dashboard/` | Deployments, migration/import, fleet operations, filesystem access, logs, settings, Agent Hub, and runtime interaction surfaces. |
 | Admin workspace | `admin-dashboard/` | Fleet-wide administration, moderation, audit, and platform settings. |
 | Reverse proxy | `nginx.conf`, `nginx.public.conf`, `infra/` | Routes browser traffic to the correct UI or API surface and carries streaming traffic. |
-| Control-plane API | `backend-api/` | Auth, persistence, migration staging, filesystem mediation, queue orchestration, monitoring, marketplace logic, runtime coordination, and runtime proxy endpoints. |
+| Control-plane API | `backend-api/` | Auth, persistence, migration staging, filesystem mediation, queue orchestration, monitoring, Agent Hub logic, runtime coordination, and runtime proxy endpoints. |
 | Durable state | PostgreSQL | Stores accounts, agents, templates, migration drafts, managed runtime state, settings, deployments, events, and other platform state consumed by the control plane. |
 | Queue and worker handoff | Redis + BullMQ | Carries deployment jobs, retries, and failed-job inspection state between the API and worker. |
 | Provisioning worker | `workers/provisioner/` | Resolves backend choice, injects bootstrap state, applies imported managed state, waits for readiness, and persists warnings or status. |
@@ -77,7 +77,7 @@ flowchart TB
 - security middleware such as Helmet, CORS, rate limiting, and request correlation
 - public health and configuration endpoints
 - auth routes
-- authenticated route families for agents, migration drafts, controlled file access, channels, monitoring, integrations, workspaces, billing, marketplace, and admin operations
+- authenticated route families for agents, migration drafts, controlled file access, channels, monitoring, integrations, workspaces, billing, Agent Hub, and admin operations
 - gateway and runtime proxy handlers for chat, gateway UI, health, logs, and terminal-adjacent streaming
 - release metadata used by the admin-facing upgrade surfaces
 
@@ -85,7 +85,7 @@ flowchart TB
 
 | Service | What it stores or carries |
 |---|---|
-| PostgreSQL | Users, agents, deployments, migration drafts, agent secret overrides, Hermes persisted runtime state, platform settings, snapshots, marketplace content, integrations, channels, metrics, events, workspaces, and subscriptions. |
+| PostgreSQL | Users, agents, deployments, migration drafts, agent secret overrides, Hermes persisted runtime state, platform settings, snapshots, Agent Hub content, integrations, channels, metrics, events, workspaces, and subscriptions. |
 | Redis + BullMQ | Deployment job handoff, retries, timeouts, and failed-job inspection state. |
 
 The API persists desired state first, then hands long-running work to the queue-backed worker. That keeps provisioning failures, retries, and delayed readiness out of the synchronous browser request path.

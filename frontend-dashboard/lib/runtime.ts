@@ -337,7 +337,7 @@ export function runtimeSupportsGateway(agentOrRuntimeFamily = {}) {
   return runtimeFamily !== "hermes";
 }
 
-export function runtimeSupportsMarketplacePublishing(agentOrRuntimeFamily = {}) {
+export function runtimeSupportsAgentHubSharing(agentOrRuntimeFamily = {}) {
   const runtimeFamily =
     typeof agentOrRuntimeFamily === "string"
       ? normalizeRuntimeFamily(agentOrRuntimeFamily)

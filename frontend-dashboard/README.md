@@ -14,7 +14,7 @@ Runs on `/app/*` behind nginx. Users manage their AI agents, configure LLM provi
 | `/app/agents` | Agent fleet list with status indicators |
 | `/app/agents/[id]` | Agent detail with 7-tab interface |
 | `/app/deploy` | Deploy a new agent (Docker, Proxmox, K8s) |
-| `/app/marketplace` | Browse and install agent templates |
+| `/app/agent-hub` | Browse, share, and install agent templates |
 | `/app/workspaces` | Manage isolated workspaces |
 | `/app/monitoring` | Real-time metrics via SSE |
 | `/app/settings` | User profile, LLM provider keys, connected accounts |

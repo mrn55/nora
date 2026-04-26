@@ -15,7 +15,7 @@ import {
   resolveAgentExecutionTarget,
   resolveAgentSandboxProfile,
   runtimeSupportsGateway,
-  runtimeSupportsMarketplacePublishing,
+  runtimeSupportsAgentHubSharing,
 } from "../../lib/runtime";
 
 function formatGatewayAddress(agent, browserHostname = "") {
@@ -62,7 +62,7 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
   const isNemoClawAgent = isNemoClawSandbox(agent);
   const isHermesAgent = isHermesRuntime(agent);
   const supportsGateway = runtimeSupportsGateway(agent);
-  const supportsMarketplace = runtimeSupportsMarketplacePublishing(agent);
+  const supportsAgentHub = runtimeSupportsAgentHubSharing(agent);
   const gatewayAddress = formatGatewayAddress(agent, browserHostname);
   const runtimeAddress = formatRuntimeAddress(agent);
 
@@ -160,14 +160,14 @@ export default function OverviewTab({ agent, actionLoading, onStart, onStop, onR
           {actionLoading === "duplicate" ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
           Duplicate
         </button>
-        {supportsMarketplace ? (
+        {supportsAgentHub ? (
           <button
             onClick={onPublish}
             disabled={!!actionLoading}
             className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
           >
             {actionLoading === "publish" ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-            Publish to Marketplace
+            Share to Agent Hub
           </button>
         ) : null}
         {agent.status === "running" && (

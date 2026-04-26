@@ -50,9 +50,25 @@ const EVENT_ICONS = {
     icon: ShoppingBag,
     color: "text-violet-600 bg-violet-50",
   },
+  agent_hub_install: {
+    icon: ShoppingBag,
+    color: "text-violet-600 bg-violet-50",
+  },
+  agent_hub_download: {
+    icon: Download,
+    color: "text-violet-600 bg-violet-50",
+  },
+  agent_hub_shared: {
+    icon: ShoppingBag,
+    color: "text-amber-600 bg-amber-50",
+  },
   admin_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
   agent_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
   marketplace_action_failed: {
+    icon: AlertCircle,
+    color: "text-red-600 bg-red-50",
+  },
+  agent_hub_action_failed: {
     icon: AlertCircle,
     color: "text-red-600 bg-red-50",
   },

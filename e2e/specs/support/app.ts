@@ -192,7 +192,7 @@ async function waitForOwnedListingByName(
 ) {
   return waitForCondition(
     async () => {
-      const { body } = await apiJson(request, "/api/marketplace/mine", { token });
+      const { body } = await apiJson(request, "/api/agent-hub/mine", { token });
       const listings = Array.isArray(body) ? body : [];
       return listings.find((listing) => listing?.name === name) || null;
     },
@@ -203,7 +203,7 @@ async function waitForOwnedListingByName(
   );
 }
 
-async function waitForMarketplaceListingByName(
+async function waitForAgentHubListingByName(
   request: APIRequestContext,
   token: string,
   name: string,
@@ -211,13 +211,13 @@ async function waitForMarketplaceListingByName(
 ) {
   return waitForCondition(
     async () => {
-      const { body } = await apiJson(request, "/api/marketplace", { token });
+      const { body } = await apiJson(request, "/api/agent-hub", { token });
       const listings = Array.isArray(body) ? body : [];
       return listings.find((listing) => listing?.name === name) || null;
     },
     {
       ...options,
-      description: `marketplace listing "${name}"`,
+      description: `Agent Hub listing "${name}"`,
     }
   );
 }
@@ -297,7 +297,7 @@ export {
   uniqueEmail,
   uniqueName,
   waitForAdminAuditEvent,
-  waitForMarketplaceListingByName,
+  waitForAgentHubListingByName,
   waitForOwnedListingByName,
   waitForUserEvent,
 };

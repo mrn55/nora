@@ -135,7 +135,7 @@ function decodeContentBase64(value) {
 function buildCoreFileDefaultContent(filePath, context = {}) {
   const name = String(context.name || "OpenClaw Agent").trim() || "OpenClaw Agent";
   const description =
-    String(context.description || "").trim() || "Reusable Nora marketplace template.";
+    String(context.description || "").trim() || "Reusable Nora Agent Hub template.";
   const category = String(context.category || "General").trim() || "General";
   const sourceLabel =
     context.sourceType === "platform"

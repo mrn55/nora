@@ -155,7 +155,7 @@ describe("integration secret handling", () => {
     expect(tools[0].nora.invokeCommand).toContain("nora-integration-tool github_list_repositories");
   });
 
-  it("maps marketplace template credentials from integrations into runtime env", async () => {
+  it("maps Agent Hub template credentials from integrations into runtime env", async () => {
     mockDb.query.mockResolvedValueOnce({
       rows: [
         {
@@ -185,7 +185,7 @@ describe("integration secret handling", () => {
     });
   });
 
-  it("exposes marketplace communication credentials through the integration catalog", async () => {
+  it("exposes Agent Hub communication credentials through the integration catalog", async () => {
     mockDb.query.mockRejectedValueOnce(new Error("catalog table unavailable"));
 
     const catalog = await integrations.getCatalog();

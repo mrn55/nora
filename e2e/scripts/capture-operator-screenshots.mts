@@ -1622,7 +1622,7 @@ function buildEventMetadata({
       },
       request: {
         method: "POST",
-        path: "/api/marketplace/install",
+        path: "/api/agent-hub/install",
         correlationId: "readme-install-001",
       },
     };
@@ -1644,7 +1644,7 @@ function buildEventMetadata({
       },
       request: {
         method: "POST",
-        path: "/api/marketplace/publish",
+        path: "/api/agent-hub/share",
         correlationId: "readme-submit-001",
       },
     };
@@ -1669,7 +1669,7 @@ function buildEventMetadata({
       },
       request: {
         method: "POST",
-        path: `/api/marketplace/${IDS.listings.communityPublished}/report`,
+        path: `/api/agent-hub/${IDS.listings.communityPublished}/report`,
         correlationId: "readme-report-001",
       },
     };
@@ -1735,7 +1735,7 @@ function buildSeedSql({ operatorUser, adminUser, communityUser }) {
     },
     {
       id: IDS.events.installed,
-      type: "marketplace_install",
+      type: "agent_hub_install",
       message:
         'Installed platform preset "Signal Desk Starter" as a new queued agent.',
       metadata: buildEventMetadata({
@@ -1747,9 +1747,9 @@ function buildSeedSql({ operatorUser, adminUser, communityUser }) {
     },
     {
       id: IDS.events.submitted,
-      type: "marketplace_submitted",
+      type: "agent_hub_shared",
       message:
-        'Submitted "Founder Inbox Curator" for marketplace review.',
+        'Shared "Founder Inbox Curator" to Agent Hub.',
       metadata: buildEventMetadata({
         operatorUserId: operatorId,
         communityUserId: communityId,
@@ -1759,7 +1759,7 @@ function buildSeedSql({ operatorUser, adminUser, communityUser }) {
     },
     {
       id: IDS.events.reported,
-      type: "marketplace_reported",
+      type: "agent_hub_reported",
       message:
         'Reported community listing "Revenue Ops Coach" for misleading onboarding copy.',
       metadata: buildEventMetadata({
@@ -2308,15 +2308,15 @@ async function captureScreens() {
       ),
     });
 
-    await gotoHeading(operator.page, "/app/marketplace", "Install presets, browse community templates, and track your own shared agents.");
+    await gotoHeading(operator.page, "/app/agent-hub", "Install presets, browse community templates, and track your own shared agents.");
     await operator.page.waitForTimeout(250);
     await operator.page.screenshot({
-      path: path.join(SCREENSHOT_DIR, "proof-operator-marketplace.png"),
+      path: path.join(SCREENSHOT_DIR, "proof-operator-agent-hub.png"),
     });
 
     await gotoHeading(
       operator.page,
-      `/app/marketplace/${IDS.listings.presetSignalDesk}`,
+      `/app/agent-hub/${IDS.listings.presetSignalDesk}`,
       "Signal Desk Starter"
     );
     await operator.page
@@ -2329,7 +2329,7 @@ async function captureScreens() {
     await operator.page.screenshot({
       path: path.join(
         SCREENSHOT_DIR,
-        "proof-operator-marketplace-detail.png"
+        "proof-operator-agent-hub-detail.png"
       ),
     });
 
@@ -2342,15 +2342,15 @@ async function captureScreens() {
       ),
     });
 
-    await gotoHeading(admin.page, "/admin/marketplace", "Marketplace moderation");
+    await gotoHeading(admin.page, "/admin/agent-hub", "Agent Hub moderation");
     await admin.page.waitForTimeout(250);
     await admin.page.screenshot({
-      path: path.join(SCREENSHOT_DIR, "proof-admin-marketplace.png"),
+      path: path.join(SCREENSHOT_DIR, "proof-admin-agent-hub.png"),
     });
 
     await gotoHeading(
       admin.page,
-      `/admin/marketplace/${IDS.listings.communityPending}`,
+      `/admin/agent-hub/${IDS.listings.communityPending}`,
       "Founder Inbox Curator"
     );
     await admin.page
@@ -2363,7 +2363,7 @@ async function captureScreens() {
     await admin.page.screenshot({
       path: path.join(
         SCREENSHOT_DIR,
-        "proof-admin-marketplace-detail.png"
+        "proof-admin-agent-hub-detail.png"
       ),
     });
   } finally {

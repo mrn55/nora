@@ -845,6 +845,9 @@ async function proxyGatewayAsset(req, res) {
 }
 app.use(gatewayUIAssetProxy);
 
+// ─── Public Agent Hub Catalog ─────────────────────────────────────
+app.use("/agent-hub", require("./routes/agentHubPublic"));
+
 // ─── Auth Wall ────────────────────────────────────────────────────
 app.use(authenticateToken);
 
@@ -861,7 +864,7 @@ app.use("/", require("./routes/integrations")); // handles /agents/:id/integrati
 app.use("/", require("./routes/monitoring")); // handles /monitoring/* + /agents/:id/metrics
 app.use("/llm-providers", require("./routes/llmProviders"));
 app.use("/clawhub", require("./routes/clawhub"));
-app.use("/marketplace", require("./routes/marketplace"));
+app.use("/agent-hub", require("./routes/agentHub"));
 app.use("/workspaces", require("./routes/workspaces"));
 app.use("/billing", require("./routes/billing"));
 app.use("/admin", require("./routes/admin"));
@@ -1014,6 +1017,8 @@ async function migrateDB() {
        system_banner_severity TEXT NOT NULL DEFAULT 'warning',
        system_banner_title TEXT NOT NULL DEFAULT '',
        system_banner_message TEXT NOT NULL DEFAULT '',
+       agent_hub_default_share_target TEXT NOT NULL DEFAULT 'both',
+       agent_hub_url TEXT NOT NULL DEFAULT 'https://nora.solomontsao.com',
        created_at TIMESTAMP DEFAULT NOW(),
        updated_at TIMESTAMP DEFAULT NOW()
      )`,
@@ -1024,6 +1029,8 @@ async function migrateDB() {
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_severity TEXT NOT NULL DEFAULT 'warning'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_title TEXT NOT NULL DEFAULT ''; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_message TEXT NOT NULL DEFAULT ''; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN agent_hub_default_share_target TEXT NOT NULL DEFAULT 'both'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN agent_hub_url TEXT NOT NULL DEFAULT 'https://nora.solomontsao.com'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `CREATE TABLE IF NOT EXISTS usage_metrics (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
        agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
@@ -1113,6 +1120,12 @@ async function migrateDB() {
     `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN source_type TEXT DEFAULT 'platform'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN status TEXT DEFAULT 'published'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN visibility TEXT DEFAULT 'public'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN share_target TEXT DEFAULT 'internal'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN local_visibility TEXT DEFAULT 'internal'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_share_status TEXT DEFAULT 'not_shared'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_listing_id TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_last_synced_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_error TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN slug TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN current_version INTEGER DEFAULT 1; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN published_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
@@ -1127,6 +1140,21 @@ async function migrateDB() {
         SET status = CASE WHEN COALESCE(built_in, false) THEN 'published' ELSE 'pending_review' END
       WHERE status IS NULL`,
     `UPDATE marketplace_listings SET visibility = 'public' WHERE visibility IS NULL`,
+    `UPDATE marketplace_listings
+        SET share_target = CASE
+          WHEN source_type = 'platform' THEN 'internal'
+          ELSE 'internal'
+        END
+      WHERE share_target IS NULL`,
+    `UPDATE marketplace_listings
+        SET local_visibility = CASE
+          WHEN source_type = 'platform' OR status = 'published' THEN 'internal'
+          ELSE 'owner'
+        END
+      WHERE local_visibility IS NULL`,
+    `UPDATE marketplace_listings
+        SET central_share_status = 'not_shared'
+      WHERE central_share_status IS NULL`,
     `UPDATE marketplace_listings SET price = 'Free' WHERE price IS DISTINCT FROM 'Free'`,
     `UPDATE marketplace_listings SET downloads = 0 WHERE downloads IS NULL`,
     `UPDATE marketplace_listings SET current_version = 1 WHERE current_version IS NULL`,
@@ -1194,7 +1222,7 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
-async function seedStarterMarketplace() {
+async function seedStarterAgentHub() {
   for (const template of STARTER_TEMPLATES) {
     const existingListing = await marketplace.getPlatformListingByTemplateKey(template.templateKey);
 
@@ -1244,7 +1272,7 @@ async function seedStarterMarketplace() {
     });
   }
 
-  console.log(`Marketplace seeded with ${STARTER_TEMPLATES.length} built-in starter templates`);
+  console.log(`Agent Hub seeded with ${STARTER_TEMPLATES.length} built-in starter templates`);
 }
 
 // ─── Startup ──────────────────────────────────────────────────────
@@ -1306,9 +1334,9 @@ if (require.main === module) {
     }
 
     try {
-      await seedStarterMarketplace();
+      await seedStarterAgentHub();
     } catch (e) {
-      console.error("Failed to seed marketplace:", e.message);
+      console.error("Failed to seed Agent Hub:", e.message);
     }
 
     _startupComplete = true;

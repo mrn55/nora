@@ -12,7 +12,7 @@ Runs on `/admin/*` behind nginx. Provides platform-wide visibility into users, a
 - **Fleet Management** — global agent list, lifecycle actions, runtime metadata, telemetry samples, and live logs
 - **Queue Recovery** — dead-letter inspection and retry flows for failed deployment jobs
 - **User Management** — role changes, agent counts, and account deletion with agent cleanup
-- **Marketplace Moderation** — review and remove published marketplace listings
+- **Agent Hub Moderation** — review and remove published Agent Hub listings
 
 ## Development
 

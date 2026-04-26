@@ -68,7 +68,7 @@ describe("STARTER_TEMPLATES", () => {
     );
   });
 
-  it("keeps marketplace template credentials sourced from integrations", () => {
+  it("keeps Agent Hub template credentials sourced from integrations", () => {
     const disallowedCredentialSetup = [
       ".env",
       "ANTHROPIC_API_KEY",

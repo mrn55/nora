@@ -21,7 +21,7 @@ const NAV_ITEMS = [
   { name: "Fleet", icon: Server, href: "/fleet" },
   { name: "Queue", icon: TriangleAlert, href: "/queue" },
   { name: "Users", icon: Users, href: "/users" },
-  { name: "Marketplace", icon: ShoppingBag, href: "/marketplace" },
+  { name: "Agent Hub", icon: ShoppingBag, href: "/agent-hub" },
   { name: "Audit", icon: FileText, href: "/audit" },
   { name: "Settings", icon: SlidersHorizontal, href: "/settings" },
 ];

@@ -22,7 +22,7 @@ export default function Sidebar({
     { name: "Dashboard", icon: LayoutDashboard, href: "/app/dashboard" },
     { name: "Getting Started", icon: ListChecks, href: "/app/getting-started" },
     { name: "Agents", icon: Bot, href: "/app/agents" },
-    { name: "Marketplace", icon: ShoppingBag, href: "/app/marketplace" },
+    { name: "Agent Hub", icon: ShoppingBag, href: "/app/agent-hub" },
     { name: "Deploy", icon: Rocket, href: "/app/deploy" },
     { name: "Monitoring", icon: BarChart3, href: "/app/monitoring" },
     { name: "Logs", icon: ScrollText, href: "/app/logs" },

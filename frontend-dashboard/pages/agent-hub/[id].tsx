@@ -110,7 +110,7 @@ function buildOwnerEditorState(detail) {
   };
 }
 
-export default function MarketplaceTemplateDetail() {
+export default function AgentHubTemplateDetail() {
   const router = useRouter();
   const toast = useToast();
   const [currentUser, setCurrentUser] = useState(null);
@@ -157,7 +157,7 @@ export default function MarketplaceTemplateDetail() {
     if (!router.isReady || !router.query.id) return;
     setLoading(true);
     try {
-      const res = await fetchWithAuth(`/api/marketplace/${router.query.id}`);
+      const res = await fetchWithAuth(`/api/agent-hub/${router.query.id}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data.error || "Failed to load template");
@@ -188,7 +188,7 @@ export default function MarketplaceTemplateDetail() {
     if (!detail) return;
     setDownloading(true);
     try {
-      const res = await fetchWithAuth(`/api/marketplace/${detail.id}/download`);
+      const res = await fetchWithAuth(`/api/agent-hub/${detail.id}/download`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to download template");
@@ -216,7 +216,7 @@ export default function MarketplaceTemplateDetail() {
 
     setInstalling(true);
     try {
-      const res = await fetchWithAuth("/api/marketplace/install", {
+      const res = await fetchWithAuth("/api/agent-hub/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -260,7 +260,7 @@ export default function MarketplaceTemplateDetail() {
     if (!detail) return;
     setReporting(true);
     try {
-      const res = await fetchWithAuth(`/api/marketplace/${detail.id}/report`, {
+      const res = await fetchWithAuth(`/api/agent-hub/${detail.id}/report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -325,7 +325,7 @@ export default function MarketplaceTemplateDetail() {
     if (!detail) return;
     setEditorSaving(true);
     try {
-      const res = await fetchWithAuth(`/api/marketplace/${detail.id}`, {
+      const res = await fetchWithAuth(`/api/agent-hub/${detail.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -359,7 +359,7 @@ export default function MarketplaceTemplateDetail() {
           : firstInspectableFile(data)
       );
       setEditorOpen(false);
-      toast.success("Changes saved and sent for review");
+      toast.success("Agent Hub listing updated");
     } catch (error) {
       console.error(error);
       toast.error(error.message || "Failed to update listing");
@@ -384,7 +384,8 @@ export default function MarketplaceTemplateDetail() {
     detail?.source_type === "community" &&
     detail?.status === "published" &&
     Boolean(currentUser?.id) &&
-    !isOwner;
+    !isOwner &&
+    !detail?.remote;
   const isPreset = detail?.source_type === "platform";
   const statusClass =
     STATUS_STYLES[detail?.status] || "bg-slate-100 text-slate-700 border-slate-200";
@@ -405,11 +406,11 @@ export default function MarketplaceTemplateDetail() {
       <div className="flex flex-col gap-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <a
-            href="/app/marketplace"
+            href="/app/agent-hub"
             className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
           >
             <ChevronLeft size={16} />
-            Back to marketplace
+            Back to Agent Hub
           </a>
 
           <button
@@ -447,7 +448,7 @@ export default function MarketplaceTemplateDetail() {
                       )}
                     >
                       {isPreset ? <ShieldCheck size={12} /> : <Users size={12} />}
-                      {isPreset ? "Platform Preset" : "Community Template"}
+                      {isPreset ? "Platform Preset" : detail.remote ? "Community Template" : "Shared Template"}
                     </span>
                     <span className={clsx("inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]", statusClass)}>
                       {String(detail.status || "unknown").replace(/_/g, " ")}
@@ -616,7 +617,7 @@ export default function MarketplaceTemplateDetail() {
                           Update your listing and resubmit
                         </h2>
                         <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-                          Editing a community listing sends the updated template back through review. Core files stay pinned to the OpenClaw filenames, and extra files can be added or removed.
+                          Editing a shared listing updates the internal template immediately and refreshes community sync when that target is enabled. Core files stay pinned to the OpenClaw filenames, and extra files can be added or removed.
                         </p>
                       </div>
 
@@ -634,7 +635,7 @@ export default function MarketplaceTemplateDetail() {
                           className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
                         >
                           {editorSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                          Save and Resubmit
+                          Save Changes
                         </button>
                       </div>
                     </div>
@@ -835,7 +836,7 @@ export default function MarketplaceTemplateDetail() {
                     Metadata
                   </p>
                   <div className="mt-4 space-y-4 text-sm">
-                    <MetadataRow label="Source" value={isPreset ? "Platform preset" : "Community"} />
+                    <MetadataRow label="Source" value={isPreset ? "Platform preset" : detail.remote ? "Community" : "Internal shared"} />
                     <MetadataRow label="Status" value={String(detail.status || "unknown").replace(/_/g, " ")} />
                     <MetadataRow label="Category" value={detail.category || "General"} />
                     <MetadataRow label="Price" value={detail.price || "Free"} />

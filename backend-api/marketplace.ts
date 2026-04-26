@@ -1,5 +1,6 @@
 // @ts-nocheck
-// marketplace registry backed by PostgreSQL
+// Agent Hub registry backed by PostgreSQL. The table names still use the
+// historical marketplace prefix so existing installations can migrate in place.
 
 const db = require("./db");
 
@@ -12,6 +13,18 @@ const LISTING_STATUS_REJECTED = "rejected";
 const LISTING_STATUS_REMOVED = "removed";
 
 const LISTING_VISIBILITY_PUBLIC = "public";
+
+const LISTING_SHARE_TARGET_INTERNAL = "internal";
+const LISTING_SHARE_TARGET_COMMUNITY = "community";
+const LISTING_SHARE_TARGET_BOTH = "both";
+
+const LISTING_LOCAL_VISIBILITY_OWNER = "owner";
+const LISTING_LOCAL_VISIBILITY_INTERNAL = "internal";
+
+const CENTRAL_SHARE_STATUS_NOT_SHARED = "not_shared";
+const CENTRAL_SHARE_STATUS_QUEUED = "queued";
+const CENTRAL_SHARE_STATUS_SUBMITTED = "submitted";
+const CENTRAL_SHARE_STATUS_FAILED = "failed";
 
 const REPORT_STATUS_OPEN = "open";
 const REPORT_STATUS_RESOLVED = "resolved";
@@ -33,6 +46,12 @@ const LISTING_SELECT = `
     ml.source_type,
     ml.status,
     ml.visibility,
+    ml.share_target,
+    ml.local_visibility,
+    ml.central_share_status,
+    ml.central_listing_id,
+    ml.central_last_synced_at,
+    ml.central_error,
     ml.slug,
     ml.current_version,
     ml.review_notes,
@@ -87,6 +106,27 @@ function normalizeCurrentVersion(value, fallback = 1) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 1) return fallback;
   return parsed;
+}
+
+function normalizeShareTarget(value, fallback = LISTING_SHARE_TARGET_INTERNAL) {
+  if (value === LISTING_SHARE_TARGET_COMMUNITY) return LISTING_SHARE_TARGET_COMMUNITY;
+  if (value === LISTING_SHARE_TARGET_BOTH) return LISTING_SHARE_TARGET_BOTH;
+  if (value === LISTING_SHARE_TARGET_INTERNAL) return LISTING_SHARE_TARGET_INTERNAL;
+  return fallback;
+}
+
+function normalizeLocalVisibility(value, fallback = LISTING_LOCAL_VISIBILITY_OWNER) {
+  if (value === LISTING_LOCAL_VISIBILITY_INTERNAL) return LISTING_LOCAL_VISIBILITY_INTERNAL;
+  if (value === LISTING_LOCAL_VISIBILITY_OWNER) return LISTING_LOCAL_VISIBILITY_OWNER;
+  return fallback;
+}
+
+function normalizeCentralShareStatus(value, fallback = CENTRAL_SHARE_STATUS_NOT_SHARED) {
+  if (value === CENTRAL_SHARE_STATUS_QUEUED) return CENTRAL_SHARE_STATUS_QUEUED;
+  if (value === CENTRAL_SHARE_STATUS_SUBMITTED) return CENTRAL_SHARE_STATUS_SUBMITTED;
+  if (value === CENTRAL_SHARE_STATUS_FAILED) return CENTRAL_SHARE_STATUS_FAILED;
+  if (value === CENTRAL_SHARE_STATUS_NOT_SHARED) return CENTRAL_SHARE_STATUS_NOT_SHARED;
+  return fallback;
 }
 
 function slugify(value) {
@@ -175,6 +215,12 @@ async function upsertListing({
   ownerUserId = null,
   status = null,
   visibility = LISTING_VISIBILITY_PUBLIC,
+  shareTarget = null,
+  localVisibility = null,
+  centralShareStatus = null,
+  centralListingId = undefined,
+  centralLastSyncedAt = undefined,
+  centralError = undefined,
   slug = null,
   currentVersion = null,
   reviewNotes = null,
@@ -205,6 +251,29 @@ async function upsertListing({
     visibility === LISTING_VISIBILITY_PUBLIC
       ? LISTING_VISIBILITY_PUBLIC
       : LISTING_VISIBILITY_PUBLIC;
+  const defaultShareTarget =
+    normalizedSource === LISTING_SOURCE_PLATFORM
+      ? LISTING_SHARE_TARGET_INTERNAL
+      : LISTING_SHARE_TARGET_BOTH;
+  const normalizedShareTarget = normalizeShareTarget(
+    shareTarget ?? existing?.share_target,
+    defaultShareTarget,
+  );
+  const normalizedLocalVisibility = normalizeLocalVisibility(
+    localVisibility ?? existing?.local_visibility,
+    normalizedBuiltIn ||
+      normalizedShareTarget === LISTING_SHARE_TARGET_INTERNAL ||
+      normalizedShareTarget === LISTING_SHARE_TARGET_BOTH
+      ? LISTING_LOCAL_VISIBILITY_INTERNAL
+      : LISTING_LOCAL_VISIBILITY_OWNER,
+  );
+  const normalizedCentralShareStatus = normalizeCentralShareStatus(
+    centralShareStatus ?? existing?.central_share_status,
+    normalizedShareTarget === LISTING_SHARE_TARGET_COMMUNITY ||
+      normalizedShareTarget === LISTING_SHARE_TARGET_BOTH
+      ? CENTRAL_SHARE_STATUS_QUEUED
+      : CENTRAL_SHARE_STATUS_NOT_SHARED,
+  );
   const normalizedName = normalizeText(name, existing?.name || "Untitled Listing").slice(0, 100);
   const normalizedDescription = normalizeDescription(description || existing?.description || "");
   const normalizedCategory = normalizeCategory(category || existing?.category || "General");
@@ -233,16 +302,22 @@ async function upsertListing({
               source_type = $8,
               status = $9,
               visibility = $10,
-              slug = $11,
-              current_version = $12,
-              review_notes = $13,
+              share_target = $11,
+              local_visibility = $12,
+              central_share_status = $13,
+              central_listing_id = $14,
+              central_last_synced_at = $15,
+              central_error = $16,
+              slug = $17,
+              current_version = $18,
+              review_notes = $19,
               reviewed_at = CASE WHEN $9 IN ('published', 'rejected', 'removed') THEN NOW() ELSE reviewed_at END,
               published_at = CASE
                 WHEN $9 = 'published' THEN COALESCE(published_at, NOW())
                 ELSE published_at
               END,
               updated_at = NOW()
-        WHERE id = $14
+        WHERE id = $20
       RETURNING *`,
       [
         snapshotId || null,
@@ -255,6 +330,14 @@ async function upsertListing({
         normalizedSource,
         normalizedStatus,
         normalizedVisibility,
+        normalizedShareTarget,
+        normalizedLocalVisibility,
+        normalizedCentralShareStatus,
+        centralListingId !== undefined ? normalizeText(centralListingId, "") || null : existing.central_listing_id,
+        centralLastSyncedAt !== undefined
+          ? centralLastSyncedAt
+          : existing.central_last_synced_at,
+        centralError !== undefined ? normalizeDescription(centralError) : existing.central_error,
         resolvedSlug,
         nextVersion,
         reviewNotes,
@@ -285,11 +368,17 @@ async function upsertListing({
        source_type,
        status,
        visibility,
+       share_target,
+       local_visibility,
+       central_share_status,
+       central_listing_id,
+       central_last_synced_at,
+       central_error,
        slug,
        current_version,
        published_at
      )
-     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
        CASE WHEN $9 = 'published' THEN NOW() ELSE NULL END
      )
      RETURNING *`,
@@ -304,6 +393,12 @@ async function upsertListing({
       normalizedSource,
       normalizedStatus,
       normalizedVisibility,
+      normalizedShareTarget,
+      normalizedLocalVisibility,
+      normalizedCentralShareStatus,
+      centralListingId !== undefined ? normalizeText(centralListingId, "") || null : null,
+      centralLastSyncedAt !== undefined ? centralLastSyncedAt : null,
+      centralError !== undefined ? normalizeDescription(centralError) : null,
       resolvedSlug,
       initialVersion,
     ],
@@ -324,6 +419,10 @@ async function listMarketplace() {
     `${LISTING_SELECT}
       WHERE ml.status = $1
         AND ml.visibility = $2
+        AND (
+          ml.source_type = '${LISTING_SOURCE_PLATFORM}'
+          OR ml.local_visibility = '${LISTING_LOCAL_VISIBILITY_INTERNAL}'
+        )
       ORDER BY
         CASE WHEN ml.source_type = '${LISTING_SOURCE_PLATFORM}' THEN 0 ELSE 1 END,
         ml.installs DESC,
@@ -333,12 +432,35 @@ async function listMarketplace() {
   return result.rows;
 }
 
+async function listAgentHubLocalListings() {
+  return listMarketplace();
+}
+
 async function listUserListings(userId) {
   const result = await db.query(
     `${LISTING_SELECT}
       WHERE ml.owner_user_id = $1
       ORDER BY ml.updated_at DESC, ml.created_at DESC`,
     [userId],
+  );
+  return result.rows;
+}
+
+async function listCommunityCatalog() {
+  const result = await db.query(
+    `${LISTING_SELECT}
+      WHERE ml.source_type = $1
+        AND ml.status = $2
+        AND ml.visibility = $3
+        AND ml.share_target IN ($4, $5)
+      ORDER BY ml.installs DESC, COALESCE(ml.published_at, ml.created_at) DESC`,
+    [
+      LISTING_SOURCE_COMMUNITY,
+      LISTING_STATUS_PUBLISHED,
+      LISTING_VISIBILITY_PUBLIC,
+      LISTING_SHARE_TARGET_COMMUNITY,
+      LISTING_SHARE_TARGET_BOTH,
+    ],
   );
   return result.rows;
 }
@@ -508,13 +630,52 @@ async function setListingStatus(id, status, reviewerUserId = null, reviewNotes =
   return result.rows[0];
 }
 
+async function updateCentralShareStatus(
+  id,
+  {
+    status = CENTRAL_SHARE_STATUS_NOT_SHARED,
+    centralListingId = null,
+    error = null,
+    syncedAt = null,
+  } = {},
+) {
+  const normalizedStatus = normalizeCentralShareStatus(status);
+  const result = await db.query(
+    `UPDATE marketplace_listings
+        SET central_share_status = $1,
+            central_listing_id = $2,
+            central_last_synced_at = $3,
+            central_error = $4,
+            updated_at = NOW()
+      WHERE id = $5
+      RETURNING *`,
+    [
+      normalizedStatus,
+      centralListingId ? normalizeText(centralListingId, "").slice(0, 255) : null,
+      syncedAt || (normalizedStatus === CENTRAL_SHARE_STATUS_SUBMITTED ? new Date() : null),
+      error ? normalizeDescription(error).slice(0, 1200) : null,
+      id,
+    ],
+  );
+  return result.rows[0] || null;
+}
+
 async function deleteListing(id) {
   await db.query("DELETE FROM marketplace_listings WHERE id = $1", [id]);
 }
 
 module.exports = {
+  CENTRAL_SHARE_STATUS_FAILED,
+  CENTRAL_SHARE_STATUS_NOT_SHARED,
+  CENTRAL_SHARE_STATUS_QUEUED,
+  CENTRAL_SHARE_STATUS_SUBMITTED,
+  LISTING_LOCAL_VISIBILITY_INTERNAL,
+  LISTING_LOCAL_VISIBILITY_OWNER,
   LISTING_SOURCE_COMMUNITY,
   LISTING_SOURCE_PLATFORM,
+  LISTING_SHARE_TARGET_BOTH,
+  LISTING_SHARE_TARGET_COMMUNITY,
+  LISTING_SHARE_TARGET_INTERNAL,
   LISTING_STATUS_PENDING_REVIEW,
   LISTING_STATUS_PUBLISHED,
   LISTING_STATUS_REJECTED,
@@ -527,7 +688,9 @@ module.exports = {
   deleteListing,
   getListing,
   getPlatformListingByTemplateKey,
+  listAgentHubLocalListings,
   listAdminListings,
+  listCommunityCatalog,
   listMarketplace,
   listReports,
   listUserListings,
@@ -536,5 +699,6 @@ module.exports = {
   recordInstall,
   resolveReport,
   setListingStatus,
+  updateCentralShareStatus,
   upsertListing,
 };

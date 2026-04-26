@@ -22,7 +22,7 @@ import Layout from "../../components/layout/Layout";
 import { fetchWithAuth } from "../../lib/api";
 import { useToast } from "../../components/Toast";
 
-const MARKETPLACE_TABS = [
+const AGENT_HUB_TABS = [
   { id: "presets", label: "Platform Presets" },
   { id: "community", label: "Community" },
   { id: "my", label: "My Listings" },
@@ -49,6 +49,20 @@ function formatCount(value) {
   return `${numeric}`;
 }
 
+function formatShareTarget(value) {
+  if (value === "internal") return "Internal";
+  if (value === "community") return "Community";
+  if (value === "both") return "Internal + Community";
+  return "Internal";
+}
+
+function formatCentralShareStatus(value) {
+  if (value === "submitted") return "Submitted";
+  if (value === "failed") return "Failed";
+  if (value === "queued") return "Queued";
+  return "Not shared";
+}
+
 function parseFilename(headerValue, fallbackName) {
   const match = /filename="([^"]+)"/i.exec(headerValue || "");
   return match?.[1] || fallbackName;
@@ -70,10 +84,12 @@ async function downloadResponseAsFile(response, fallbackName) {
   window.URL.revokeObjectURL(url);
 }
 
-export default function Marketplace() {
+export default function AgentHub() {
   const router = useRouter();
   const toast = useToast();
   const [browseItems, setBrowseItems] = useState([]);
+  const [communityItems, setCommunityItems] = useState([]);
+  const [communityHub, setCommunityHub] = useState(null);
   const [myItems, setMyItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("presets");
@@ -87,43 +103,56 @@ export default function Marketplace() {
   const [reportReason, setReportReason] = useState("spam");
   const [reportDetails, setReportDetails] = useState("");
 
-  async function loadMarketplace() {
+  async function loadAgentHub() {
     setLoading(true);
     try {
-      const [browseRes, mineRes] = await Promise.all([
-        fetchWithAuth("/api/marketplace"),
-        fetchWithAuth("/api/marketplace/mine"),
+      const [browseRes, communityRes, mineRes] = await Promise.all([
+        fetchWithAuth("/api/agent-hub"),
+        fetchWithAuth("/api/agent-hub/community"),
+        fetchWithAuth("/api/agent-hub/mine"),
       ]);
 
       if (!browseRes.ok) {
-        throw new Error("Failed to load marketplace listings");
+        throw new Error("Failed to load Agent Hub listings");
+      }
+      if (!communityRes.ok) {
+        throw new Error("Failed to load community Agent Hub listings");
       }
       if (!mineRes.ok) {
-        throw new Error("Failed to load your marketplace listings");
+        throw new Error("Failed to load your Agent Hub listings");
       }
 
-      const [browseData, mineData] = await Promise.all([
+      const [browseData, communityData, mineData] = await Promise.all([
         browseRes.json(),
+        communityRes.json(),
         mineRes.json(),
       ]);
       setBrowseItems(Array.isArray(browseData) ? browseData : []);
+      setCommunityItems(
+        Array.isArray(communityData?.items)
+          ? communityData.items
+          : Array.isArray(communityData)
+            ? communityData
+            : []
+      );
+      setCommunityHub(communityData?.hub || null);
       setMyItems(Array.isArray(mineData) ? mineData : []);
     } catch (error) {
       console.error(error);
-      toast.error(error.message || "Failed to load marketplace");
+      toast.error(error.message || "Failed to load Agent Hub");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadMarketplace();
+    loadAgentHub();
   }, []);
 
   useEffect(() => {
     if (!router.isReady) return;
     const tab = typeof router.query.tab === "string" ? router.query.tab : "";
-    if (MARKETPLACE_TABS.some((entry) => entry.id === tab)) {
+    if (AGENT_HUB_TABS.some((entry) => entry.id === tab)) {
       setActiveTab(tab);
     }
   }, [router.isReady, router.query.tab]);
@@ -141,10 +170,8 @@ export default function Marketplace() {
     );
   }
 
-  const presets = browseItems.filter((item) => item.source_type === "platform");
-  const community = browseItems.filter(
-    (item) => item.source_type === "community"
-  );
+  const presets = browseItems;
+  const community = communityItems;
   const scopedItems =
     activeTab === "presets"
       ? presets
@@ -172,7 +199,7 @@ export default function Marketplace() {
 
     setInstallingId(selectedItem.id);
     try {
-      const res = await fetchWithAuth("/api/marketplace/install", {
+      const res = await fetchWithAuth("/api/agent-hub/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -201,7 +228,7 @@ export default function Marketplace() {
   async function handleDownload(item) {
     setDownloadingId(item.id);
     try {
-      const res = await fetchWithAuth(`/api/marketplace/${item.id}/download`);
+      const res = await fetchWithAuth(`/api/agent-hub/${item.id}/download`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to download template");
@@ -210,7 +237,7 @@ export default function Marketplace() {
       const fallbackName = `${item.slug || item.name || "nora-template"}.nora-template.json`;
       await downloadResponseAsFile(res, fallbackName);
       toast.success("Template downloaded");
-      loadMarketplace();
+      loadAgentHub();
     } catch (error) {
       console.error(error);
       toast.error(error.message || "Failed to download template");
@@ -223,7 +250,7 @@ export default function Marketplace() {
     if (!reportItem) return;
     setReportingId(reportItem.id);
     try {
-      const res = await fetchWithAuth(`/api/marketplace/${reportItem.id}/report`, {
+      const res = await fetchWithAuth(`/api/agent-hub/${reportItem.id}/report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -240,7 +267,7 @@ export default function Marketplace() {
       setReportItem(null);
       setReportReason("spam");
       setReportDetails("");
-      loadMarketplace();
+      loadAgentHub();
     } catch (error) {
       console.error(error);
       toast.error(error.message || "Failed to report listing");
@@ -256,13 +283,13 @@ export default function Marketplace() {
           <div className="relative z-10 flex flex-col gap-4 max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-widest leading-none mb-2">
               <Sparkles size={12} className="fill-current" />
-              Nora Marketplace
+              Nora Agent Hub
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-white tracking-tight leading-none">
               Install presets, browse community templates, and track your own shared agents.
             </h1>
             <p className="text-slate-400 font-medium text-lg leading-relaxed">
-              Platform starter packs stay separated from community submissions. Inspect each template before installing, including the OpenClaw core files that will ship with it.
+              Platform starter packs and internal shares stay separated from the hosted community catalog. Inspect each template before installing, including the OpenClaw core files that will ship with it.
             </p>
           </div>
         </header>
@@ -270,7 +297,7 @@ export default function Marketplace() {
         <div className="flex flex-col gap-5 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              {MARKETPLACE_TABS.map((tab) => (
+              {AGENT_HUB_TABS.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => selectTab(tab.id)}
@@ -287,7 +314,7 @@ export default function Marketplace() {
             </div>
 
             <button
-              onClick={loadMarketplace}
+              onClick={loadAgentHub}
               className="inline-flex items-center gap-2 self-start rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
@@ -299,13 +326,13 @@ export default function Marketplace() {
             <div className="rounded-[1.5rem] border border-blue-100 bg-blue-50 px-5 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-700">
-                  Publishing
+                  Sharing
                 </p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">
-                  Publish from any agent detail page.
+                  Share from any agent detail page.
                 </p>
                 <p className="mt-1 text-sm text-blue-700/80">
-                  Nora exports template files only, strips wiring and secrets, then submits the listing for admin review.
+                  Nora exports template files only, strips wiring and secrets, and applies the admin default share target.
                 </p>
               </div>
               <a
@@ -315,6 +342,21 @@ export default function Marketplace() {
                 <Share2 size={16} />
                 Open Agents
               </a>
+            </div>
+          )}
+
+          {activeTab === "community" && communityHub && (
+            <div
+              className={clsx(
+                "rounded-[1.5rem] border px-5 py-4 text-sm font-medium",
+                communityHub.error
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-emerald-100 bg-emerald-50 text-emerald-800"
+              )}
+            >
+              {communityHub.error
+                ? `Community sync failed from ${communityHub.url || "the configured hub"}: ${communityHub.error}`
+                : `Community catalog synced from ${communityHub.url || "the configured hub"}.`}
             </div>
           )}
 
@@ -341,7 +383,7 @@ export default function Marketplace() {
             <div className="col-span-full h-80 flex flex-col items-center justify-center text-slate-400 gap-4 bg-white border border-slate-200 rounded-[2.5rem] border-dashed">
               <Loader2 size={36} className="animate-spin text-blue-500" />
               <span className="text-sm font-bold uppercase tracking-widest leading-none">
-                Loading marketplace
+                Loading Agent Hub
               </span>
             </div>
           ) : filteredItems.length === 0 ? (
@@ -349,8 +391,8 @@ export default function Marketplace() {
               <Bot size={36} className="mb-3 opacity-60" />
               <p className="text-sm font-semibold text-slate-600">
                 {activeTab === "my"
-                  ? "You have not submitted any marketplace listings yet."
-                  : "No marketplace listings matched this filter."}
+                  ? "You have not shared any Agent Hub listings yet."
+                  : "No Agent Hub listings matched this filter."}
               </p>
             </div>
           ) : activeTab === "my" ? (
@@ -364,7 +406,7 @@ export default function Marketplace() {
             ))
           ) : (
             filteredItems.map((item) => (
-              <MarketplaceCard
+              <AgentHubCard
                 key={item.id}
                 item={item}
                 installing={installingId === item.id}
@@ -380,7 +422,7 @@ export default function Marketplace() {
                   setReportReason("spam");
                   setReportDetails("");
                 }}
-                showReport={activeTab === "community"}
+                showReport={activeTab === "community" && !item.remote}
               />
             ))
           )}
@@ -416,7 +458,7 @@ export default function Marketplace() {
   );
 }
 
-function MarketplaceCard({
+function AgentHubCard({
   item,
   onInstall,
   onDownload,
@@ -450,12 +492,12 @@ function MarketplaceCard({
                 : "bg-emerald-50 text-emerald-700 border-emerald-200"
             )}
           >
-            {isPreset ? "Preset" : "Community"}
+            {isPreset ? "Preset" : item.remote ? "Community" : "Shared"}
           </span>
         </div>
 
         <div className="space-y-2">
-          <a href={`/app/marketplace/${item.id}`} className="block">
+          <a href={`/app/agent-hub/${item.id}`} className="block">
             <h3 className="text-xl font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">
               {item.name}
             </h3>
@@ -519,7 +561,7 @@ function MarketplaceCard({
 
       <div className="p-4 pt-2 mt-auto flex flex-col gap-2">
         <a
-          href={`/app/marketplace/${item.id}`}
+          href={`/app/agent-hub/${item.id}`}
           className="inline-flex items-center justify-between gap-2 px-4 py-3 bg-white hover:bg-slate-50 border border-slate-200 transition-all text-sm font-bold text-slate-800 rounded-2xl"
         >
           View Details
@@ -595,9 +637,9 @@ function MyListingCard({ item, onDownload, downloading }) {
         </div>
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-            Price
+            Share Target
           </p>
-          <p className="mt-1 font-semibold text-slate-900">{item.price || "Free"}</p>
+          <p className="mt-1 font-semibold text-slate-900">{formatShareTarget(item.share_target)}</p>
         </div>
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
@@ -607,9 +649,9 @@ function MyListingCard({ item, onDownload, downloading }) {
         </div>
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-            Downloads
+            Hub Sync
           </p>
-          <p className="mt-1 font-semibold text-slate-900">{formatCount(item.downloads)}</p>
+          <p className="mt-1 font-semibold text-slate-900">{formatCentralShareStatus(item.central_share_status)}</p>
         </div>
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
@@ -636,9 +678,18 @@ function MyListingCard({ item, onDownload, downloading }) {
         </div>
       )}
 
+      {item.central_share_status === "failed" && item.central_error ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em]">
+            Community Sync
+          </p>
+          <p className="mt-2">{item.central_error}</p>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2 mt-auto">
         <a
-          href={`/app/marketplace/${item.id}`}
+          href={`/app/agent-hub/${item.id}`}
           className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-sm font-bold text-slate-800 rounded-2xl transition-colors"
         >
           <ChevronRight size={16} />

@@ -226,13 +226,13 @@ describe("monitoring metrics", () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ total: 12 }] })
       .mockResolvedValueOnce({
-        rows: [{ type: "agent_started" }, { type: "marketplace_install" }],
+        rows: [{ type: "agent_started" }, { type: "agent_hub_install" }],
       })
       .mockResolvedValueOnce({
         rows: [
           {
             id: "event-user-page-1",
-            type: "marketplace_install",
+            type: "agent_hub_install",
             message: "Installed listing",
             metadata: {
               listing: { ownerUserId: "user-1" },
@@ -246,7 +246,7 @@ describe("monitoring metrics", () => {
       page: 2,
       limit: 10,
       search: "installed",
-      type: "marketplace_install",
+      type: "agent_hub_install",
       from: new Date("2026-04-01T00:00:00.000Z"),
       to: new Date("2026-04-09T23:59:59.999Z"),
     });
@@ -255,14 +255,14 @@ describe("monitoring metrics", () => {
       events: [
         expect.objectContaining({
           id: "event-user-page-1",
-          type: "marketplace_install",
+          type: "agent_hub_install",
         }),
       ],
       total: 12,
       page: 2,
       limit: 10,
       totalPages: 2,
-      availableTypes: ["agent_started", "marketplace_install"],
+      availableTypes: ["agent_started", "agent_hub_install"],
     });
     expect(db.query).toHaveBeenNthCalledWith(
       1,
@@ -271,7 +271,7 @@ describe("monitoring metrics", () => {
         "user-1",
         "user-1",
         "%installed%",
-        "marketplace_install",
+        "agent_hub_install",
         expect.any(Date),
         expect.any(Date),
       ])
@@ -288,7 +288,7 @@ describe("monitoring metrics", () => {
         "user-1",
         "user-1",
         "%installed%",
-        "marketplace_install",
+        "agent_hub_install",
         expect.any(Date),
         expect.any(Date),
         10,

@@ -68,7 +68,7 @@ nginx (8080 local / 80|443 public)
   ├── /app        frontend-dashboard   (Next.js 16, operator workspace)
   ├── /admin      admin-dashboard      (Next.js 16, platform admin)
   └── /api        backend-api          (Express, container port 4000, host 127.0.0.1:4100)
-                    ├── PostgreSQL 15      (state: users, agents, deployments, marketplace, audit)
+                    ├── PostgreSQL 15      (state: users, agents, deployments, Agent Hub, audit)
                     ├── Redis 7 + BullMQ   (async job queue)
                     └── worker-provisioner (health on 4001)
                           ├── Docker adapter
@@ -105,7 +105,7 @@ Compose mounts `./workers/provisioner/backends` into `backend-api` at `/app/back
 
 ### Key backend modules
 
-`backend-api/server.ts` wires: helmet, rate limiting, CORS, auth middleware (`middleware/auth.ts`), correlation IDs (`middleware/errorHandler.ts`), route modules under `routes/` (auth, agents, billing, channels, integrations, llmProviders, marketplace, monitoring, nemoclaw, workspaces, admin), gateway proxy (`gatewayProxy.ts` — exposes `createGatewayRouter` + `attachGatewayWS` for WebSocket upgrade), and background telemetry (`backgroundTasks.ts`, `scheduler.ts`).
+`backend-api/server.ts` wires: helmet, rate limiting, CORS, auth middleware (`middleware/auth.ts`), correlation IDs (`middleware/errorHandler.ts`), route modules under `routes/` (auth, agents, billing, channels, integrations, llmProviders, Agent Hub, monitoring, nemoclaw, workspaces, admin), gateway proxy (`gatewayProxy.ts` — exposes `createGatewayRouter` + `attachGatewayWS` for WebSocket upgrade), and background telemetry (`backgroundTasks.ts`, `scheduler.ts`).
 
 **API keys** are stored AES-256-GCM encrypted (`crypto.ts`) in PostgreSQL; JWT handles session auth.
 
@@ -113,7 +113,7 @@ Compose mounts `./workers/provisioner/backends` into `backend-api` at `/app/back
 
 Each folder has its own `AGENTS.md` that narrows ownership, data-flow rules, and architecture. Read the relevant subtree doc before implementing in that area. Cross-cutting changes should be split across affected subtrees.
 
-- `backend-api/` — primary integration hub: control-plane APIs, persistence, queue, auth, monitoring, marketplace, gateway proxy, runtime coordination
+- `backend-api/` — primary integration hub: control-plane APIs, persistence, queue, auth, monitoring, Agent Hub, gateway proxy, runtime coordination
 - `workers/provisioner/` — async provisioning worker; `workers/provisioner/backends/` holds adapter implementations (shared with backend-api via volume mount)
 - `agent-runtime/` — shared runtime contracts (mounted read-only into backend-api and worker)
 - `frontend-dashboard/` — operator UI at `/app`; coordinates with backend-api for API + WebSocket contracts

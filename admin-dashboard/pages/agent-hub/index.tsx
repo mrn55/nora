@@ -12,10 +12,10 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import AdminLayout from "../components/AdminLayout";
-import { useToast } from "../components/Toast";
-import { fetchWithAuth } from "../lib/api";
-import { formatDate, formatCount } from "../lib/format";
+import AdminLayout from "../../components/AdminLayout";
+import { useToast } from "../../components/Toast";
+import { fetchWithAuth } from "../../lib/api";
+import { formatDate, formatCount } from "../../lib/format";
 
 const STATUS_STYLES = {
   pending_review: "bg-amber-50 text-amber-700 border-amber-200",
@@ -24,7 +24,7 @@ const STATUS_STYLES = {
   removed: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
-export default function MarketplaceAdmin() {
+export default function AgentHubAdmin() {
   const [items, setItems] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,14 +34,14 @@ export default function MarketplaceAdmin() {
   const loadItems = useCallback(async () => {
     try {
       const [listingsResponse, reportsResponse] = await Promise.all([
-        fetchWithAuth("/api/admin/marketplace"),
-        fetchWithAuth("/api/admin/marketplace/reports"),
+        fetchWithAuth("/api/admin/agent-hub"),
+        fetchWithAuth("/api/admin/agent-hub/reports"),
       ]);
       if (!listingsResponse.ok) {
-        throw new Error("Failed to load marketplace listings");
+        throw new Error("Failed to load Agent Hub listings");
       }
       if (!reportsResponse.ok) {
-        throw new Error("Failed to load marketplace reports");
+        throw new Error("Failed to load Agent Hub reports");
       }
 
       const [listingsData, reportsData] = await Promise.all([
@@ -51,8 +51,8 @@ export default function MarketplaceAdmin() {
       setItems(Array.isArray(listingsData) ? listingsData : []);
       setReports(Array.isArray(reportsData) ? reportsData : []);
     } catch (error) {
-      console.error("Failed to load marketplace admin data:", error);
-      toast.error(error.message || "Failed to load marketplace");
+      console.error("Failed to load Agent Hub admin data:", error);
+      toast.error(error.message || "Failed to load Agent Hub");
     } finally {
       setLoading(false);
     }
@@ -65,7 +65,7 @@ export default function MarketplaceAdmin() {
   async function changeListingStatus(item, status) {
     setActionKey(`${item.id}:${status}`);
     try {
-      const response = await fetchWithAuth(`/api/admin/marketplace/${item.id}/status`, {
+      const response = await fetchWithAuth(`/api/admin/agent-hub/${item.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -95,7 +95,7 @@ export default function MarketplaceAdmin() {
   async function resolveReport(reportId, status) {
     setActionKey(`report:${reportId}:${status}`);
     try {
-      const response = await fetchWithAuth(`/api/admin/marketplace/reports/${reportId}`, {
+      const response = await fetchWithAuth(`/api/admin/agent-hub/reports/${reportId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -125,10 +125,10 @@ export default function MarketplaceAdmin() {
         <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.2em] text-red-500">
-              Marketplace Admin
+              Agent Hub Admin
             </p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-              Marketplace moderation
+              Agent Hub moderation
             </h1>
             <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
               Review community submissions, inspect real template details, approve or reject listings, and resolve user reports.
@@ -168,7 +168,7 @@ export default function MarketplaceAdmin() {
           ) : items.length === 0 ? (
             <div className="flex h-48 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 text-center text-slate-400">
               <ShoppingBag size={34} className="mb-3 opacity-60" />
-              <p className="text-sm font-semibold">No marketplace listings found.</p>
+              <p className="text-sm font-semibold">No Agent Hub listings found.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -251,7 +251,7 @@ export default function MarketplaceAdmin() {
                         <td className="px-2 py-4">
                           <div className="flex flex-wrap justify-end gap-2">
                             <Link
-                              href={`/marketplace/${item.id}`}
+                              href={`/agent-hub/${item.id}`}
                               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
                             >
                               <Eye size={15} />
@@ -306,7 +306,7 @@ export default function MarketplaceAdmin() {
           ) : openReports.length === 0 ? (
             <div className="flex h-40 flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 text-center text-slate-400">
               <Flag size={30} className="mb-3 opacity-60" />
-              <p className="text-sm font-semibold">No open marketplace reports.</p>
+              <p className="text-sm font-semibold">No open Agent Hub reports.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -333,7 +333,7 @@ export default function MarketplaceAdmin() {
 
                     <div className="flex flex-wrap gap-2">
                       <Link
-                        href={`/marketplace/${report.listing_id}`}
+                        href={`/agent-hub/${report.listing_id}`}
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
                       >
                         <Eye size={15} />

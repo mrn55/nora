@@ -37,6 +37,15 @@ const mockUpdateSystemBanner = jest.fn().mockResolvedValue({
   featureEnabled: false,
   active: false,
 });
+const mockGetAgentHubSettings = jest.fn().mockResolvedValue({
+  defaultShareTarget: "both",
+  url: "https://nora.test",
+  envUrl: "https://nora.test",
+});
+const mockUpdateAgentHubSettings = jest.fn().mockResolvedValue({
+  defaultShareTarget: "internal",
+  url: "https://hub.nora.test",
+});
 
 jest.mock("../db", () => mockDb);
 jest.mock("../redisQueue", () => ({
@@ -63,8 +72,19 @@ jest.mock("../marketplace", () => ({
   LISTING_STATUS_REJECTED: "rejected",
   LISTING_STATUS_REMOVED: "removed",
   LISTING_VISIBILITY_PUBLIC: "public",
+  LISTING_SHARE_TARGET_INTERNAL: "internal",
+  LISTING_SHARE_TARGET_COMMUNITY: "community",
+  LISTING_SHARE_TARGET_BOTH: "both",
+  LISTING_LOCAL_VISIBILITY_OWNER: "owner",
+  LISTING_LOCAL_VISIBILITY_INTERNAL: "internal",
+  CENTRAL_SHARE_STATUS_NOT_SHARED: "not_shared",
+  CENTRAL_SHARE_STATUS_QUEUED: "queued",
+  CENTRAL_SHARE_STATUS_SUBMITTED: "submitted",
+  CENTRAL_SHARE_STATUS_FAILED: "failed",
   listMarketplace: jest.fn().mockResolvedValue([]),
+  listAgentHubLocalListings: jest.fn().mockResolvedValue([]),
   listUserListings: jest.fn().mockResolvedValue([]),
+  listCommunityCatalog: jest.fn().mockResolvedValue([]),
   publishSnapshot: jest.fn(),
   getListing: jest.fn(),
   deleteListing: jest.fn(),
@@ -77,6 +97,7 @@ jest.mock("../marketplace", () => ({
   recordDownload: jest.fn(),
   createReport: jest.fn(),
   getPlatformListingByTemplateKey: jest.fn(),
+  updateCentralShareStatus: jest.fn(),
 }));
 jest.mock("../snapshots", () => ({
   createSnapshot: jest.fn().mockResolvedValue({
@@ -183,8 +204,10 @@ jest.mock("../platformSettings", () => {
     ...actual,
     getDeploymentDefaults: mockGetDeploymentDefaults,
     getSystemBanner: mockGetSystemBanner,
+    getAgentHubSettings: mockGetAgentHubSettings,
     updateDeploymentDefaults: mockUpdateDeploymentDefaults,
     updateSystemBanner: mockUpdateSystemBanner,
+    updateAgentHubSettings: mockUpdateAgentHubSettings,
   };
 });
 
@@ -238,6 +261,16 @@ beforeEach(() => {
     message: "",
     featureEnabled: false,
     active: false,
+  });
+  mockGetAgentHubSettings.mockReset().mockResolvedValue({
+    defaultShareTarget: "both",
+    url: "https://nora.test",
+    envUrl: "https://nora.test",
+  });
+  mockUpdateAgentHubSettings.mockReset().mockResolvedValue({
+    defaultShareTarget: "both",
+    url: "https://nora.test",
+    envUrl: "https://nora.test",
   });
   delete process.env.ENABLED_BACKENDS;
   delete process.env.ENABLED_RUNTIME_FAMILIES;
@@ -386,6 +419,62 @@ describe("admin routes", () => {
     );
   });
 
+  it("returns the Agent Hub sharing settings for admins", async () => {
+    mockGetAgentHubSettings.mockResolvedValueOnce({
+      defaultShareTarget: "both",
+      url: "https://nora.solomontsao.com",
+      envUrl: "https://nora.solomontsao.com",
+    });
+
+    const res = await withToken(request(app).get("/admin/settings/agent-hub"), adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      defaultShareTarget: "both",
+      url: "https://nora.solomontsao.com",
+      envUrl: "https://nora.solomontsao.com",
+    });
+  });
+
+  it("updates the Agent Hub sharing settings for admins", async () => {
+    const monitoringModule = require("../monitoring");
+    mockGetAgentHubSettings.mockResolvedValueOnce({
+      defaultShareTarget: "both",
+      url: "https://nora.solomontsao.com",
+      envUrl: "https://nora.solomontsao.com",
+    });
+    mockUpdateAgentHubSettings.mockResolvedValueOnce({
+      defaultShareTarget: "internal",
+      url: "https://hub.internal.test",
+      envUrl: "https://nora.solomontsao.com",
+    });
+
+    const res = await withToken(
+      request(app).put("/admin/settings/agent-hub").send({
+        defaultShareTarget: "internal",
+        url: "https://hub.internal.test",
+      }),
+      adminToken,
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateAgentHubSettings).toHaveBeenCalledWith({
+      defaultShareTarget: "internal",
+      url: "https://hub.internal.test",
+    });
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        defaultShareTarget: "internal",
+        url: "https://hub.internal.test",
+      }),
+    );
+    expect(monitoringModule.logEvent).toHaveBeenCalledWith(
+      "admin_agent_hub_settings_updated",
+      expect.stringContaining("Agent Hub"),
+      expect.any(Object),
+    );
+  });
+
   it("rejects invalid deployment default updates", async () => {
     mockGetDeploymentDefaults.mockResolvedValueOnce({
       vcpu: 1,
@@ -407,13 +496,13 @@ describe("admin routes", () => {
     expect(mockUpdateDeploymentDefaults).not.toHaveBeenCalled();
   });
 
-  it("returns marketplace listings for moderation", async () => {
+  it("returns Agent Hub listings for moderation", async () => {
     const marketplaceModule = require("../marketplace");
     marketplaceModule.listAdminListings.mockResolvedValueOnce([
       { id: "listing-1", name: "Community Template", status: "pending_review" },
     ]);
 
-    const res = await withToken(request(app).get("/admin/marketplace"), adminToken);
+    const res = await withToken(request(app).get("/admin/agent-hub"), adminToken);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
@@ -421,7 +510,7 @@ describe("admin routes", () => {
     ]);
   });
 
-  it("returns detailed marketplace listing data for admins", async () => {
+  it("returns detailed Agent Hub listing data for admins", async () => {
     const marketplaceModule = require("../marketplace");
     const snapshotsModule = require("../snapshots");
 
@@ -462,7 +551,7 @@ describe("admin routes", () => {
       },
     });
 
-    const res = await withToken(request(app).get("/admin/marketplace/listing-1"), adminToken);
+    const res = await withToken(request(app).get("/admin/agent-hub/listing-1"), adminToken);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(
@@ -482,7 +571,7 @@ describe("admin routes", () => {
     );
   });
 
-  it("updates marketplace template metadata and files for admins", async () => {
+  it("updates Agent Hub template metadata and files for admins", async () => {
     const marketplaceModule = require("../marketplace");
     const snapshotsModule = require("../snapshots");
 
@@ -560,7 +649,7 @@ describe("admin routes", () => {
 
     const res = await withToken(
       request(app)
-        .patch("/admin/marketplace/listing-1")
+        .patch("/admin/agent-hub/listing-1")
         .send({
           name: "Updated Template",
           description: "Updated description",
@@ -628,7 +717,7 @@ describe("admin routes", () => {
     );
   });
 
-  it("updates a marketplace listing status", async () => {
+  it("updates an Agent Hub listing status", async () => {
     const marketplaceModule = require("../marketplace");
     const monitoringModule = require("../monitoring");
     marketplaceModule.setListingStatus.mockResolvedValueOnce({
@@ -644,7 +733,7 @@ describe("admin routes", () => {
     });
 
     const res = await withToken(
-      request(app).patch("/admin/marketplace/listing-1/status").send({
+      request(app).patch("/admin/agent-hub/listing-1/status").send({
         status: "published",
       }),
       adminToken,
@@ -658,7 +747,7 @@ describe("admin routes", () => {
       null,
     );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
-      "marketplace_reviewed",
+      "agent_hub_reviewed",
       expect.stringContaining("marked published"),
       expect.objectContaining({
         actor: expect.objectContaining({
@@ -673,7 +762,7 @@ describe("admin routes", () => {
     );
   });
 
-  it("publishes platform marketplace listings as free", async () => {
+  it("publishes platform Agent Hub listings as free", async () => {
     const marketplaceModule = require("../marketplace");
     const snapshotsModule = require("../snapshots");
 
@@ -691,7 +780,7 @@ describe("admin routes", () => {
     });
 
     const res = await withToken(
-      request(app).post("/admin/marketplace/publish").send({
+      request(app).post("/admin/agent-hub/publish").send({
         snapshotId: "snapshot-1",
         price: "$49/mo",
       }),
@@ -710,19 +799,19 @@ describe("admin routes", () => {
     );
   });
 
-  it("returns marketplace reports for admins", async () => {
+  it("returns Agent Hub reports for admins", async () => {
     const marketplaceModule = require("../marketplace");
     marketplaceModule.listReports.mockResolvedValueOnce([
       { id: "report-1", listing_id: "listing-1", status: "open" },
     ]);
 
-    const res = await withToken(request(app).get("/admin/marketplace/reports"), adminToken);
+    const res = await withToken(request(app).get("/admin/agent-hub/reports"), adminToken);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([expect.objectContaining({ id: "report-1", status: "open" })]);
   });
 
-  it("resolves marketplace reports", async () => {
+  it("resolves Agent Hub reports", async () => {
     const marketplaceModule = require("../marketplace");
     const monitoringModule = require("../monitoring");
     marketplaceModule.resolveReport.mockResolvedValueOnce({
@@ -732,7 +821,7 @@ describe("admin routes", () => {
     });
 
     const res = await withToken(
-      request(app).patch("/admin/marketplace/reports/report-1").send({
+      request(app).patch("/admin/agent-hub/reports/report-1").send({
         status: "dismissed",
       }),
       adminToken,
@@ -745,7 +834,7 @@ describe("admin routes", () => {
       "dismissed",
     );
     expect(monitoringModule.logEvent).toHaveBeenCalledWith(
-      "marketplace_report_resolved",
+      "agent_hub_report_resolved",
       expect.stringContaining("dismissed"),
       expect.objectContaining({
         actor: expect.objectContaining({

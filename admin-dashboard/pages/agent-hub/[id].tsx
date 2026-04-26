@@ -72,7 +72,7 @@ function firstInspectableFile(detail) {
   );
 }
 
-export default function MarketplaceAdminDetailPage() {
+export default function AgentHubAdminDetailPage() {
   const router = useRouter();
   const toast = useToast();
   const [detail, setDetail] = useState(null);
@@ -86,7 +86,7 @@ export default function MarketplaceAdminDetailPage() {
     if (!router.isReady || !router.query.id) return;
     setLoading(true);
     try {
-      const response = await fetchWithAuth(`/api/admin/marketplace/${router.query.id}`);
+      const response = await fetchWithAuth(`/api/admin/agent-hub/${router.query.id}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload.error || "Failed to load listing detail");
@@ -151,7 +151,7 @@ export default function MarketplaceAdminDetailPage() {
     if (!detail) return;
     setSaving(true);
     try {
-      const response = await fetchWithAuth(`/api/admin/marketplace/${detail.id}`, {
+      const response = await fetchWithAuth(`/api/admin/agent-hub/${detail.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -188,7 +188,7 @@ export default function MarketplaceAdminDetailPage() {
       );
       toast.success("Template updated");
     } catch (error) {
-      console.error("Failed to save marketplace template:", error);
+      console.error("Failed to save Agent Hub template:", error);
       toast.error(error.message || "Failed to save template");
     } finally {
       setSaving(false);
@@ -199,7 +199,7 @@ export default function MarketplaceAdminDetailPage() {
     if (!detail) return;
     setActionKey(status);
     try {
-      const response = await fetchWithAuth(`/api/admin/marketplace/${detail.id}/status`, {
+      const response = await fetchWithAuth(`/api/admin/agent-hub/${detail.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -237,11 +237,11 @@ export default function MarketplaceAdminDetailPage() {
       <div className="flex flex-col gap-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
-            href="/marketplace"
+            href="/agent-hub"
             className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
           >
             <ArrowLeft size={16} />
-            Back to Marketplace
+            Back to Agent Hub
           </Link>
 
           <button
@@ -563,7 +563,7 @@ export default function MarketplaceAdminDetailPage() {
                     Core files and extras
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-                    Admin edits apply directly to the marketplace template. Core files stay pinned to the expected OpenClaw filenames; extra files can be added or removed here.
+                    Admin edits apply directly to the Agent Hub template. Core files stay pinned to the expected OpenClaw filenames; extra files can be added or removed here.
                   </p>
                 </div>
 
