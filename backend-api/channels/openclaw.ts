@@ -341,10 +341,7 @@ async function installOpenClawLoginProvider(agent, channelId) {
     evictGatewayConnection(agent);
     return true;
   } catch (error) {
-    throw createHttpError(
-      502,
-      formatOpenClawPluginInstallError(channelId, install, error),
-    );
+    throw createHttpError(502, formatOpenClawPluginInstallError(channelId, install, error));
   }
 }
 

@@ -282,7 +282,9 @@ describe("openclaw channel catalog compatibility", () => {
     expect(mockRunContainerCommand.mock.calls[0][1]).toContain(
       "install_openclaw_plugin '@openclaw/whatsapp' 'whatsapp'",
     );
-    expect(mockRunContainerCommand.mock.calls[0][1]).toContain("OPENCLAW_PLUGIN_INSTALL_MAX_OLD_SPACE_MB:-256");
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain(
+      "OPENCLAW_PLUGIN_INSTALL_MAX_OLD_SPACE_MB:-256",
+    );
     expect(mockRunContainerCommand.mock.calls[0][1]).toContain("gateway restart");
     expect(mockRpcCall).toHaveBeenNthCalledWith(
       5,
