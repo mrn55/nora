@@ -6,6 +6,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/solomon2773/nora/master/setup.sh | bash
 #   — or —
 #   bash setup.sh        (from inside the repo)
+#   bash setup.sh --update
+#   bash setup.sh --clean-reinstall
 #
 # Clones the repo (if needed), generates secrets and database
 # credentials, configures the platform, and starts Nora.
@@ -21,6 +23,7 @@ PUBLIC_PROD_COMPOSE_OVERRIDE_TEMPLATE="infra/docker-compose.public-prod.yml"
 TLS_COMPOSE_OVERRIDE_TEMPLATE="infra/docker-compose.public-tls.yml"
 PUBLIC_NGINX_CONF="nginx.public.conf"
 COMPOSE_OVERRIDE_FILE="docker-compose.override.yml"
+SETUP_MODE=""
 
 # ── Color helpers ────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -35,6 +38,55 @@ ok()    { printf "${GREEN}[ok]${NC}    %s\n" "$1"; }
 warn()  { printf "${YELLOW}[warn]${NC}  %s\n" "$1"; }
 error() { printf "${RED}[error]${NC} %s\n" "$1"; }
 header(){ printf "\n${BOLD}${CYAN}── %s ──${NC}\n\n" "$1"; }
+
+usage() {
+  cat <<'EOF'
+Usage: bash setup.sh [--install | --update | --clean-reinstall]
+
+Modes:
+  --install          Configure Nora and start the compose stack.
+  --update           Pull code when possible and restart app services without
+                     deleting .env, compose volumes, or provisioned instances.
+  --clean-reinstall  Recreate local compose state and remove local Nora agent
+                     containers. External Kubernetes/VM backends are untouched.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --install)
+      if [ -n "$SETUP_MODE" ]; then
+        error "Choose only one setup mode."
+        exit 1
+      fi
+      SETUP_MODE="install"
+      ;;
+    --update)
+      if [ -n "$SETUP_MODE" ]; then
+        error "Choose only one setup mode."
+        exit 1
+      fi
+      SETUP_MODE="update"
+      ;;
+    --clean-reinstall)
+      if [ -n "$SETUP_MODE" ]; then
+        error "Choose only one setup mode."
+        exit 1
+      fi
+      SETUP_MODE="clean-reinstall"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      error "Unknown option: $1"
+      usage >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 write_public_nginx_conf() {
   local template="$1"
@@ -74,6 +126,73 @@ backup_existing_env_file() {
 
   cp "$env_path" "$candidate"
   printf "%s\n" "$candidate"
+}
+
+update_source_checkout() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ -n "$(git status --porcelain)" ]; then
+    warn "Skipping git pull because this worktree has uncommitted changes."
+    return 0
+  fi
+
+  local branch
+  branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if [ -z "$branch" ]; then
+    info "Skipping git pull because this checkout is detached."
+    return 0
+  fi
+
+  if git rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
+    info "Pulling latest code for ${branch}..."
+    git pull --ff-only
+  else
+    info "Skipping git pull because ${branch} has no upstream."
+  fi
+}
+
+remove_local_agent_containers() {
+  local containers
+  containers="$(
+    {
+      docker ps -a --filter "label=openclaw.agent.id" -q 2>/dev/null || true
+      docker ps -a --filter "label=nora.agent.id" -q 2>/dev/null || true
+    } | sort -u
+  )"
+
+  if [ -z "$containers" ]; then
+    info "No local Nora agent containers found."
+    return 0
+  fi
+
+  info "Removing local Nora agent containers..."
+  while IFS= read -r container_id; do
+    [ -z "$container_id" ] && continue
+    docker rm -f "$container_id" >/dev/null 2>&1 || true
+  done <<EOF
+$containers
+EOF
+  ok "Removed local Nora agent containers"
+}
+
+clean_reinstall_state() {
+  warn "Clean reinstall selected: local compose containers and volumes will be removed."
+  info "External Kubernetes, Proxmox, NemoClaw, and VM resources will not be touched."
+  docker compose down -v --remove-orphans 2>/dev/null || true
+  remove_local_agent_containers
+  ok "Local Nora compose state cleaned"
+}
+
+start_compose_stack() {
+  echo ""
+  info "Starting Nora (docker compose up -d --build)..."
+  info "Preserving Docker volumes and provisioned agent instances."
+  echo ""
+  docker compose up -d --build
+  echo ""
+  ok "Nora is running!"
 }
 
 # ── OS detection ────────────────────────────────────────────
@@ -283,14 +402,57 @@ if [ ! -f "docker-compose.yml" ] && [ ! -f "compose.yml" ] && [ ! -f "compose.ya
   ok "Repository ready in ./$INSTALL_DIR"
 fi
 
-# Check for existing .env
-if [ -f "$ENV_FILE" ]; then
+# ── Select setup mode ───────────────────────────────────────
+
+if [ -z "$SETUP_MODE" ]; then
+  if [ -f "$ENV_FILE" ]; then
+    header "Existing Nora Install"
+    printf "  Select maintenance mode:\n"
+    printf "    1) Update code only (default) — preserve .env, data volumes, and provisioned instances\n"
+    printf "    2) Reconfigure install — overwrite .env but preserve data volumes and instances\n"
+    printf "    3) Clean reinstall — delete local compose volumes and local Nora agent containers\n"
+    printf "  Select [1/2/3]: "
+    read -r setup_mode_answer < /dev/tty
+    case "$setup_mode_answer" in
+      2) SETUP_MODE="install" ;;
+      3) SETUP_MODE="clean-reinstall" ;;
+      *) SETUP_MODE="update" ;;
+    esac
+  else
+    SETUP_MODE="install"
+  fi
+fi
+
+if [ "$SETUP_MODE" = "update" ]; then
+  if [ ! -f "$ENV_FILE" ]; then
+    error "Update mode requires an existing $ENV_FILE. Run setup without --update for first install."
+    exit 1
+  fi
+
+  header "Updating Nora"
+  info "Code update mode keeps $ENV_FILE, Postgres/backup volumes, and provisioned instances."
+  update_source_checkout
+  start_compose_stack
+  echo ""
+  info "Update complete. No compose volumes or agent Docker/K8s/VM instances were removed."
+  exit 0
+fi
+
+if [ "$SETUP_MODE" = "clean-reinstall" ]; then
+  header "Clean Reinstall"
+  if [ -f "$ENV_FILE" ]; then
+    ENV_BACKUP_FILE="$(backup_existing_env_file "$ENV_FILE")"
+    ok "Existing $ENV_FILE backed up to $ENV_BACKUP_FILE"
+  fi
+  clean_reinstall_state
+elif [ -f "$ENV_FILE" ]; then
   echo ""
   warn ".env already exists."
-  printf "  Overwrite? [y/N] "
+  printf "  Overwrite configuration while preserving data volumes and instances? [y/N] "
   read -r answer < /dev/tty
   if [[ ! "$answer" =~ ^[Yy]$ ]]; then
     info "Keeping existing .env — no changes made."
+    info "Use './setup.sh --update' for a non-destructive code update."
     exit 0
   fi
   ENV_BACKUP_FILE="$(backup_existing_env_file "$ENV_FILE")"
@@ -787,15 +949,6 @@ if [ "$CAN_START_NORA" != true ]; then
   exit 0
 fi
 
-# Stop any existing deployment and clean up stale data
-if docker compose ps --quiet 2>/dev/null | grep -q .; then
-  info "Stopping existing Nora deployment..."
-  docker compose down -v --remove-orphans 2>/dev/null || true
-  # Remove orphaned agent containers from previous runs
-  docker ps -a --filter "label=openclaw.agent.id" -q 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
-  ok "Cleaned up previous deployment"
-fi
-
 echo ""
 info "Building nora-openclaw-agent:local (prebaked openclaw + tsx)..."
 echo ""
@@ -820,12 +973,7 @@ case ",${ENABLED_BACKENDS:-},${KIND_ENABLED_BACKENDS:-}," in
     ;;
 esac
 
-echo ""
-info "Starting Nora (docker compose up -d --build)..."
-echo ""
-docker compose up -d --build
-echo ""
-ok "Nora is running!"
+start_compose_stack
 
 # ── Done ─────────────────────────────────────────────────────
 

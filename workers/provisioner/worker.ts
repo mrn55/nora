@@ -70,34 +70,28 @@ function advisoryLockKeyForAgent(agentId) {
  */
 async function acquireAgentProvisionLock(agentId) {
   const client = await db.connect();
-  try {
-    const lockKey = advisoryLockKeyForAgent(agentId);
-    const res = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [lockKey.toString()]);
-    if (!res.rows[0]?.locked) {
-      client.release();
-      const err = new Error(`Agent ${agentId} is already being provisioned by another worker`);
-      err.code = "PROVISION_LOCK_BUSY";
-      throw err;
-    }
-    let released = false;
-    return {
-      release: async () => {
-        if (released) return;
-        released = true;
-        try {
-          await client.query("SELECT pg_advisory_unlock($1)", [lockKey.toString()]);
-        } catch (e) {
-          console.warn(`[provisioner] advisory unlock failed for agent ${agentId}: ${e.message}`);
-        } finally {
-          client.release();
-        }
-      },
-    };
-  } catch (err) {
-    // If connect() succeeded but lock acquisition threw after, the catch above
-    // already released the client. Re-throw.
+  const lockKey = advisoryLockKeyForAgent(agentId);
+  const res = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [lockKey.toString()]);
+  if (!res.rows[0]?.locked) {
+    client.release();
+    const err = new Error(`Agent ${agentId} is already being provisioned by another worker`);
+    err.code = "PROVISION_LOCK_BUSY";
     throw err;
   }
+  let released = false;
+  return {
+    release: async () => {
+      if (released) return;
+      released = true;
+      try {
+        await client.query("SELECT pg_advisory_unlock($1)", [lockKey.toString()]);
+      } catch (e) {
+        console.warn(`[provisioner] advisory unlock failed for agent ${agentId}: ${e.message}`);
+      } finally {
+        client.release();
+      }
+    },
+  };
 }
 
 function parseTimeoutMs(rawValue, fallbackMs) {
@@ -1032,461 +1026,465 @@ const worker = new Worker(
     // one of the containers when the second UPDATE overwrites the first.
     const provisionLock = await acquireAgentProvisionLock(id);
     try {
-
-    const agentRowResult = await db.query(
-      `SELECT image, template_payload, sandbox_type, backend_type, runtime_family,
+      const agentRowResult = await db.query(
+        `SELECT image, template_payload, sandbox_type, backend_type, runtime_family,
             deploy_target, sandbox_profile
        FROM agents
       WHERE id = $1`,
-      [id],
-    );
-    const agentRow = agentRowResult.rows[0] || {};
-    const storedRuntimeFields = buildAgentRuntimeFields(agentRow);
-    const resolvedBackend = isKnownBackend(backend)
-      ? normalizeBackendName(backend)
-      : isKnownBackend(storedRuntimeFields.backend_type)
-        ? normalizeBackendName(storedRuntimeFields.backend_type)
-        : getDefaultBackend(process.env, {
-            sandbox: sandbox || storedRuntimeFields.sandbox_profile || "standard",
-          });
-    const resolvedRuntimeFields = buildAgentRuntimeFields({
-      runtime_family: storedRuntimeFields.runtime_family,
-      backend_type: resolvedBackend,
-      sandbox_type: sandbox || storedRuntimeFields.sandbox_profile,
-    });
-    const resolvedSandbox = resolvedRuntimeFields.sandbox_profile;
-    const provisioner = loadBackend(resolvedBackend);
-    const resolvedImage =
-      image ||
-      agentRow.image ||
-      getDefaultAgentImage({
-        sandbox: resolvedSandbox,
-        backend: resolvedBackend,
-      });
-    let templatePayload = agentRow.template_payload || {};
-    if (typeof templatePayload === "string") {
-      try {
-        templatePayload = JSON.parse(templatePayload);
-      } catch {
-        templatePayload = {};
-      }
-    }
-
-    console.log(
-      `Processing deployment job ${job.id}: agent=${id} name=${name} backend=${resolvedBackend} (${vcpu}vCPU/${ram_mb}MB/${disk_gb}GB)`,
-    );
-    await markDeploymentLifecycle(db, id, "deploying");
-
-    // Fetch user's LLM provider keys from DB for injection into container
-    const llmEnvVars = await fetchUserLlmEnvVars(userId);
-    if (Object.keys(llmEnvVars).length > 0) {
-      console.log(
-        `[provisioner] Injecting ${Object.keys(llmEnvVars).length} LLM provider key(s) for user ${userId}`,
-      );
-    }
-
-    // Fetch integration credentials for this agent and inject as env vars into the container
-    let integrationEnvVars = {};
-    try {
-      const INTEGRATION_ENV_MAP = {
-        huggingface: "HF_TOKEN",
-        github: "GITHUB_TOKEN",
-        gitlab: "GITLAB_TOKEN",
-        slack: "SLACK_TOKEN",
-        discord: "DISCORD_TOKEN",
-        notion: "NOTION_TOKEN",
-        linear: "LINEAR_API_KEY",
-        datadog: "DD_API_KEY",
-        sentry: "SENTRY_AUTH_TOKEN",
-        sendgrid: "SENDGRID_API_KEY",
-        openai: "OPENAI_API_KEY",
-        anthropic: "ANTHROPIC_API_KEY",
-        airtable: "AIRTABLE_API_KEY",
-        asana: "ASANA_TOKEN",
-        stripe: "STRIPE_SECRET_KEY",
-        hubspot: "HUBSPOT_ACCESS_TOKEN",
-        pipedrive: "PIPEDRIVE_API_KEY",
-        pinecone: "PINECONE_API_KEY",
-        vercel: "VERCEL_TOKEN",
-        circleci: "CIRCLE_TOKEN",
-        terraform: "TFE_TOKEN",
-        pagerduty: "PAGERDUTY_TOKEN",
-        dropbox: "DROPBOX_ACCESS_TOKEN",
-        twilio: "TWILIO_AUTH_TOKEN",
-        shopify: "SHOPIFY_ACCESS_TOKEN",
-        linkedin: "LINKEDIN_ACCESS_TOKEN",
-        salesforce: "SALESFORCE_ACCESS_TOKEN",
-        twitter: "TWITTER_BEARER_TOKEN",
-        digitalocean: "DIGITALOCEAN_TOKEN",
-        algolia: "ALGOLIA_API_KEY",
-        clickup: "CLICKUP_API_KEY",
-        monday: "MONDAY_API_KEY",
-        zendesk: "ZENDESK_API_TOKEN",
-        "docker-hub": "DOCKER_HUB_TOKEN",
-        bitbucket: "BITBUCKET_TOKEN",
-        confluence: "CONFLUENCE_TOKEN",
-        jira: "JIRA_API_TOKEN",
-        jenkins: "JENKINS_TOKEN",
-        grafana: "GRAFANA_TOKEN",
-        woocommerce: "WOOCOMMERCE_SECRET_KEY",
-        trello: "TRELLO_TOKEN",
-        elasticsearch: "ELASTICSEARCH_PASSWORD",
-        supabase: "SUPABASE_SERVICE_ROLE_KEY",
-        facebook: "FACEBOOK_ACCESS_TOKEN",
-        aws: "AWS_SECRET_ACCESS_KEY",
-        azure: "AZURE_CLIENT_SECRET",
-        s3: "S3_SECRET_ACCESS_KEY",
-        mongodb: "MONGODB_URI",
-        redis: "REDIS_PASSWORD",
-        postgresql: "PGPASSWORD",
-        paypal: "PAYPAL_CLIENT_SECRET",
-        segment: "SEGMENT_WRITE_KEY",
-        mixpanel: "MIXPANEL_API_SECRET",
-        weaviate: "WEAVIATE_API_KEY",
-        email: "SMTP_PASS",
-      };
-      const INTEGRATION_CONFIG_ENV_MAP = {
-        "github.org": "GITHUB_ORG",
-        "gitlab.base_url": "GITLAB_BASE_URL",
-        "bitbucket.username": "BITBUCKET_USERNAME",
-        "bitbucket.workspace": "BITBUCKET_WORKSPACE",
-        "jira.email": "JIRA_EMAIL",
-        "jira.site_url": "JIRA_BASE_URL",
-        "jira.project_key": "JIRA_PROJECT_KEY",
-        "linear.team_id": "LINEAR_TEAM_ID",
-        "slack.default_channel": "SLACK_DEFAULT_CHANNEL",
-        "discord.guild_id": "DISCORD_GUILD_ID",
-        "teams.webhook_url": "TEAMS_WEBHOOK_URL",
-        "email.smtp_host": "SMTP_HOST",
-        "email.smtp_port": "SMTP_PORT",
-        "email.smtp_user": "SMTP_USER",
-        "email.from_address": "SMTP_FROM_ADDRESS",
-        "twilio.account_sid": "TWILIO_ACCOUNT_SID",
-        "twilio.phone_number": "TWILIO_PHONE_NUMBER",
-        "sendgrid.from_email": "SENDGRID_FROM_EMAIL",
-        "openai.org_id": "OPENAI_ORG_ID",
-        "huggingface.model_id": "HF_DEFAULT_MODEL",
-        "aws.access_key_id": "AWS_ACCESS_KEY_ID",
-        "aws.region": "AWS_DEFAULT_REGION",
-        "gcp.service_account_json": "GOOGLE_APPLICATION_CREDENTIALS_JSON",
-        "gcp.project_id": "GCP_PROJECT_ID",
-        "azure.tenant_id": "AZURE_TENANT_ID",
-        "azure.client_id": "AZURE_CLIENT_ID",
-        "s3.access_key_id": "S3_ACCESS_KEY_ID",
-        "s3.region": "S3_REGION",
-        "s3.bucket": "S3_BUCKET",
-        "google-drive.service_account_json": "GOOGLE_DRIVE_SA_JSON",
-        "google-drive.folder_id": "GOOGLE_DRIVE_FOLDER_ID",
-        "postgresql.host": "PGHOST",
-        "postgresql.port": "PGPORT",
-        "postgresql.database": "PGDATABASE",
-        "postgresql.user": "PGUSER",
-        "mongodb.database": "MONGODB_DATABASE",
-        "redis.host": "REDIS_HOST",
-        "redis.port": "REDIS_PORT",
-        "redis.password": "REDIS_PASSWORD",
-        "supabase.url": "SUPABASE_URL",
-        "firebase.service_account_json": "FIREBASE_SA_JSON",
-        "firebase.database_url": "FIREBASE_DATABASE_URL",
-        "elasticsearch.node_url": "ELASTICSEARCH_URL",
-        "elasticsearch.username": "ELASTICSEARCH_USERNAME",
-        "elasticsearch.password": "ELASTICSEARCH_PASSWORD",
-        "elasticsearch.index": "ELASTICSEARCH_INDEX",
-        "weaviate.host": "WEAVIATE_HOST",
-        "weaviate.api_key": "WEAVIATE_API_KEY",
-        "pinecone.environment": "PINECONE_ENVIRONMENT",
-        "pinecone.index_name": "PINECONE_INDEX",
-        "algolia.app_id": "ALGOLIA_APP_ID",
-        "algolia.index_name": "ALGOLIA_INDEX",
-        "datadog.app_key": "DD_APP_KEY",
-        "datadog.site": "DD_SITE",
-        "pagerduty.routing_key": "PAGERDUTY_ROUTING_KEY",
-        "sentry.organization": "SENTRY_ORG",
-        "sentry.project": "SENTRY_PROJECT",
-        "grafana.url": "GRAFANA_URL",
-        "jenkins.url": "JENKINS_URL",
-        "jenkins.username": "JENKINS_USERNAME",
-        "vercel.team_id": "VERCEL_TEAM_ID",
-        "terraform.organization": "TF_ORGANIZATION",
-        "kubernetes.kubeconfig": "KUBECONFIG_CONTENT",
-        "kubernetes.context": "KUBE_CONTEXT",
-        "notion.workspace_id": "NOTION_WORKSPACE_ID",
-        "airtable.base_id": "AIRTABLE_BASE_ID",
-        "trello.api_key": "TRELLO_API_KEY",
-        "trello.board_id": "TRELLO_BOARD_ID",
-        "clickup.workspace_id": "CLICKUP_WORKSPACE_ID",
-        "confluence.base_url": "CONFLUENCE_BASE_URL",
-        "confluence.email": "CONFLUENCE_EMAIL",
-        "google-sheets.service_account_json": "GOOGLE_SHEETS_SA_JSON",
-        "google-sheets.spreadsheet_id": "GOOGLE_SHEETS_SPREADSHEET_ID",
-        "google-calendar.service_account_json": "GOOGLE_CALENDAR_SA_JSON",
-        "google-calendar.calendar_id": "GOOGLE_CALENDAR_ID",
-        "salesforce.instance_url": "SALESFORCE_INSTANCE_URL",
-        "zendesk.subdomain": "ZENDESK_SUBDOMAIN",
-        "zendesk.email": "ZENDESK_EMAIL",
-        "pipedrive.company_domain": "PIPEDRIVE_DOMAIN",
-        "paypal.client_id": "PAYPAL_CLIENT_ID",
-        "stripe.webhook_secret": "STRIPE_WEBHOOK_SECRET",
-        "twitter.api_key": "TWITTER_API_KEY",
-        "twitter.api_secret": "TWITTER_API_SECRET",
-        "facebook.page_id": "FACEBOOK_PAGE_ID",
-        "mixpanel.project_token": "MIXPANEL_PROJECT_TOKEN",
-        "google-analytics.service_account_json": "GOOGLE_ANALYTICS_SA_JSON",
-        "google-analytics.property_id": "GA4_PROPERTY_ID",
-        "shopify.shop_domain": "SHOPIFY_SHOP_DOMAIN",
-        "woocommerce.site_url": "WOOCOMMERCE_STORE_URL",
-        "woocommerce.consumer_key": "WOOCOMMERCE_CONSUMER_KEY",
-        "zapier.webhook_url": "ZAPIER_WEBHOOK_URL",
-        "make.webhook_url": "MAKE_WEBHOOK_URL",
-        "n8n.webhook_url": "N8N_WEBHOOK_URL",
-        "n8n.api_key": "N8N_API_KEY",
-        "docker-hub.username": "DOCKER_HUB_USERNAME",
-      };
-      const intResult = await db.query(
-        "SELECT provider, access_token, config FROM integrations WHERE agent_id = $1 AND status = 'active'",
         [id],
       );
-      const { decrypt } = require("./crypto");
-      for (const row of intResult.rows) {
-        // Primary token
-        const envName = INTEGRATION_ENV_MAP[row.provider];
-        if (envName && row.access_token) {
-          try {
-            integrationEnvVars[envName] = decrypt(row.access_token);
-          } catch (err) {
-            console.warn(
-              `[provisioner] Skipping integration token for agent ${id} provider ${row.provider}: ${err.message}`,
-            );
-          }
-        }
-        // Config fields (URLs, usernames, IDs, secondary secrets)
-        const cfg = typeof row.config === "string" ? JSON.parse(row.config) : row.config || {};
-        for (const [cfgKey, cfgValue] of Object.entries(cfg)) {
-          if (!cfgValue) continue;
-          const cfgEnvName = INTEGRATION_CONFIG_ENV_MAP[`${row.provider}.${cfgKey}`];
-          if (cfgEnvName) {
-            integrationEnvVars[cfgEnvName] = String(cfgValue);
-          }
-        }
-      }
-      if (Object.keys(integrationEnvVars).length > 0) {
-        console.log(
-          `[provisioner] Injecting ${Object.keys(integrationEnvVars).length} integration credential(s) for agent ${id}`,
-        );
-      }
-    } catch (e) {
-      console.warn(
-        `[provisioner] Failed to fetch integration credentials for agent ${id}:`,
-        e.message,
-      );
-    }
-    let agentSecretEnvVars = {};
-    try {
-      agentSecretEnvVars = normalizeEnvValueMap(await getAgentSecretEnvVars(id));
-      if (Object.keys(agentSecretEnvVars).length > 0) {
-        console.log(
-          `[provisioner] Injecting ${Object.keys(agentSecretEnvVars).length} imported env override(s) for agent ${id}`,
-        );
-      }
-    } catch (e) {
-      console.warn(
-        `[provisioner] Failed to fetch agent secret overrides for agent ${id}:`,
-        e.message,
-      );
-    }
-
-    const configuredProvisionTimeout = parseTimeoutMs(process.env.PROVISION_TIMEOUT_MS, 840000);
-    const jobTimeout = parseTimeoutMs(job?.opts?.timeout, 900000);
-    const PROVISION_TIMEOUT = Math.min(
-      configuredProvisionTimeout,
-      Math.max(60000, jobTimeout - 60000),
-    );
-
-    let containerId,
-      host,
-      gatewayToken,
-      containerName,
-      gatewayHostPort,
-      runtimeHost,
-      runtimePort,
-      gatewayHost,
-      gatewayPort;
-    try {
-      const abortController = new AbortController();
-      let provisionTimeoutHandle = null;
-      const createPromise = provisioner.create({
-        id,
-        name,
-        image: resolvedImage,
-        vcpu,
-        ram_mb,
-        disk_gb,
-        container_name,
-        templatePayload,
-        abortSignal: abortController.signal,
-        env: {
-          AGENT_ID: String(id),
-          AGENT_NAME: name || "",
-          ...(resolvedBackend === "nemoclaw" && model ? { NEMOCLAW_MODEL: model } : {}),
-          ...agentSecretEnvVars,
-          ...integrationEnvVars,
-          ...llmEnvVars,
-        },
+      const agentRow = agentRowResult.rows[0] || {};
+      const storedRuntimeFields = buildAgentRuntimeFields(agentRow);
+      const resolvedBackend = isKnownBackend(backend)
+        ? normalizeBackendName(backend)
+        : isKnownBackend(storedRuntimeFields.backend_type)
+          ? normalizeBackendName(storedRuntimeFields.backend_type)
+          : getDefaultBackend(process.env, {
+              sandbox: sandbox || storedRuntimeFields.sandbox_profile || "standard",
+            });
+      const resolvedRuntimeFields = buildAgentRuntimeFields({
+        runtime_family: storedRuntimeFields.runtime_family,
+        backend_type: resolvedBackend,
+        sandbox_type: sandbox || storedRuntimeFields.sandbox_profile,
       });
-      const timeoutPromise = new Promise((_, reject) => {
-        provisionTimeoutHandle = setTimeout(() => {
-          const timeoutError = new Error(
-            `Provisioner create() timed out after ${PROVISION_TIMEOUT / 1000}s`,
-          );
-          abortController.abort(timeoutError);
-          reject(timeoutError);
-        }, PROVISION_TIMEOUT);
-      });
-      const result = await Promise.race([createPromise, timeoutPromise]).finally(() => {
-        if (provisionTimeoutHandle) {
-          clearTimeout(provisionTimeoutHandle);
-        }
-      });
-      containerId = result.containerId;
-      host = result.host;
-      gatewayToken = result.gatewayToken;
-      containerName = result.containerName || container_name;
-      gatewayHostPort = result.gatewayHostPort || null;
-      runtimeHost = result.runtimeHost || null;
-      runtimePort = result.runtimePort || null;
-      gatewayHost = result.gatewayHost || null;
-      gatewayPort = result.gatewayPort || null;
-
-      // Persist container_id immediately so that if the worker crashes or the
-      // final status UPDATE fails below, the container can still be located
-      // and cleaned up by the failure catch, a reconciler, or a retry. Without
-      // this, a crash between create() and the final UPDATE leaves an orphan
-      // container that no DB row references.
-      if (containerId) {
+      const resolvedSandbox = resolvedRuntimeFields.sandbox_profile;
+      const provisioner = loadBackend(resolvedBackend);
+      const resolvedImage =
+        image ||
+        agentRow.image ||
+        getDefaultAgentImage({
+          sandbox: resolvedSandbox,
+          backend: resolvedBackend,
+        });
+      let templatePayload = agentRow.template_payload || {};
+      if (typeof templatePayload === "string") {
         try {
-          await db.query(
-            `UPDATE agents
+          templatePayload = JSON.parse(templatePayload);
+        } catch {
+          templatePayload = {};
+        }
+      }
+
+      console.log(
+        `Processing deployment job ${job.id}: agent=${id} name=${name} backend=${resolvedBackend} (${vcpu}vCPU/${ram_mb}MB/${disk_gb}GB)`,
+      );
+      await markDeploymentLifecycle(db, id, "deploying");
+
+      // Fetch user's LLM provider keys from DB for injection into container
+      const llmEnvVars = await fetchUserLlmEnvVars(userId);
+      if (Object.keys(llmEnvVars).length > 0) {
+        console.log(
+          `[provisioner] Injecting ${Object.keys(llmEnvVars).length} LLM provider key(s) for user ${userId}`,
+        );
+      }
+
+      // Fetch integration credentials for this agent and inject as env vars into the container
+      let integrationEnvVars = {};
+      try {
+        const INTEGRATION_ENV_MAP = {
+          huggingface: "HF_TOKEN",
+          github: "GITHUB_TOKEN",
+          gitlab: "GITLAB_TOKEN",
+          slack: "SLACK_TOKEN",
+          discord: "DISCORD_TOKEN",
+          notion: "NOTION_TOKEN",
+          linear: "LINEAR_API_KEY",
+          datadog: "DD_API_KEY",
+          sentry: "SENTRY_AUTH_TOKEN",
+          sendgrid: "SENDGRID_API_KEY",
+          openai: "OPENAI_API_KEY",
+          anthropic: "ANTHROPIC_API_KEY",
+          airtable: "AIRTABLE_API_KEY",
+          asana: "ASANA_TOKEN",
+          stripe: "STRIPE_SECRET_KEY",
+          hubspot: "HUBSPOT_ACCESS_TOKEN",
+          pipedrive: "PIPEDRIVE_API_KEY",
+          pinecone: "PINECONE_API_KEY",
+          vercel: "VERCEL_TOKEN",
+          circleci: "CIRCLE_TOKEN",
+          terraform: "TFE_TOKEN",
+          pagerduty: "PAGERDUTY_TOKEN",
+          dropbox: "DROPBOX_ACCESS_TOKEN",
+          twilio: "TWILIO_AUTH_TOKEN",
+          shopify: "SHOPIFY_ACCESS_TOKEN",
+          linkedin: "LINKEDIN_ACCESS_TOKEN",
+          salesforce: "SALESFORCE_ACCESS_TOKEN",
+          twitter: "TWITTER_BEARER_TOKEN",
+          digitalocean: "DIGITALOCEAN_TOKEN",
+          algolia: "ALGOLIA_API_KEY",
+          clickup: "CLICKUP_API_KEY",
+          monday: "MONDAY_API_KEY",
+          zendesk: "ZENDESK_API_TOKEN",
+          "docker-hub": "DOCKER_HUB_TOKEN",
+          bitbucket: "BITBUCKET_TOKEN",
+          confluence: "CONFLUENCE_TOKEN",
+          jira: "JIRA_API_TOKEN",
+          jenkins: "JENKINS_TOKEN",
+          grafana: "GRAFANA_TOKEN",
+          woocommerce: "WOOCOMMERCE_SECRET_KEY",
+          trello: "TRELLO_TOKEN",
+          elasticsearch: "ELASTICSEARCH_PASSWORD",
+          supabase: "SUPABASE_SERVICE_ROLE_KEY",
+          facebook: "FACEBOOK_ACCESS_TOKEN",
+          aws: "AWS_SECRET_ACCESS_KEY",
+          azure: "AZURE_CLIENT_SECRET",
+          s3: "S3_SECRET_ACCESS_KEY",
+          mongodb: "MONGODB_URI",
+          redis: "REDIS_PASSWORD",
+          postgresql: "PGPASSWORD",
+          paypal: "PAYPAL_CLIENT_SECRET",
+          segment: "SEGMENT_WRITE_KEY",
+          mixpanel: "MIXPANEL_API_SECRET",
+          weaviate: "WEAVIATE_API_KEY",
+          email: "SMTP_PASS",
+        };
+        const INTEGRATION_CONFIG_ENV_MAP = {
+          "github.org": "GITHUB_ORG",
+          "gitlab.base_url": "GITLAB_BASE_URL",
+          "bitbucket.username": "BITBUCKET_USERNAME",
+          "bitbucket.workspace": "BITBUCKET_WORKSPACE",
+          "jira.email": "JIRA_EMAIL",
+          "jira.site_url": "JIRA_BASE_URL",
+          "jira.project_key": "JIRA_PROJECT_KEY",
+          "linear.team_id": "LINEAR_TEAM_ID",
+          "slack.default_channel": "SLACK_DEFAULT_CHANNEL",
+          "discord.guild_id": "DISCORD_GUILD_ID",
+          "teams.webhook_url": "TEAMS_WEBHOOK_URL",
+          "email.smtp_host": "SMTP_HOST",
+          "email.smtp_port": "SMTP_PORT",
+          "email.smtp_user": "SMTP_USER",
+          "email.from_address": "SMTP_FROM_ADDRESS",
+          "twilio.account_sid": "TWILIO_ACCOUNT_SID",
+          "twilio.phone_number": "TWILIO_PHONE_NUMBER",
+          "sendgrid.from_email": "SENDGRID_FROM_EMAIL",
+          "openai.org_id": "OPENAI_ORG_ID",
+          "huggingface.model_id": "HF_DEFAULT_MODEL",
+          "aws.access_key_id": "AWS_ACCESS_KEY_ID",
+          "aws.region": "AWS_DEFAULT_REGION",
+          "gcp.service_account_json": "GOOGLE_APPLICATION_CREDENTIALS_JSON",
+          "gcp.project_id": "GCP_PROJECT_ID",
+          "azure.tenant_id": "AZURE_TENANT_ID",
+          "azure.client_id": "AZURE_CLIENT_ID",
+          "s3.access_key_id": "S3_ACCESS_KEY_ID",
+          "s3.region": "S3_REGION",
+          "s3.bucket": "S3_BUCKET",
+          "google-drive.service_account_json": "GOOGLE_DRIVE_SA_JSON",
+          "google-drive.folder_id": "GOOGLE_DRIVE_FOLDER_ID",
+          "postgresql.host": "PGHOST",
+          "postgresql.port": "PGPORT",
+          "postgresql.database": "PGDATABASE",
+          "postgresql.user": "PGUSER",
+          "mongodb.database": "MONGODB_DATABASE",
+          "redis.host": "REDIS_HOST",
+          "redis.port": "REDIS_PORT",
+          "redis.password": "REDIS_PASSWORD",
+          "supabase.url": "SUPABASE_URL",
+          "firebase.service_account_json": "FIREBASE_SA_JSON",
+          "firebase.database_url": "FIREBASE_DATABASE_URL",
+          "elasticsearch.node_url": "ELASTICSEARCH_URL",
+          "elasticsearch.username": "ELASTICSEARCH_USERNAME",
+          "elasticsearch.password": "ELASTICSEARCH_PASSWORD",
+          "elasticsearch.index": "ELASTICSEARCH_INDEX",
+          "weaviate.host": "WEAVIATE_HOST",
+          "weaviate.api_key": "WEAVIATE_API_KEY",
+          "pinecone.environment": "PINECONE_ENVIRONMENT",
+          "pinecone.index_name": "PINECONE_INDEX",
+          "algolia.app_id": "ALGOLIA_APP_ID",
+          "algolia.index_name": "ALGOLIA_INDEX",
+          "datadog.app_key": "DD_APP_KEY",
+          "datadog.site": "DD_SITE",
+          "pagerduty.routing_key": "PAGERDUTY_ROUTING_KEY",
+          "sentry.organization": "SENTRY_ORG",
+          "sentry.project": "SENTRY_PROJECT",
+          "grafana.url": "GRAFANA_URL",
+          "jenkins.url": "JENKINS_URL",
+          "jenkins.username": "JENKINS_USERNAME",
+          "vercel.team_id": "VERCEL_TEAM_ID",
+          "terraform.organization": "TF_ORGANIZATION",
+          "kubernetes.kubeconfig": "KUBECONFIG_CONTENT",
+          "kubernetes.context": "KUBE_CONTEXT",
+          "notion.workspace_id": "NOTION_WORKSPACE_ID",
+          "airtable.base_id": "AIRTABLE_BASE_ID",
+          "trello.api_key": "TRELLO_API_KEY",
+          "trello.board_id": "TRELLO_BOARD_ID",
+          "clickup.workspace_id": "CLICKUP_WORKSPACE_ID",
+          "confluence.base_url": "CONFLUENCE_BASE_URL",
+          "confluence.email": "CONFLUENCE_EMAIL",
+          "google-sheets.service_account_json": "GOOGLE_SHEETS_SA_JSON",
+          "google-sheets.spreadsheet_id": "GOOGLE_SHEETS_SPREADSHEET_ID",
+          "google-calendar.service_account_json": "GOOGLE_CALENDAR_SA_JSON",
+          "google-calendar.calendar_id": "GOOGLE_CALENDAR_ID",
+          "salesforce.instance_url": "SALESFORCE_INSTANCE_URL",
+          "zendesk.subdomain": "ZENDESK_SUBDOMAIN",
+          "zendesk.email": "ZENDESK_EMAIL",
+          "pipedrive.company_domain": "PIPEDRIVE_DOMAIN",
+          "paypal.client_id": "PAYPAL_CLIENT_ID",
+          "stripe.webhook_secret": "STRIPE_WEBHOOK_SECRET",
+          "twitter.api_key": "TWITTER_API_KEY",
+          "twitter.api_secret": "TWITTER_API_SECRET",
+          "facebook.page_id": "FACEBOOK_PAGE_ID",
+          "mixpanel.project_token": "MIXPANEL_PROJECT_TOKEN",
+          "google-analytics.service_account_json": "GOOGLE_ANALYTICS_SA_JSON",
+          "google-analytics.property_id": "GA4_PROPERTY_ID",
+          "shopify.shop_domain": "SHOPIFY_SHOP_DOMAIN",
+          "woocommerce.site_url": "WOOCOMMERCE_STORE_URL",
+          "woocommerce.consumer_key": "WOOCOMMERCE_CONSUMER_KEY",
+          "zapier.webhook_url": "ZAPIER_WEBHOOK_URL",
+          "make.webhook_url": "MAKE_WEBHOOK_URL",
+          "n8n.webhook_url": "N8N_WEBHOOK_URL",
+          "n8n.api_key": "N8N_API_KEY",
+          "docker-hub.username": "DOCKER_HUB_USERNAME",
+        };
+        const intResult = await db.query(
+          "SELECT provider, access_token, config FROM integrations WHERE agent_id = $1 AND status = 'active'",
+          [id],
+        );
+        const { decrypt } = require("./crypto");
+        for (const row of intResult.rows) {
+          // Primary token
+          const envName = INTEGRATION_ENV_MAP[row.provider];
+          if (envName && row.access_token) {
+            try {
+              integrationEnvVars[envName] = decrypt(row.access_token);
+            } catch (err) {
+              console.warn(
+                `[provisioner] Skipping integration token for agent ${id} provider ${row.provider}: ${err.message}`,
+              );
+            }
+          }
+          // Config fields (URLs, usernames, IDs, secondary secrets)
+          const cfg = typeof row.config === "string" ? JSON.parse(row.config) : row.config || {};
+          for (const [cfgKey, cfgValue] of Object.entries(cfg)) {
+            if (!cfgValue) continue;
+            const cfgEnvName = INTEGRATION_CONFIG_ENV_MAP[`${row.provider}.${cfgKey}`];
+            if (cfgEnvName) {
+              integrationEnvVars[cfgEnvName] = String(cfgValue);
+            }
+          }
+        }
+        if (Object.keys(integrationEnvVars).length > 0) {
+          console.log(
+            `[provisioner] Injecting ${Object.keys(integrationEnvVars).length} integration credential(s) for agent ${id}`,
+          );
+        }
+      } catch (e) {
+        console.warn(
+          `[provisioner] Failed to fetch integration credentials for agent ${id}:`,
+          e.message,
+        );
+      }
+      let agentSecretEnvVars = {};
+      try {
+        agentSecretEnvVars = normalizeEnvValueMap(await getAgentSecretEnvVars(id));
+        if (Object.keys(agentSecretEnvVars).length > 0) {
+          console.log(
+            `[provisioner] Injecting ${Object.keys(agentSecretEnvVars).length} imported env override(s) for agent ${id}`,
+          );
+        }
+      } catch (e) {
+        console.warn(
+          `[provisioner] Failed to fetch agent secret overrides for agent ${id}:`,
+          e.message,
+        );
+      }
+
+      const configuredProvisionTimeout = parseTimeoutMs(process.env.PROVISION_TIMEOUT_MS, 840000);
+      const jobTimeout = parseTimeoutMs(job?.opts?.timeout, 900000);
+      const PROVISION_TIMEOUT = Math.min(
+        configuredProvisionTimeout,
+        Math.max(60000, jobTimeout - 60000),
+      );
+
+      let containerId,
+        host,
+        gatewayToken,
+        containerName,
+        gatewayHostPort,
+        runtimeHost,
+        runtimePort,
+        gatewayHost,
+        gatewayPort;
+      try {
+        const abortController = new AbortController();
+        let provisionTimeoutHandle = null;
+        const createPromise = provisioner.create({
+          id,
+          name,
+          image: resolvedImage,
+          vcpu,
+          ram_mb,
+          disk_gb,
+          container_name,
+          templatePayload,
+          abortSignal: abortController.signal,
+          env: {
+            AGENT_ID: String(id),
+            AGENT_NAME: name || "",
+            ...(resolvedBackend === "nemoclaw" && model ? { NEMOCLAW_MODEL: model } : {}),
+            ...agentSecretEnvVars,
+            ...integrationEnvVars,
+            ...llmEnvVars,
+          },
+        });
+        const timeoutPromise = new Promise((_, reject) => {
+          provisionTimeoutHandle = setTimeout(() => {
+            const timeoutError = new Error(
+              `Provisioner create() timed out after ${PROVISION_TIMEOUT / 1000}s`,
+            );
+            abortController.abort(timeoutError);
+            reject(timeoutError);
+          }, PROVISION_TIMEOUT);
+        });
+        const result = await Promise.race([createPromise, timeoutPromise]).finally(() => {
+          if (provisionTimeoutHandle) {
+            clearTimeout(provisionTimeoutHandle);
+          }
+        });
+        containerId = result.containerId;
+        host = result.host;
+        gatewayToken = result.gatewayToken;
+        containerName = result.containerName || container_name;
+        gatewayHostPort = result.gatewayHostPort || null;
+        runtimeHost = result.runtimeHost || null;
+        runtimePort = result.runtimePort || null;
+        gatewayHost = result.gatewayHost || null;
+        gatewayPort = result.gatewayPort || null;
+
+        // Persist container_id immediately so that if the worker crashes or the
+        // final status UPDATE fails below, the container can still be located
+        // and cleaned up by the failure catch, a reconciler, or a retry. Without
+        // this, a crash between create() and the final UPDATE leaves an orphan
+        // container that no DB row references.
+        if (containerId) {
+          try {
+            await db.query(
+              `UPDATE agents
                 SET container_id = $2,
                     container_name = COALESCE($3, container_name)
               WHERE id = $1`,
-            [id, containerId, containerName || null],
-          );
-        } catch (e) {
-          console.error(
-            `[provisioner] Failed to persist container_id for agent ${id} (will still attempt final update): ${e.message}`,
-          );
-        }
-      }
-
-      // If network discovery failed, host may be "localhost" which is unreachable
-      // from backend-api. Attempt to resolve the correct Compose network IP.
-      if (host === "localhost" && containerId) {
-        try {
-          const Docker = require("dockerode");
-          const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-          const info = await docker.getContainer(containerId).inspect();
-          const nets = info.NetworkSettings?.Networks || {};
-          for (const [netName, netInfo] of Object.entries(nets)) {
-            if (netName.endsWith("_default") && netInfo.IPAddress) {
-              host = netInfo.IPAddress;
-              console.log(
-                `[provisioner] Resolved host via container inspect: ${host} (${netName})`,
-              );
-              break;
-            }
-          }
-        } catch (e) {
-          console.warn(
-            `[provisioner] Failed to resolve host from container networks: ${e.message}`,
-          );
-        }
-        // Last resort: use container name (Docker DNS resolves it on the compose network)
-        if (host === "localhost" && containerName) {
-          host = containerName;
-          console.log(`[provisioner] Falling back to container name as host: ${host}`);
-        }
-      }
-      if (!runtimeHost || runtimeHost === "localhost") {
-        runtimeHost = host;
-      }
-
-      if (resolvedRuntimeFields.runtime_family === "hermes") {
-        const [migrationManifest, persistedHermesState] = await Promise.all([
-          getMigrationManifestForAgent(id).catch(() => null),
-          getPersistedHermesState(id).catch(() => ({ modelConfig: {}, channels: [] })),
-        ]);
-
-        const seedArchive = migrationManifest
-          ? await buildHermesSeedArchive(migrationManifest).catch(() => null)
-          : null;
-        // Require a real containerId — dockerode stringifies null/undefined
-        // into the URL as the literal word "null", which is what surfaces to
-        // the UI as `No such container: null`. Skip the seed step rather than
-        // emit that confusing error; the provision will continue without the
-        // seed archive (Hermes can run without imported migration state).
-        if (seedArchive && provisioner?.docker && typeof containerId === "string" && containerId.length > 0) {
-          try {
-            await provisioner.docker.getContainer(containerId).putArchive(seedArchive, {
-              path: "/",
-            });
+              [id, containerId, containerName || null],
+            );
           } catch (e) {
-            console.warn(
-              `[provisioner] Hermes seed archive upload failed for agent ${id}: ${e.message}`,
+            console.error(
+              `[provisioner] Failed to persist container_id for agent ${id} (will still attempt final update): ${e.message}`,
             );
           }
         }
 
-        if (
-          hasMeaningfulHermesModelConfig(persistedHermesState?.modelConfig) ||
-          (persistedHermesState?.channels || []).length > 0
-        ) {
-          await applyPersistedHermesState(
-            {
-              id,
-              container_id: containerId,
-              backend_type: resolvedBackend,
-              runtime_family: "hermes",
-              deploy_target: "docker",
-              sandbox_profile: "standard",
-              host,
-              runtime_host: runtimeHost,
-              runtime_port: runtimePort,
-              gateway_host_port: gatewayHostPort,
-              gateway_host: gatewayHost,
-              gateway_port: gatewayPort,
-            },
-            persistedHermesState,
-            { restart: true },
-          );
+        // If network discovery failed, host may be "localhost" which is unreachable
+        // from backend-api. Attempt to resolve the correct Compose network IP.
+        if (host === "localhost" && containerId) {
+          try {
+            const Docker = require("dockerode");
+            const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+            const info = await docker.getContainer(containerId).inspect();
+            const nets = info.NetworkSettings?.Networks || {};
+            for (const [netName, netInfo] of Object.entries(nets)) {
+              if (netName.endsWith("_default") && netInfo.IPAddress) {
+                host = netInfo.IPAddress;
+                console.log(
+                  `[provisioner] Resolved host via container inspect: ${host} (${netName})`,
+                );
+                break;
+              }
+            }
+          } catch (e) {
+            console.warn(
+              `[provisioner] Failed to resolve host from container networks: ${e.message}`,
+            );
+          }
+          // Last resort: use container name (Docker DNS resolves it on the compose network)
+          if (host === "localhost" && containerName) {
+            host = containerName;
+            console.log(`[provisioner] Falling back to container name as host: ${host}`);
+          }
         }
-      }
-    } catch (err) {
-      console.error(
-        `[${resolvedBackend}] Provisioning failed for agent ${id} (attempt ${job.attemptsMade + 1}/${job.opts?.attempts || 1}):`,
-        err.message,
-      );
-      if (containerId) {
-        try {
-          await provisioner.destroy(containerId);
-        } catch {
-          // Best-effort cleanup only.
+        if (!runtimeHost || runtimeHost === "localhost") {
+          runtimeHost = host;
         }
-      }
-      // Mark as failed in DB
-      await db.query("UPDATE agents SET status = 'error' WHERE id = $1", [id]);
-      await db.query("UPDATE deployments SET status = 'failed' WHERE agent_id = $1", [id]);
-      await db.query("INSERT INTO events(type, message, metadata) VALUES($1, $2, $3)", [
-        "agent_deploy_failed",
-        `Agent "${name}" failed to deploy: ${err.message}`,
-        JSON.stringify({ agentId: id, attempt: job.attemptsMade + 1 }),
-      ]);
-      throw err;
-    }
 
-    // Update agent with real container info
-    try {
-      await db.query(
-        `UPDATE agents
+        if (resolvedRuntimeFields.runtime_family === "hermes") {
+          const [migrationManifest, persistedHermesState] = await Promise.all([
+            getMigrationManifestForAgent(id).catch(() => null),
+            getPersistedHermesState(id).catch(() => ({ modelConfig: {}, channels: [] })),
+          ]);
+
+          const seedArchive = migrationManifest
+            ? await buildHermesSeedArchive(migrationManifest).catch(() => null)
+            : null;
+          // Require a real containerId — dockerode stringifies null/undefined
+          // into the URL as the literal word "null", which is what surfaces to
+          // the UI as `No such container: null`. Skip the seed step rather than
+          // emit that confusing error; the provision will continue without the
+          // seed archive (Hermes can run without imported migration state).
+          if (
+            seedArchive &&
+            provisioner?.docker &&
+            typeof containerId === "string" &&
+            containerId.length > 0
+          ) {
+            try {
+              await provisioner.docker.getContainer(containerId).putArchive(seedArchive, {
+                path: "/",
+              });
+            } catch (e) {
+              console.warn(
+                `[provisioner] Hermes seed archive upload failed for agent ${id}: ${e.message}`,
+              );
+            }
+          }
+
+          if (
+            hasMeaningfulHermesModelConfig(persistedHermesState?.modelConfig) ||
+            (persistedHermesState?.channels || []).length > 0
+          ) {
+            await applyPersistedHermesState(
+              {
+                id,
+                container_id: containerId,
+                backend_type: resolvedBackend,
+                runtime_family: "hermes",
+                deploy_target: "docker",
+                sandbox_profile: "standard",
+                host,
+                runtime_host: runtimeHost,
+                runtime_port: runtimePort,
+                gateway_host_port: gatewayHostPort,
+                gateway_host: gatewayHost,
+                gateway_port: gatewayPort,
+              },
+              persistedHermesState,
+              { restart: true },
+            );
+          }
+        }
+      } catch (err) {
+        console.error(
+          `[${resolvedBackend}] Provisioning failed for agent ${id} (attempt ${job.attemptsMade + 1}/${job.opts?.attempts || 1}):`,
+          err.message,
+        );
+        if (containerId) {
+          try {
+            await provisioner.destroy(containerId);
+          } catch {
+            // Best-effort cleanup only.
+          }
+        }
+        // Mark as failed in DB
+        await db.query("UPDATE agents SET status = 'error' WHERE id = $1", [id]);
+        await db.query("UPDATE deployments SET status = 'failed' WHERE agent_id = $1", [id]);
+        await db.query("INSERT INTO events(type, message, metadata) VALUES($1, $2, $3)", [
+          "agent_deploy_failed",
+          `Agent "${name}" failed to deploy: ${err.message}`,
+          JSON.stringify({ agentId: id, attempt: job.attemptsMade + 1 }),
+        ]);
+        throw err;
+      }
+
+      // Update agent with real container info
+      try {
+        await db.query(
+          `UPDATE agents
           SET status = 'running',
               container_id = $2,
               host = $3,
@@ -1504,131 +1502,130 @@ const worker = new Worker(
               sandbox_profile = $15,
               sandbox_type = $16
         WHERE id = $1`,
-        [
-          id,
-          containerId,
-          host,
-          resolvedRuntimeFields.backend_type,
-          gatewayToken,
-          containerName || null,
-          gatewayHostPort ? parseInt(gatewayHostPort, 10) : null,
-          runtimeHost || null,
-          runtimePort ? parseInt(runtimePort, 10) : null,
-          gatewayHost || null,
-          gatewayPort ? parseInt(gatewayPort, 10) : null,
-          resolvedImage || null,
-          resolvedRuntimeFields.runtime_family,
-          resolvedRuntimeFields.deploy_target,
-          resolvedRuntimeFields.sandbox_profile,
-          resolvedRuntimeFields.sandbox_type,
-        ],
-      );
-      await db.query("UPDATE deployments SET status = 'completed' WHERE agent_id = $1", [id]);
-      await db.query("INSERT INTO events(type, message, metadata) VALUES($1, $2, $3)", [
-        "agent_deployed",
-        `Agent "${name}" is now running on ${resolvedBackend}`,
-        JSON.stringify({ agentId: id, containerId, host }),
-      ]);
-      console.log(`Agent ${id} deployed: containerId=${containerId} host=${host}`);
-
-      // Post-deploy readiness check: verify both the runtime sidecar and the gateway.
-      // First boot may need time for npm installation and initial startup, so we allow
-      // generous bounded retries and emit a warning state with explicit component detail.
-      const readiness = await waitForAgentReadiness({
-        host,
-        runtimeHost,
-        runtimePort,
-        gatewayHost,
-        gatewayHostPort,
-        gatewayPort,
-        checkGateway: resolvedRuntimeFields.runtime_family !== "hermes",
-      });
-      if (!readiness.ok) {
-        const detail = buildReadinessWarningDetail(readiness);
-        console.warn(`[provisioner] Readiness check failed for agent ${id}: ${detail}`);
-        await persistReadinessWarning(db, { agentId: id, name, host, readiness });
-      }
-
-      // Fresh deploys should land with the current control-plane LLM credentials
-      // and runtime model selection, not only the startup env captured earlier.
-      if (userId && readiness.ok) {
-        try {
-          const authSyncResult = await reconcileRuntimeLlmAuth({
-            agentId: id,
-            userId,
-            runtimeFamily: resolvedRuntimeFields.runtime_family,
-            resolvedBackend,
+          [
+            id,
             containerId,
-            provisioner,
             host,
-            runtimeHost,
-            runtimePort,
-            gatewayHostPort,
-            gatewayHost,
-            gatewayPort,
-          });
-          if (authSyncResult.status === "synced") {
-            console.log(`[provisioner] Post-deploy LLM auth sync completed for agent ${id}`);
+            resolvedRuntimeFields.backend_type,
+            gatewayToken,
+            containerName || null,
+            gatewayHostPort ? parseInt(gatewayHostPort, 10) : null,
+            runtimeHost || null,
+            runtimePort ? parseInt(runtimePort, 10) : null,
+            gatewayHost || null,
+            gatewayPort ? parseInt(gatewayPort, 10) : null,
+            resolvedImage || null,
+            resolvedRuntimeFields.runtime_family,
+            resolvedRuntimeFields.deploy_target,
+            resolvedRuntimeFields.sandbox_profile,
+            resolvedRuntimeFields.sandbox_type,
+          ],
+        );
+        await db.query("UPDATE deployments SET status = 'completed' WHERE agent_id = $1", [id]);
+        await db.query("INSERT INTO events(type, message, metadata) VALUES($1, $2, $3)", [
+          "agent_deployed",
+          `Agent "${name}" is now running on ${resolvedBackend}`,
+          JSON.stringify({ agentId: id, containerId, host }),
+        ]);
+        console.log(`Agent ${id} deployed: containerId=${containerId} host=${host}`);
+
+        // Post-deploy readiness check: verify both the runtime sidecar and the gateway.
+        // First boot may need time for npm installation and initial startup, so we allow
+        // generous bounded retries and emit a warning state with explicit component detail.
+        const readiness = await waitForAgentReadiness({
+          host,
+          runtimeHost,
+          runtimePort,
+          gatewayHost,
+          gatewayHostPort,
+          gatewayPort,
+          checkGateway: resolvedRuntimeFields.runtime_family !== "hermes",
+        });
+        if (!readiness.ok) {
+          const detail = buildReadinessWarningDetail(readiness);
+          console.warn(`[provisioner] Readiness check failed for agent ${id}: ${detail}`);
+          await persistReadinessWarning(db, { agentId: id, name, host, readiness });
+        }
+
+        // Fresh deploys should land with the current control-plane LLM credentials
+        // and runtime model selection, not only the startup env captured earlier.
+        if (userId && readiness.ok) {
+          try {
+            const authSyncResult = await reconcileRuntimeLlmAuth({
+              agentId: id,
+              userId,
+              runtimeFamily: resolvedRuntimeFields.runtime_family,
+              resolvedBackend,
+              containerId,
+              provisioner,
+              host,
+              runtimeHost,
+              runtimePort,
+              gatewayHostPort,
+              gatewayHost,
+              gatewayPort,
+            });
+            if (authSyncResult.status === "synced") {
+              console.log(`[provisioner] Post-deploy LLM auth sync completed for agent ${id}`);
+            }
+          } catch (e) {
+            console.warn(
+              `[provisioner] Failed to reconcile runtime LLM auth for agent ${id}:`,
+              e.message,
+            );
           }
-        } catch (e) {
-          console.warn(
-            `[provisioner] Failed to reconcile runtime LLM auth for agent ${id}:`,
-            e.message,
-          );
         }
-      }
 
-      if (resolvedRuntimeFields.runtime_family === "openclaw" && containerId) {
+        if (resolvedRuntimeFields.runtime_family === "openclaw" && containerId) {
+          try {
+            await reconcileSavedClawhubSkills({
+              agentId: id,
+              containerId,
+              provisioner,
+            });
+          } catch (e) {
+            console.warn(
+              `[provisioner] Failed to reconcile saved ClawHub skills for agent ${id}:`,
+              e.message,
+            );
+          }
+        }
+
+        // Sync integrations to newly deployed agent container
         try {
-          await reconcileSavedClawhubSkills({
-            agentId: id,
-            containerId,
-            provisioner,
-          });
-        } catch (e) {
-          console.warn(
-            `[provisioner] Failed to reconcile saved ClawHub skills for agent ${id}:`,
-            e.message,
-          );
-        }
-      }
-
-      // Sync integrations to newly deployed agent container
-      try {
-        const intResult = await db.query(
-          `SELECT i.id, i.provider, i.catalog_id, i.config, i.status,
+          const intResult = await db.query(
+            `SELECT i.id, i.provider, i.catalog_id, i.config, i.status,
                 ic.name as catalog_name, ic.category as catalog_category,
                 ic.auth_type, ic.config_schema
          FROM integrations i
          LEFT JOIN integration_catalog ic ON i.catalog_id = ic.id
          WHERE i.agent_id = $1 AND i.status = 'active'`,
-          [id],
-        );
-        if (intResult.rows.length > 0 && resolvedRuntimeFields.runtime_family === "openclaw") {
-          const syncData = intResult.rows.map(buildIntegrationSyncEntry);
-          const runtimeUrl = runtimeUrlForAgent(
-            {
-              host,
-              runtime_host: runtimeHost,
-              runtime_port: runtimePort,
-            },
-            "/integrations/sync",
+            [id],
           );
-          await fetch(runtimeUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ integrations: syncData }),
-          });
-          console.log(`[provisioner] Synced ${syncData.length} integration(s) to agent ${id}`);
+          if (intResult.rows.length > 0 && resolvedRuntimeFields.runtime_family === "openclaw") {
+            const syncData = intResult.rows.map(buildIntegrationSyncEntry);
+            const runtimeUrl = runtimeUrlForAgent(
+              {
+                host,
+                runtime_host: runtimeHost,
+                runtime_port: runtimePort,
+              },
+              "/integrations/sync",
+            );
+            await fetch(runtimeUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ integrations: syncData }),
+            });
+            console.log(`[provisioner] Synced ${syncData.length} integration(s) to agent ${id}`);
+          }
+        } catch (e) {
+          console.warn(`[provisioner] Failed to sync integrations for agent ${id}:`, e.message);
         }
-      } catch (e) {
-        console.warn(`[provisioner] Failed to sync integrations for agent ${id}:`, e.message);
+      } catch (err) {
+        console.error("Failed to update agent status:", err.message);
+        throw err;
       }
-    } catch (err) {
-      console.error("Failed to update agent status:", err.message);
-      throw err;
-    }
-
     } finally {
       await provisionLock.release();
     }

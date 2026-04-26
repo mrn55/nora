@@ -46,11 +46,17 @@ const {
 const router = express.Router();
 router.use(createMutationFailureAuditMiddleware("marketplace"));
 
+function stripAsciiControlCharacters(value) {
+  return Array.from(value)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join("");
+}
+
 function normalizeListingName(value, fallback = "Untitled Template") {
-  const normalized =
-    typeof value === "string"
-      ? value.replace(/[\x00-\x1f\x7f]/g, "").trim()
-      : "";
+  const normalized = typeof value === "string" ? stripAsciiControlCharacters(value).trim() : "";
   return (normalized || fallback).slice(0, 100);
 }
 
@@ -59,10 +65,7 @@ function normalizeListingDescription(value) {
 }
 
 function normalizeListingCategory(value) {
-  const normalized =
-    typeof value === "string"
-      ? value.replace(/[\x00-\x1f\x7f]/g, "").trim()
-      : "";
+  const normalized = typeof value === "string" ? stripAsciiControlCharacters(value).trim() : "";
   return (normalized || "General").slice(0, 60);
 }
 
@@ -76,8 +79,7 @@ function resolveRequestedImage({
   fallbackImage = null,
   fallbackRuntimeFields = null,
 } = {}) {
-  const explicitRequestedImage =
-    typeof requestedImage === "string" ? requestedImage.trim() : "";
+  const explicitRequestedImage = typeof requestedImage === "string" ? requestedImage.trim() : "";
   if (explicitRequestedImage) return explicitRequestedImage;
 
   if (
@@ -88,13 +90,11 @@ function resolveRequestedImage({
     return fallbackImage;
   }
 
-  return (
-    getDefaultAgentImage({
-      backend: runtimeFields?.backend_type,
-      deploy_target: runtimeFields?.deploy_target,
-      sandbox_profile: runtimeFields?.sandbox_profile,
-    })
-  );
+  return getDefaultAgentImage({
+    backend: runtimeFields?.backend_type,
+    deploy_target: runtimeFields?.deploy_target,
+    sandbox_profile: runtimeFields?.sandbox_profile,
+  });
 }
 
 function resolveRequestedDeployTarget({
@@ -127,7 +127,9 @@ function resolveRequestedDeployTarget({
 }
 
 function normalizeRequestedRuntimeFamily(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!normalized) return null;
   return normalized === DEFAULT_RUNTIME_FAMILY ? DEFAULT_RUNTIME_FAMILY : null;
 }
@@ -136,9 +138,7 @@ function assertSupportedRuntimeSelection(runtimeFields) {
   if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
 
   if (runtimeFields.deploy_target !== "docker") {
-    const error = new Error(
-      "NemoClaw sandbox is only supported on the Docker execution target."
-    );
+    const error = new Error("NemoClaw sandbox is only supported on the Docker execution target.");
     error.statusCode = 400;
     throw error;
   }
@@ -153,7 +153,7 @@ function assertBackendAvailable(backend) {
   }
   if (!status.configured) {
     const error = new Error(
-      status.issue || `${status.label} is not configured for this Nora control plane.`
+      status.issue || `${status.label} is not configured for this Nora control plane.`,
     );
     error.statusCode = 400;
     throw error;
@@ -166,14 +166,8 @@ function resolveTemplateSpecs(defaults = {}, subscription = {}) {
     const lim = billing.SELFHOSTED_LIMITS;
     return {
       vcpu: Math.max(1, Math.min(parseInt(defaults.vcpu, 10) || 2, lim.max_vcpu)),
-      ram_mb: Math.max(
-        512,
-        Math.min(parseInt(defaults.ram_mb, 10) || 2048, lim.max_ram_mb)
-      ),
-      disk_gb: Math.max(
-        1,
-        Math.min(parseInt(defaults.disk_gb, 10) || 20, lim.max_disk_gb)
-      ),
+      ram_mb: Math.max(512, Math.min(parseInt(defaults.ram_mb, 10) || 2048, lim.max_ram_mb)),
+      disk_gb: Math.max(1, Math.min(parseInt(defaults.disk_gb, 10) || 20, lim.max_disk_gb)),
     };
   }
 
@@ -186,10 +180,10 @@ function resolveTemplateSpecs(defaults = {}, subscription = {}) {
 
 async function getOwnedAgent(agentId, userId) {
   if (!agentId) return null;
-  const result = await db.query(
-    "SELECT * FROM agents WHERE id = $1 AND user_id = $2",
-    [agentId, userId]
-  );
+  const result = await db.query("SELECT * FROM agents WHERE id = $1 AND user_id = $2", [
+    agentId,
+    userId,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -225,9 +219,7 @@ function marketplaceAuditMetadata(req, context = {}) {
 }
 
 async function buildListingTemplateDetail(listing, options = {}) {
-  const snapshot = listing?.snapshot_id
-    ? await snapshots.getSnapshot(listing.snapshot_id)
-    : null;
+  const snapshot = listing?.snapshot_id ? await snapshots.getSnapshot(listing.snapshot_id) : null;
   const templatePayload = snapshot
     ? extractTemplatePayloadFromSnapshot(snapshot, { includeBootstrap: true })
     : null;
@@ -279,24 +271,16 @@ router.get(
   "/",
   asyncHandler(async (_req, res) => {
     const listings = await marketplace.listMarketplace();
-    res.json(
-      await Promise.all(
-        listings.map((listing) => buildListingTemplateDetail(listing))
-      )
-    );
-  })
+    res.json(await Promise.all(listings.map((listing) => buildListingTemplateDetail(listing))));
+  }),
 );
 
 router.get(
   "/mine",
   asyncHandler(async (req, res) => {
     const listings = await marketplace.listUserListings(req.user.id);
-    res.json(
-      await Promise.all(
-        listings.map((listing) => buildListingTemplateDetail(listing))
-      )
-    );
-  })
+    res.json(await Promise.all(listings.map((listing) => buildListingTemplateDetail(listing))));
+  }),
 );
 
 router.post(
@@ -333,21 +317,20 @@ router.post(
     const issues = scanTemplatePayloadForSecrets(templatePayload);
     if (issues.length > 0) {
       return res.status(400).json({
-        error:
-          "Potential secrets were detected in this template. Remove them before publishing.",
+        error: "Potential secrets were detected in this template. Remove them before publishing.",
         issues,
       });
     }
 
     const listingName = normalizeListingName(
       req.body.name,
-      existingListing?.name || agent.name || "Untitled Template"
+      existingListing?.name || agent.name || "Untitled Template",
     );
     const listingDescription = normalizeListingDescription(
-      req.body.description || existingListing?.description || ""
+      req.body.description || existingListing?.description || "",
     );
     const listingCategory = normalizeListingCategory(
-      req.body.category || existingListing?.category || "General"
+      req.body.category || existingListing?.category || "General",
     );
     const listingPrice = normalizeListingPrice();
 
@@ -359,7 +342,7 @@ router.post(
       {
         kind: "community-template",
         builtIn: false,
-      }
+      },
     );
 
     const listing = await marketplace.upsertListing({
@@ -398,11 +381,11 @@ router.post(
         result: {
           action: existingListing ? "resubmitted" : "submitted",
         },
-      })
+      }),
     );
 
     res.json(await marketplace.getListing(listing.id));
-  })
+  }),
 );
 
 router.post(
@@ -417,9 +400,7 @@ router.post(
 
     const limits = await billing.enforceLimits(req.user.id);
     if (!limits.allowed) {
-      return res
-        .status(402)
-        .json({ error: limits.error, subscription: limits.subscription });
+      return res.status(402).json({ error: limits.error, subscription: limits.subscription });
     }
 
     const listing = await marketplace.getListing(listingId);
@@ -431,15 +412,10 @@ router.post(
     const snap = await snapshots.getSnapshot(listing.snapshot_id);
     if (!snap) return res.status(404).json({ error: "snapshot missing" });
 
-    const name = sanitizeAgentName(
-      requestedName,
-      snap.name || listing.name || "OpenClaw-Agent"
-    );
+    const name = sanitizeAgentName(requestedName, snap.name || listing.name || "OpenClaw-Agent");
     if (name.length > 100) {
-      return res
-        .status(400)
-        .json({ error: "Agent name must be 100 characters or less" });
-  }
+      return res.status(400).json({ error: "Agent name must be 100 characters or less" });
+    }
 
     const requestBody = req.body || {};
     const runtimeFamily = normalizeRequestedRuntimeFamily(requestBody.runtime_family);
@@ -507,15 +483,12 @@ router.post(
         runtimeFields.runtime_family,
         runtimeFields.deploy_target,
         runtimeFields.sandbox_profile,
-      ]
+      ],
     );
     const agent = result.rows[0];
 
     await materializeTemplateWiring(agent.id, templatePayload);
-    await db.query(
-      "INSERT INTO deployments(agent_id, status) VALUES($1, 'queued')",
-      [agent.id]
-    );
+    await db.query("INSERT INTO deployments(agent_id, status) VALUES($1, 'queued')", [agent.id]);
     await marketplace.recordInstall(listingId);
     await addDeploymentJob({
       id: agent.id,
@@ -548,11 +521,11 @@ router.post(
           deployTarget: runtimeFields.deploy_target,
           sandboxProfile: runtimeFields.sandbox_profile,
         },
-      })
+      }),
     );
 
     res.json(serializeAgent(agent));
-  })
+  }),
 );
 
 router.patch(
@@ -578,13 +551,10 @@ router.patch(
       sourceType: marketplace.LISTING_SOURCE_COMMUNITY,
       builtIn: false,
     });
-    const issues = scanTemplatePayloadForSecrets(
-      update.snapshot.config?.templatePayload
-    );
+    const issues = scanTemplatePayloadForSecrets(update.snapshot.config?.templatePayload);
     if (issues.length > 0) {
       return res.status(400).json({
-        error:
-          "Potential secrets were detected in this template. Remove them before saving.",
+        error: "Potential secrets were detected in this template. Remove them before saving.",
         issues,
       });
     }
@@ -622,16 +592,16 @@ router.patch(
           action: "updated_and_resubmitted",
           currentVersion: update.listing.currentVersion,
         },
-      })
+      }),
     );
 
     const refreshed = await marketplace.getListing(listing.id);
     res.json(
       await buildListingTemplateDetail(refreshed || listing, {
         includeContent: true,
-      })
+      }),
     );
-  })
+  }),
 );
 
 router.get(
@@ -643,7 +613,7 @@ router.get(
     }
 
     res.json(await buildListingTemplateDetail(listing, { includeContent: true }));
-  })
+  }),
 );
 
 router.get(
@@ -669,7 +639,7 @@ router.get(
           id: snapshot.id,
           name: snapshot.name,
         },
-      })
+      }),
     );
 
     const payload = {
@@ -700,7 +670,7 @@ router.get(
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.json(payload);
-  })
+  }),
 );
 
 router.post(
@@ -718,8 +688,7 @@ router.post(
       return res.status(400).json({ error: "You cannot report your own listing" });
     }
 
-    const reason =
-      typeof req.body.reason === "string" ? req.body.reason.trim() : "";
+    const reason = typeof req.body.reason === "string" ? req.body.reason.trim() : "";
     if (!reason) {
       return res.status(400).json({ error: "reason is required" });
     }
@@ -729,8 +698,7 @@ router.post(
         listingId: listing.id,
         reporterUserId: req.user.id,
         reason,
-        details:
-          typeof req.body.details === "string" ? req.body.details.trim() : "",
+        details: typeof req.body.details === "string" ? req.body.details.trim() : "",
       });
 
       await monitoring.logEvent(
@@ -743,12 +711,9 @@ router.post(
             reporterEmail: req.user.email || null,
           }),
           reportDetails: {
-            details:
-              typeof req.body.details === "string"
-                ? req.body.details.trim()
-                : undefined,
+            details: typeof req.body.details === "string" ? req.body.details.trim() : undefined,
           },
-        })
+        }),
       );
 
       res.json({ success: true, reportId: report.id });
@@ -756,7 +721,7 @@ router.post(
       const statusCode = error.statusCode || 500;
       res.status(statusCode).json({ error: error.message });
     }
-  })
+  }),
 );
 
 module.exports = router;

@@ -202,8 +202,10 @@ The installer can:
 
 - verify or install host prerequisites such as Git, Docker, Docker Compose, and OpenSSL depending on platform
 - clone the repository if you launched the installer outside the repo
+- update an existing install without deleting `.env`, PostgreSQL data, backup volumes, or provisioned agent instances
 - generate platform secrets and database credentials
 - create a timestamped `.env` backup before overwriting an existing installer-generated config
+- run an explicit clean reinstall when you want to remove local compose data and local Nora agent containers
 - choose local-only or public-domain access mode
 - configure `PLATFORM_MODE=selfhosted` or `PLATFORM_MODE=paas`
 - enable OpenClaw, Hermes, or both runtime families plus matching deploy backends
@@ -212,6 +214,30 @@ The installer can:
 - generate the matching nginx configuration and start the Nora stack
 
 LLM provider keys are still added from **Settings** after login, which keeps the install flow straightforward and the operator workflow explicit.
+
+### Updating an Existing Install
+
+Use update mode for normal code updates. It preserves `.env`, the Compose PostgreSQL volume, the backup volume, and provisioned agent instances:
+
+```bash
+./setup.sh --update
+```
+
+```powershell
+.\setup.ps1 -Update
+```
+
+Do not use `docker compose down -v` for routine updates; `-v` removes named volumes such as the PostgreSQL data volume. When you intentionally want a clean local reset, use the clean reinstall mode instead:
+
+```bash
+./setup.sh --clean-reinstall
+```
+
+```powershell
+.\setup.ps1 -CleanReinstall
+```
+
+Clean reinstall removes local Compose containers/volumes and local Nora agent containers labeled by Nora. It does not tear down external Kubernetes, Proxmox, NemoClaw, or VM resources.
 
 ### Manual Setup
 

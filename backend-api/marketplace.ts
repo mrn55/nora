@@ -57,11 +57,17 @@ const LISTING_SELECT = `
   ) report_counts ON report_counts.listing_id = ml.id
 `;
 
+function stripAsciiControlCharacters(value) {
+  return Array.from(value)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join("");
+}
+
 function normalizeText(value, fallback = "") {
-  const normalized =
-    typeof value === "string"
-      ? value.replace(/[\x00-\x1f\x7f]/g, "").trim()
-      : "";
+  const normalized = typeof value === "string" ? stripAsciiControlCharacters(value).trim() : "";
   return normalized || fallback;
 }
 
@@ -102,7 +108,7 @@ async function createUniqueSlug(seed, { listingId = null } = {}) {
       listingId
         ? "SELECT id FROM marketplace_listings WHERE slug = $1 AND id <> $2 LIMIT 1"
         : "SELECT id FROM marketplace_listings WHERE slug = $1 LIMIT 1",
-      params
+      params,
     );
     if (!result.rows[0]) return candidate;
   }
@@ -120,14 +126,14 @@ async function ensureListingVersion({
 
   const existing = await db.query(
     "SELECT id FROM marketplace_listing_versions WHERE listing_id = $1 AND snapshot_id = $2 LIMIT 1",
-    [listingId, snapshotId]
+    [listingId, snapshotId],
   );
   if (existing.rows[0]) return;
 
   await db.query(
     `INSERT INTO marketplace_listing_versions(listing_id, snapshot_id, version_number, clone_mode)
      VALUES($1, $2, $3, $4)`,
-    [listingId, snapshotId, versionNumber, cloneMode]
+    [listingId, snapshotId, versionNumber, cloneMode],
   );
 }
 
@@ -137,7 +143,7 @@ async function publishSnapshot(
   description,
   price = "Free",
   category = "General",
-  options = {}
+  options = {},
 ) {
   return upsertListing({
     snapshotId,
@@ -148,9 +154,7 @@ async function publishSnapshot(
     builtIn: options.builtIn === true,
     sourceType:
       options.sourceType ||
-      (options.builtIn === true
-        ? LISTING_SOURCE_PLATFORM
-        : LISTING_SOURCE_COMMUNITY),
+      (options.builtIn === true ? LISTING_SOURCE_PLATFORM : LISTING_SOURCE_COMMUNITY),
     ownerUserId: options.ownerUserId || null,
     status: options.status,
     visibility: options.visibility,
@@ -178,23 +182,18 @@ async function upsertListing({
 } = {}) {
   let existing = null;
   if (listingId) {
-    const result = await db.query(
-      "SELECT * FROM marketplace_listings WHERE id = $1",
-      [listingId]
-    );
+    const result = await db.query("SELECT * FROM marketplace_listings WHERE id = $1", [listingId]);
     existing = result.rows[0] || null;
   } else if (snapshotId) {
     const result = await db.query(
       "SELECT * FROM marketplace_listings WHERE snapshot_id = $1 ORDER BY created_at ASC LIMIT 1",
-      [snapshotId]
+      [snapshotId],
     );
     existing = result.rows[0] || null;
   }
 
   const normalizedSource =
-    sourceType === LISTING_SOURCE_PLATFORM
-      ? LISTING_SOURCE_PLATFORM
-      : LISTING_SOURCE_COMMUNITY;
+    sourceType === LISTING_SOURCE_PLATFORM ? LISTING_SOURCE_PLATFORM : LISTING_SOURCE_COMMUNITY;
   const normalizedBuiltIn = builtIn === true || normalizedSource === LISTING_SOURCE_PLATFORM;
   const normalizedStatus =
     status ||
@@ -210,16 +209,12 @@ async function upsertListing({
   const normalizedDescription = normalizeDescription(description || existing?.description || "");
   const normalizedCategory = normalizeCategory(category || existing?.category || "General");
   const normalizedPrice = normalizePrice(price || existing?.price || "Free");
-  const resolvedSlug = await createUniqueSlug(
-    slug || normalizedName,
-    { listingId: existing?.id || null }
-  );
+  const resolvedSlug = await createUniqueSlug(slug || normalizedName, {
+    listingId: existing?.id || null,
+  });
 
   if (existing) {
-    const requestedVersion = normalizeCurrentVersion(
-      currentVersion,
-      existing.current_version || 1
-    );
+    const requestedVersion = normalizeCurrentVersion(currentVersion, existing.current_version || 1);
     const nextVersion =
       currentVersion !== null && currentVersion !== undefined
         ? requestedVersion
@@ -264,7 +259,7 @@ async function upsertListing({
         nextVersion,
         reviewNotes,
         existing.id,
-      ]
+      ],
     );
 
     await ensureListingVersion({
@@ -311,7 +306,7 @@ async function upsertListing({
       normalizedVisibility,
       resolvedSlug,
       initialVersion,
-    ]
+    ],
   );
 
   await ensureListingVersion({
@@ -333,7 +328,7 @@ async function listMarketplace() {
         CASE WHEN ml.source_type = '${LISTING_SOURCE_PLATFORM}' THEN 0 ELSE 1 END,
         ml.installs DESC,
         COALESCE(ml.published_at, ml.created_at) DESC`,
-    [LISTING_STATUS_PUBLISHED, LISTING_VISIBILITY_PUBLIC]
+    [LISTING_STATUS_PUBLISHED, LISTING_VISIBILITY_PUBLIC],
   );
   return result.rows;
 }
@@ -343,7 +338,7 @@ async function listUserListings(userId) {
     `${LISTING_SELECT}
       WHERE ml.owner_user_id = $1
       ORDER BY ml.updated_at DESC, ml.created_at DESC`,
-    [userId]
+    [userId],
   );
   return result.rows;
 }
@@ -359,7 +354,7 @@ async function listAdminListings() {
           ELSE 3
         END,
         ml.updated_at DESC,
-        ml.created_at DESC`
+        ml.created_at DESC`,
   );
   return result.rows;
 }
@@ -368,7 +363,7 @@ async function getListing(id) {
   const result = await db.query(
     `${LISTING_SELECT}
       WHERE ml.id = $1`,
-    [id]
+    [id],
   );
   return result.rows[0] || null;
 }
@@ -381,7 +376,7 @@ async function getPlatformListingByTemplateKey(templateKey) {
         AND s.template_key = $2
       ORDER BY ml.updated_at DESC
       LIMIT 1`,
-    [LISTING_SOURCE_PLATFORM, templateKey]
+    [LISTING_SOURCE_PLATFORM, templateKey],
   );
   return result.rows[0] || null;
 }
@@ -389,23 +384,18 @@ async function getPlatformListingByTemplateKey(templateKey) {
 async function recordInstall(id) {
   await db.query(
     "UPDATE marketplace_listings SET installs = COALESCE(installs, 0) + 1, updated_at = NOW() WHERE id = $1",
-    [id]
+    [id],
   );
 }
 
 async function recordDownload(id) {
   await db.query(
     "UPDATE marketplace_listings SET downloads = COALESCE(downloads, 0) + 1, updated_at = NOW() WHERE id = $1",
-    [id]
+    [id],
   );
 }
 
-async function createReport({
-  listingId,
-  reporterUserId,
-  reason,
-  details = "",
-} = {}) {
+async function createReport({ listingId, reporterUserId, reason, details = "" } = {}) {
   const existing = await db.query(
     `SELECT id
        FROM marketplace_reports
@@ -413,7 +403,7 @@ async function createReport({
         AND reporter_user_id = $2
         AND status = $3
       LIMIT 1`,
-    [listingId, reporterUserId, REPORT_STATUS_OPEN]
+    [listingId, reporterUserId, REPORT_STATUS_OPEN],
   );
   if (existing.rows[0]) {
     const error = new Error("You already have an open report for this listing");
@@ -430,7 +420,7 @@ async function createReport({
       reporterUserId || null,
       normalizeText(reason, "other").slice(0, 80),
       normalizeDescription(details),
-    ]
+    ],
   );
   return result.rows[0];
 }
@@ -458,16 +448,14 @@ async function listReports() {
      LEFT JOIN users reporter ON reporter.id = mr.reporter_user_id
      ORDER BY
        CASE WHEN mr.status = '${REPORT_STATUS_OPEN}' THEN 0 ELSE 1 END,
-       mr.created_at DESC`
+       mr.created_at DESC`,
   );
   return result.rows;
 }
 
 async function resolveReport(reportId, reviewerUserId, status = REPORT_STATUS_RESOLVED) {
   const normalizedStatus =
-    status === REPORT_STATUS_DISMISSED
-      ? REPORT_STATUS_DISMISSED
-      : REPORT_STATUS_RESOLVED;
+    status === REPORT_STATUS_DISMISSED ? REPORT_STATUS_DISMISSED : REPORT_STATUS_RESOLVED;
   const result = await db.query(
     `UPDATE marketplace_reports
         SET status = $1,
@@ -475,26 +463,20 @@ async function resolveReport(reportId, reviewerUserId, status = REPORT_STATUS_RE
             reviewed_by = $2
       WHERE id = $3
       RETURNING *`,
-    [normalizedStatus, reviewerUserId || null, reportId]
+    [normalizedStatus, reviewerUserId || null, reportId],
   );
   return result.rows[0] || null;
 }
 
-async function setListingStatus(
-  id,
-  status,
-  reviewerUserId = null,
-  reviewNotes = null
-) {
-  const normalizedStatus =
-    [
-      LISTING_STATUS_PENDING_REVIEW,
-      LISTING_STATUS_PUBLISHED,
-      LISTING_STATUS_REJECTED,
-      LISTING_STATUS_REMOVED,
-    ].includes(status)
-      ? status
-      : LISTING_STATUS_PENDING_REVIEW;
+async function setListingStatus(id, status, reviewerUserId = null, reviewNotes = null) {
+  const normalizedStatus = [
+    LISTING_STATUS_PENDING_REVIEW,
+    LISTING_STATUS_PUBLISHED,
+    LISTING_STATUS_REJECTED,
+    LISTING_STATUS_REMOVED,
+  ].includes(status)
+    ? status
+    : LISTING_STATUS_PENDING_REVIEW;
   const result = await db.query(
     `UPDATE marketplace_listings
         SET status = $1,
@@ -508,7 +490,7 @@ async function setListingStatus(
             updated_at = NOW()
       WHERE id = $4
       RETURNING *`,
-    [normalizedStatus, reviewerUserId || null, normalizeDescription(reviewNotes), id]
+    [normalizedStatus, reviewerUserId || null, normalizeDescription(reviewNotes), id],
   );
 
   if (!result.rows[0]) return null;
@@ -520,7 +502,7 @@ async function setListingStatus(
             reviewed_by = $2
       WHERE listing_id = $3
         AND status = $4`,
-    [REPORT_STATUS_RESOLVED, reviewerUserId || null, id, REPORT_STATUS_OPEN]
+    [REPORT_STATUS_RESOLVED, reviewerUserId || null, id, REPORT_STATUS_OPEN],
   );
 
   return result.rows[0];

@@ -13,11 +13,7 @@ const {
 } = require("../agent-runtime/lib/backendCatalog");
 const { buildAgentRuntimeFields } = require("./agentRuntimeFields");
 
-const CLONE_MODES = new Set([
-  "files_only",
-  "files_plus_memory",
-  "full_clone",
-]);
+const CLONE_MODES = new Set(["files_only", "files_plus_memory", "full_clone"]);
 
 const OPENCLAW_CORE_FILE_SPECS = Object.freeze([
   { path: "AGENTS.md", label: "Agents", required: true },
@@ -30,9 +26,9 @@ const OPENCLAW_CORE_FILE_SPECS = Object.freeze([
   { path: "BOOTSTRAP.md", label: "Bootstrap", required: false },
 ]);
 
-const OPENCLAW_REQUIRED_CORE_PATHS = OPENCLAW_CORE_FILE_SPECS
-  .filter((spec) => spec.required)
-  .map((spec) => spec.path);
+const OPENCLAW_REQUIRED_CORE_PATHS = OPENCLAW_CORE_FILE_SPECS.filter((spec) => spec.required).map(
+  (spec) => spec.path,
+);
 
 const OPENCLAW_CORE_FILE_ALIASES = Object.freeze({
   "AGENTS.md": ["AGENT.md"],
@@ -62,7 +58,9 @@ function decodeMaybeString(value) {
 const SAFE_PAYLOAD_PATH_RE = /^[A-Za-z0-9._/-]+$/;
 
 function normalizeRelativePath(value) {
-  const rawValue = String(value || "").trim().replace(/\\/g, "/");
+  const rawValue = String(value || "")
+    .trim()
+    .replace(/\\/g, "/");
   if (!rawValue) return null;
 
   const normalized = path.posix.normalize(rawValue).replace(/^\/+/, "");
@@ -122,10 +120,7 @@ function normalizeTemplatePayload(rawPayload = {}) {
     files: normalizePayloadEntries(payload.files),
     memoryFiles: normalizePayloadEntries(payload.memoryFiles),
     wiring: normalizeWiringBlueprint(payload.wiring),
-    metadata:
-      payload.metadata && typeof payload.metadata === "object"
-        ? payload.metadata
-        : {},
+    metadata: payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
   };
 }
 
@@ -140,8 +135,7 @@ function decodeContentBase64(value) {
 function buildCoreFileDefaultContent(filePath, context = {}) {
   const name = String(context.name || "OpenClaw Agent").trim() || "OpenClaw Agent";
   const description =
-    String(context.description || "").trim() ||
-    "Reusable Nora marketplace template.";
+    String(context.description || "").trim() || "Reusable Nora marketplace template.";
   const category = String(context.category || "General").trim() || "General";
   const sourceLabel =
     context.sourceType === "platform"
@@ -227,8 +221,7 @@ Track durable facts, preferences, operating constraints, and open loops here.`.t
 function ensureCoreTemplateFiles(rawPayload = {}, context = {}) {
   const payload = normalizeTemplatePayload(rawPayload);
   const fileByPath = new Map(payload.files.map((entry) => [entry.path, entry]));
-  const includeBootstrap =
-    context.includeBootstrap === true || fileByPath.has("BOOTSTRAP.md");
+  const includeBootstrap = context.includeBootstrap === true || fileByPath.has("BOOTSTRAP.md");
   const nextFiles = [...payload.files];
 
   for (const spec of OPENCLAW_CORE_FILE_SPECS) {
@@ -240,7 +233,7 @@ function ensureCoreTemplateFiles(rawPayload = {}, context = {}) {
     }
 
     const aliasPath = (OPENCLAW_CORE_FILE_ALIASES[spec.path] || []).find((candidate) =>
-      fileByPath.has(candidate)
+      fileByPath.has(candidate),
     );
     if (aliasPath) {
       const aliasEntry = fileByPath.get(aliasPath);
@@ -255,7 +248,7 @@ function ensureCoreTemplateFiles(rawPayload = {}, context = {}) {
     nextFiles.push({
       path: spec.path,
       contentBase64: encodeContentBase64(
-        buildCoreFileDefaultContent(spec.path, context).trim() + "\n"
+        buildCoreFileDefaultContent(spec.path, context).trim() + "\n",
       ),
       mode: 0o644,
     });
@@ -294,9 +287,7 @@ function summarizeTemplatePayload(rawPayload = {}, options = {}) {
       label: spec.label,
       required: spec.required,
       present: Boolean(entry),
-      bytes: entry
-        ? Buffer.from(String(entry.contentBase64 || ""), "base64").length
-        : 0,
+      bytes: entry ? Buffer.from(String(entry.contentBase64 || ""), "base64").length : 0,
       lineCount: content ? content.split(/\r?\n/).length : 0,
       preview: content.split(/\r?\n/).slice(0, 4).join("\n").trim(),
       ...(includeContent && entry ? { content } : {}),
@@ -304,7 +295,7 @@ function summarizeTemplatePayload(rawPayload = {}, options = {}) {
   });
 
   const missingRequiredCoreFiles = OPENCLAW_REQUIRED_CORE_PATHS.filter(
-    (filePath) => !fileByPath.has(filePath)
+    (filePath) => !fileByPath.has(filePath),
   );
 
   return {
@@ -314,13 +305,11 @@ function summarizeTemplatePayload(rawPayload = {}, options = {}) {
     integrationCount: payload.wiring.integrations.length,
     channelCount: payload.wiring.channels.length,
     requiredCoreCount: OPENCLAW_REQUIRED_CORE_PATHS.length,
-    presentRequiredCoreCount:
-      OPENCLAW_REQUIRED_CORE_PATHS.length - missingRequiredCoreFiles.length,
+    presentRequiredCoreCount: OPENCLAW_REQUIRED_CORE_PATHS.length - missingRequiredCoreFiles.length,
     missingRequiredCoreFiles,
     hasBootstrap: fileByPath.has("BOOTSTRAP.md"),
     extraFilesCount: payload.files.filter(
-      (entry) =>
-        !OPENCLAW_CORE_FILE_SPECS.some((spec) => spec.path === entry.path)
+      (entry) => !OPENCLAW_CORE_FILE_SPECS.some((spec) => spec.path === entry.path),
     ).length,
     coreFiles,
     files,
@@ -355,7 +344,7 @@ function applyTemplateFileEdits(rawPayload = {}, nextFiles = null, context = {})
       ...payload,
       files,
     },
-    context
+    context,
   );
 }
 
@@ -369,24 +358,23 @@ function cloneTemplatePayloadForMode(rawPayload, cloneMode = "files_only") {
 
   return {
     ...payload,
-    memoryFiles:
-      normalizedMode === "files_only" ? [] : payload.memoryFiles,
-    wiring:
-      normalizedMode === "full_clone"
-        ? payload.wiring
-        : { channels: [], integrations: [] },
+    memoryFiles: normalizedMode === "files_only" ? [] : payload.memoryFiles,
+    wiring: normalizedMode === "full_clone" ? payload.wiring : { channels: [], integrations: [] },
   };
 }
 
+function stripAsciiControlCharacters(value) {
+  return Array.from(value)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join("");
+}
+
 function sanitizeAgentName(rawName, fallbackLabel = "OpenClaw-Agent") {
-  const value =
-    typeof rawName === "string"
-      ? rawName.replace(/[\x00-\x1f\x7f]/g, "").trim()
-      : "";
-  return (
-    value ||
-    `${fallbackLabel}-${Math.floor(Math.random() * 1000)}`
-  );
+  const value = typeof rawName === "string" ? stripAsciiControlCharacters(rawName).trim() : "";
+  return value || `${fallbackLabel}-${Math.floor(Math.random() * 1000)}`;
 }
 
 const GENERATED_CONTAINER_NAME_PREFIXES = Object.freeze([
@@ -407,10 +395,10 @@ function containerNamePrefixForRuntime(runtimeSelection = {}) {
 }
 
 function isGeneratedContainerName(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return GENERATED_CONTAINER_NAME_PREFIXES.some((prefix) =>
-    normalized.startsWith(`${prefix}-`)
-  );
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return GENERATED_CONTAINER_NAME_PREFIXES.some((prefix) => normalized.startsWith(`${prefix}-`));
 }
 
 function buildContainerName(name, runtimeSelection = {}) {
@@ -429,12 +417,10 @@ function resolveContainerName({
   agentName,
   runtimeSelection = {},
 } = {}) {
-  const explicitRequestedName =
-    typeof requestedName === "string" ? requestedName.trim() : "";
+  const explicitRequestedName = typeof requestedName === "string" ? requestedName.trim() : "";
   if (explicitRequestedName) return explicitRequestedName;
 
-  const normalizedCurrentName =
-    typeof currentName === "string" ? currentName.trim() : "";
+  const normalizedCurrentName = typeof currentName === "string" ? currentName.trim() : "";
   if (!normalizedCurrentName) {
     return buildContainerName(agentName, runtimeSelection);
   }
@@ -485,7 +471,7 @@ async function fetchTemplateExportViaExec(agent, includeMemory) {
     throw new Error("runtime exec unavailable");
   }
 
-const exportScript = `
+  const exportScript = `
 const fs = require("fs");
 const generatedExcludes = new Set(["auth-profiles.json", ${JSON.stringify(NORA_INTEGRATIONS_CONTEXT_FILE)}, ${JSON.stringify(NORA_INTEGRATIONS_SKILL_FILE)}]);
 function collectFiles(root, prefix = "", exclude = new Set()) {
@@ -568,8 +554,7 @@ for (const { kind, root, prefix, exclude, excludeTemplatePaths } of roots) {
 process.stdout.write(JSON.stringify(result));
 `.trim();
 
-  const command =
-    `node -e ${JSON.stringify(exportScript)} ${includeMemory ? "1" : "0"}`;
+  const command = `node -e ${JSON.stringify(exportScript)} ${includeMemory ? "1" : "0"}`;
   const response = await fetch(runtimeUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -598,13 +583,13 @@ async function exportTemplatePayloadFromAgent(agent, cloneMode = "files_only") {
   try {
     return cloneTemplatePayloadForMode(
       await fetchTemplateExportViaRuntime(agent, includeMemory),
-      cloneMode
+      cloneMode,
     );
   } catch (primaryError) {
     try {
       return cloneTemplatePayloadForMode(
         await fetchTemplateExportViaExec(agent, includeMemory),
-        cloneMode
+        cloneMode,
       );
     } catch (fallbackError) {
       // Fall back to the payload stored on the agent record. This keeps
@@ -619,21 +604,17 @@ async function buildAgentWiringBlueprint(agentId) {
   const [integrationRows, channelRows] = await Promise.all([
     db.query(
       "SELECT provider, catalog_id, access_token, config, status FROM integrations WHERE agent_id = $1 ORDER BY created_at ASC",
-      [agentId]
+      [agentId],
     ),
     db.query(
       "SELECT type, name, config, enabled FROM channels WHERE agent_id = $1 ORDER BY created_at ASC",
-      [agentId]
+      [agentId],
     ),
   ]);
 
   return {
-    integrations: integrationRows.rows.map((row) =>
-      integrations.buildCloneableIntegration(row)
-    ),
-    channels: channelRows.rows.map((row) =>
-      channels.buildCloneableChannel(row)
-    ),
+    integrations: integrationRows.rows.map((row) => integrations.buildCloneableIntegration(row)),
+    channels: channelRows.rows.map((row) => channels.buildCloneableChannel(row)),
   };
 }
 
@@ -668,7 +649,7 @@ async function materializeTemplateWiring(agentId, rawPayload = {}) {
         integration.catalog_id || integration.provider,
         JSON.stringify(integration.config || {}),
         integration.status || "needs_reconnect",
-      ]
+      ],
     );
   }
 
@@ -682,7 +663,7 @@ async function materializeTemplateWiring(agentId, rawPayload = {}) {
         channel.name,
         JSON.stringify(channel.config || {}),
         channel.enabled === true,
-      ]
+      ],
     );
   }
 }
@@ -704,8 +685,7 @@ function extractTemplatePayloadFromSnapshot(snapshot, options = {}) {
 
 function extractTemplateDefaultsFromSnapshot(snapshot) {
   const config = decodeMaybeString(snapshot?.config);
-  const defaults =
-    config.defaults && typeof config.defaults === "object" ? config.defaults : {};
+  const defaults = config.defaults && typeof config.defaults === "object" ? config.defaults : {};
   const backend = isKnownBackend(defaults.backend)
     ? normalizeBackendName(defaults.backend)
     : defaults.sandbox === "nemoclaw"

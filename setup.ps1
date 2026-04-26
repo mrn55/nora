@@ -5,10 +5,18 @@
 #   iwr -useb https://raw.githubusercontent.com/solomon2773/nora/master/setup.ps1 | iex
 #   — or —
 #   .\setup.ps1        (from inside the repo)
+#   .\setup.ps1 -Update
+#   .\setup.ps1 -CleanReinstall
 #
 # Clones the repo (if needed), generates secrets and database
 # credentials, configures the platform, and starts Nora.
 # ============================================================
+
+param(
+    [switch]$Install,
+    [switch]$Update,
+    [switch]$CleanReinstall
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -20,6 +28,16 @@ $PUBLIC_PROD_COMPOSE_OVERRIDE_TEMPLATE = "infra/docker-compose.public-prod.yml"
 $TLS_COMPOSE_OVERRIDE_TEMPLATE = "infra/docker-compose.public-tls.yml"
 $PUBLIC_NGINX_CONF = "nginx.public.conf"
 $COMPOSE_OVERRIDE_FILE = "docker-compose.override.yml"
+$SETUP_MODE = ""
+
+$selectedModes = @($Install.IsPresent, $Update.IsPresent, $CleanReinstall.IsPresent) | Where-Object { $_ }
+if ($selectedModes.Count -gt 1) {
+    Write-Host "[error] Choose only one setup mode." -ForegroundColor Red
+    exit 1
+}
+if ($Install) { $SETUP_MODE = "install" }
+elseif ($Update) { $SETUP_MODE = "update" }
+elseif ($CleanReinstall) { $SETUP_MODE = "clean-reinstall" }
 
 # ── Color helpers ────────────────────────────────────────────
 
@@ -63,6 +81,71 @@ function Backup-ExistingEnvFile {
 
     Copy-Item -LiteralPath $resolvedEnvPath -Destination $candidate -Force
     return $candidate
+}
+
+function Update-SourceCheckout {
+    $null = git rev-parse --is-inside-work-tree 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return
+    }
+
+    $dirty = git status --porcelain
+    if ($dirty) {
+        Write-Warn "Skipping git pull because this worktree has uncommitted changes."
+        return
+    }
+
+    $branch = git symbolic-ref --quiet --short HEAD 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $branch) {
+        Write-Info "Skipping git pull because this checkout is detached."
+        return
+    }
+
+    $null = git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Info "Pulling latest code for $branch..."
+        git pull --ff-only
+    } else {
+        Write-Info "Skipping git pull because $branch has no upstream."
+    }
+}
+
+function Remove-LocalAgentContainers {
+    $containerIds = @()
+    foreach ($label in @("openclaw.agent.id", "nora.agent.id")) {
+        $ids = docker ps -a --filter "label=$label" -q 2>$null
+        if ($ids) { $containerIds += $ids }
+    }
+
+    $containerIds = $containerIds | Where-Object { $_ } | Sort-Object -Unique
+    if (-not $containerIds) {
+        Write-Info "No local Nora agent containers found."
+        return
+    }
+
+    Write-Info "Removing local Nora agent containers..."
+    foreach ($containerId in $containerIds) {
+        docker rm -f $containerId 2>$null | Out-Null
+    }
+    Write-Ok "Removed local Nora agent containers"
+}
+
+function Invoke-CleanReinstallState {
+    Write-Warn "Clean reinstall selected: local compose containers and volumes will be removed."
+    Write-Info "External Kubernetes, Proxmox, NemoClaw, and VM resources will not be touched."
+    docker compose down -v --remove-orphans 2>$null
+    Remove-LocalAgentContainers
+    Write-Ok "Local Nora compose state cleaned"
+}
+
+function Start-NoraComposeStack {
+    Write-Host ""
+    Write-Info "Starting Nora (docker compose up -d --build)..."
+    Write-Info "Preserving Docker volumes and provisioned agent instances."
+    Write-Host ""
+    docker compose up -d --build
+    Write-Host ""
+    Write-Ok "Nora is running!"
 }
 
 # ── Helper: generate random hex ─────────────────────────────
@@ -258,13 +341,55 @@ if (-not $composeExists) {
     Write-Ok "Repository ready in ./$INSTALL_DIR"
 }
 
-# Check for existing .env
-if (Test-Path $ENV_FILE) {
+# ── Select setup mode ───────────────────────────────────────
+
+if (-not $SETUP_MODE) {
+    if (Test-Path $ENV_FILE) {
+        Write-Header "Existing Nora Install"
+        Write-Host "  Select maintenance mode:"
+        Write-Host "    1) Update code only (default) — preserve .env, data volumes, and provisioned instances"
+        Write-Host "    2) Reconfigure install — overwrite .env but preserve data volumes and instances"
+        Write-Host "    3) Clean reinstall — delete local compose volumes and local Nora agent containers"
+        $setupModeAnswer = Read-Host "  Select [1/2/3]"
+        switch ($setupModeAnswer) {
+            "2" { $SETUP_MODE = "install" }
+            "3" { $SETUP_MODE = "clean-reinstall" }
+            default { $SETUP_MODE = "update" }
+        }
+    } else {
+        $SETUP_MODE = "install"
+    }
+}
+
+if ($SETUP_MODE -eq "update") {
+    if (-not (Test-Path $ENV_FILE)) {
+        Write-Err "Update mode requires an existing $ENV_FILE. Run setup without -Update for first install."
+        exit 1
+    }
+
+    Write-Header "Updating Nora"
+    Write-Info "Code update mode keeps $ENV_FILE, Postgres/backup volumes, and provisioned instances."
+    Update-SourceCheckout
+    Start-NoraComposeStack
+    Write-Host ""
+    Write-Info "Update complete. No compose volumes or agent Docker/K8s/VM instances were removed."
+    exit 0
+}
+
+if ($SETUP_MODE -eq "clean-reinstall") {
+    Write-Header "Clean Reinstall"
+    if (Test-Path $ENV_FILE) {
+        $ENV_BACKUP_FILE = Backup-ExistingEnvFile -EnvPath $ENV_FILE
+        Write-Ok "Existing $ENV_FILE backed up to $ENV_BACKUP_FILE"
+    }
+    Invoke-CleanReinstallState
+} elseif (Test-Path $ENV_FILE) {
     Write-Host ""
     Write-Warn ".env already exists."
-    $answer = Read-Host "  Overwrite? [y/N]"
+    $answer = Read-Host "  Overwrite configuration while preserving data volumes and instances? [y/N]"
     if ($answer -notmatch '^[Yy]$') {
         Write-Info "Keeping existing .env — no changes made."
+        Write-Info "Use '.\setup.ps1 -Update' for a non-destructive code update."
         exit 0
     }
     $ENV_BACKUP_FILE = Backup-ExistingEnvFile -EnvPath $ENV_FILE
@@ -750,25 +875,8 @@ if (-not $CAN_START_NORA) {
     exit 0
 }
 
-# Stop any existing deployment and clean up stale data
-$existingContainers = docker compose ps --quiet 2>$null
-if ($existingContainers) {
-    Write-Info "Stopping existing Nora deployment..."
-    docker compose down -v --remove-orphans 2>$null
-    # Remove orphaned agent containers from previous runs
-    $agentContainers = docker ps -a --filter "label=openclaw.agent.id" -q 2>$null
-    if ($agentContainers) {
-        $agentContainers | ForEach-Object { docker rm -f $_ 2>$null }
-    }
-    Write-Ok "Cleaned up previous deployment"
-}
-
 Write-Host ""
-Write-Info "Starting Nora (docker compose up -d --build)..."
-Write-Host ""
-docker compose up -d --build
-Write-Host ""
-Write-Ok "Nora is running!"
+Start-NoraComposeStack
 
 # ── Done ─────────────────────────────────────────────────────
 

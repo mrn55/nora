@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Terminal as TermIcon, WifiOff, Maximize2, Minimize2, Download, RefreshCw } from "lucide-react";
+import {
+  Terminal as TermIcon,
+  WifiOff,
+  Maximize2,
+  Minimize2,
+  Download,
+  RefreshCw,
+} from "lucide-react";
 
 const TOOLBAR_HEIGHT = 37;
 
@@ -12,7 +19,12 @@ const TOOLBAR_HEIGHT = 37;
  * - wsRef: { current: null } — external ref for persistent WebSocket
  * - visible: whether the terminal is currently visible (triggers fit on show)
  */
-export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRef, visible = true }) {
+export default function AgentTerminal({
+  agentId,
+  historyRef,
+  wsRef: externalWsRef,
+  visible = true,
+}) {
   const termContainerRef = useRef(null);
   const xtermRef = useRef(null);
   const fitAddonRef = useRef(null);
@@ -99,7 +111,11 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
   useEffect(() => {
     if (!fitAddonRef.current || !visible) return;
     const fit = () => {
-      try { fitAddonRef.current.fit(); } catch {}
+      try {
+        fitAddonRef.current.fit();
+      } catch {
+        // Xterm can throw while its container is hidden or detaching.
+      }
     };
     // Delay fit to let DOM settle after expand/collapse
     const timer = setTimeout(fit, 50);
@@ -115,7 +131,11 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
     if (!agentId || !xtermRef.current) return;
     // Close existing connection if any
     if (wsRef.current) {
-      try { wsRef.current.close(); } catch {}
+      try {
+        wsRef.current.close();
+      } catch {
+        // Ignore close races from already-closed sockets.
+      }
       wsRef.current = null;
     }
 
@@ -162,7 +182,6 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
         term.write(e.data);
       }
     };
-
   }, [agentId, xtermReady]);
 
   // Wire xterm input/resize to WebSocket — uses wsRef so it works across reconnects
@@ -207,7 +226,11 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
     if (visible && xtermRef.current) {
       requestAnimationFrame(() => {
         xtermRef.current.focus();
-        try { fitAddonRef.current?.fit(); } catch {}
+        try {
+          fitAddonRef.current?.fit();
+        } catch {
+          // Xterm can throw while its container is hidden or detaching.
+        }
       });
     }
   }, [visible]);
@@ -246,7 +269,9 @@ export default function AgentTerminal({ agentId, historyRef, wsRef: externalWsRe
       >
         <div className="flex items-center gap-2">
           <TermIcon size={14} className="text-slate-500" />
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Terminal</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+            Terminal
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <button

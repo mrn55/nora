@@ -1,22 +1,32 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { fetchWithAuth } from "../../../lib/api";
 import {
-  Send, Loader2, Bot, User, Wrench, Brain, Trash2, StopCircle, AlertTriangle,
+  Send,
+  Loader2,
+  Bot,
+  User,
+  Wrench,
+  Brain,
+  Trash2,
+  StopCircle,
+  AlertTriangle,
 } from "lucide-react";
 import LLMSetupWizard from "../LLMSetupWizard";
 
 /** Strip protocol wrapper tags and gateway metadata from display text. */
 function stripProtocolTags(text) {
   if (!text) return text;
-  return text
-    .replace(/<\/?final>/gi, "")
-    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-    .replace(/<\/?thinking>/gi, "")
-    .replace(/<\/?reasoning>/gi, "")
-    .replace(/<\/?artifact[^>]*>/gi, "")
-    // Strip "Sender (untrusted metadata): ..." blocks injected by the gateway
-    .replace(/Sender \(untrusted metadata\):[\s\S]*?(?=\n\n|\[|$)/gi, "")
-    .trim();
+  return (
+    text
+      .replace(/<\/?final>/gi, "")
+      .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+      .replace(/<\/?thinking>/gi, "")
+      .replace(/<\/?reasoning>/gi, "")
+      .replace(/<\/?artifact[^>]*>/gi, "")
+      // Strip "Sender (untrusted metadata): ..." blocks injected by the gateway
+      .replace(/Sender \(untrusted metadata\):[\s\S]*?(?=\n\n|\[|$)/gi, "")
+      .trim()
+  );
 }
 
 /**
@@ -59,19 +69,19 @@ export default function ChatPanel({ agentId }) {
 
     // First get sessions, then load the most recent session's history
     fetchWithAuth(`/api/agents/${agentId}/gateway/sessions`)
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data) return;
         const sessions = Array.isArray(data) ? data : data.sessions || [];
         if (sessions.length === 0) return;
 
         // Pick the most recent session (or "main")
-        const main = sessions.find(s => s.key === "main") || sessions[0];
+        const main = sessions.find((s) => s.key === "main") || sessions[0];
         const key = main.key || main.id || "main";
         setSessionId(key);
         return fetchWithAuth(`/api/agents/${agentId}/gateway/sessions/${key}`);
       })
-      .then((r) => r?.ok ? r.json() : null)
+      .then((r) => (r?.ok ? r.json() : null))
       .then((session) => {
         if (!session) return;
         // Extract messages from session history
@@ -86,12 +96,12 @@ export default function ChatPanel({ agentId }) {
           if (typeof content === "string") return content;
           if (Array.isArray(content)) {
             return content
-              .filter(c => {
+              .filter((c) => {
                 if (typeof c === "string") return true;
                 // Only include text blocks, skip tool_use/tool_result/image etc.
                 return c.type === "text" || (!c.type && (c.text || c.content));
               })
-              .map(c => (typeof c === "string" ? c : c.text || c.content || ""))
+              .map((c) => (typeof c === "string" ? c : c.text || c.content || ""))
               .join("");
           }
           if (typeof content === "object") return content.text || content.content || "";
@@ -99,14 +109,23 @@ export default function ChatPanel({ agentId }) {
         }
 
         // Convert to our message format, stripping protocol tags from stored history
-        const formatted = history.map((msg, i) => ({
-          role: msg.role || (msg.type === "human" ? "user" : "assistant"),
-          content: stripProtocolTags(extractContent(msg.content) || extractContent(msg.text) || extractContent(msg.message) || ""),
-          ts: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now() - (history.length - i) * 1000,
-          streaming: false,
-          toolCalls: msg.tool_calls || [],
-          thinking: extractContent(msg.thinking) || extractContent(msg.reasoning) || "",
-        })).filter(m => m.content); // skip empty messages
+        const formatted = history
+          .map((msg, i) => ({
+            role: msg.role || (msg.type === "human" ? "user" : "assistant"),
+            content: stripProtocolTags(
+              extractContent(msg.content) ||
+                extractContent(msg.text) ||
+                extractContent(msg.message) ||
+                "",
+            ),
+            ts: msg.timestamp
+              ? new Date(msg.timestamp).getTime()
+              : Date.now() - (history.length - i) * 1000,
+            streaming: false,
+            toolCalls: msg.tool_calls || [],
+            thinking: extractContent(msg.thinking) || extractContent(msg.reasoning) || "",
+          }))
+          .filter((m) => m.content); // skip empty messages
 
         setAllHistory(formatted);
 
@@ -125,7 +144,7 @@ export default function ChatPanel({ agentId }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const isStreaming = messages.some(m => m.streaming);
+    const isStreaming = messages.some((m) => m.streaming);
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
     if (isStreaming || isNearBottom) {
       el.scrollTop = el.scrollHeight;
@@ -143,7 +162,7 @@ export default function ChatPanel({ agentId }) {
       if (olderMessages.length === 0) return;
 
       prevScrollHeightRef.current = el.scrollHeight;
-      setMessages(prev => [...olderMessages, ...prev]);
+      setMessages((prev) => [...olderMessages, ...prev]);
       setDisplayOffset(newOffset);
       setHasMoreHistory(newOffset > 0);
 
@@ -169,7 +188,14 @@ export default function ChatPanel({ agentId }) {
     const assistantId = Date.now() + 1;
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "", ts: assistantId, streaming: true, toolCalls: [], thinking: "" },
+      {
+        role: "assistant",
+        content: "",
+        ts: assistantId,
+        streaming: true,
+        toolCalls: [],
+        thinking: "",
+      },
     ]);
 
     try {
@@ -194,9 +220,13 @@ export default function ChatPanel({ agentId }) {
         setMessages((prev) =>
           prev.map((m) =>
             m.ts === assistantId
-              ? { ...m, content: `Error: ${err.error || err.details || "Unknown error"}`, streaming: false }
-              : m
-          )
+              ? {
+                  ...m,
+                  content: `Error: ${err.error || err.details || "Unknown error"}`,
+                  streaming: false,
+                }
+              : m,
+          ),
         );
         setSending(false);
         return;
@@ -237,8 +267,8 @@ export default function ChatPanel({ agentId }) {
                 prev.map((m) =>
                   m.ts === assistantId
                     ? { ...m, content: m.content || `Error: ${errMsg}`, streaming: false }
-                    : m
-                )
+                    : m,
+                ),
               );
               continue;
             }
@@ -263,7 +293,7 @@ export default function ChatPanel({ agentId }) {
                 gatewayText = msgContent;
               } else if (Array.isArray(msgContent)) {
                 gatewayText = msgContent
-                  .map(c => (typeof c === "string" ? c : c.text || ""))
+                  .map((c) => (typeof c === "string" ? c : c.text || ""))
                   .join("");
               }
             }
@@ -278,7 +308,8 @@ export default function ChatPanel({ agentId }) {
             // Agent thinking events
             let thinking = "";
             if (agentStream === "thinking") {
-              thinking = chunk.data?.delta || chunk.data?.text || delta?.reasoning || delta?.thinking || "";
+              thinking =
+                chunk.data?.delta || chunk.data?.text || delta?.reasoning || delta?.thinking || "";
             }
 
             // Strip protocol wrapper tags
@@ -293,7 +324,7 @@ export default function ChatPanel({ agentId }) {
                 prev.map((m) => {
                   if (m.ts !== assistantId) return m;
                   return { ...m, content: rawText || m.content, streaming: false };
-                })
+                }),
               );
               continue;
             }
@@ -305,7 +336,7 @@ export default function ChatPanel({ agentId }) {
 
                 if (rawText) {
                   // Gateway deltas send accumulated text, not incremental
-                  updated.content = isDelta ? rawText : (updated.content + rawText);
+                  updated.content = isDelta ? rawText : updated.content + rawText;
                 }
 
                 if (toolCalls) {
@@ -320,7 +351,8 @@ export default function ChatPanel({ agentId }) {
                       };
                     }
                     if (tc.function?.name) newToolCalls[idx].function.name += tc.function.name;
-                    if (tc.function?.arguments) newToolCalls[idx].function.arguments += tc.function.arguments;
+                    if (tc.function?.arguments)
+                      newToolCalls[idx].function.arguments += tc.function.arguments;
                   }
                   updated.toolCalls = newToolCalls;
                 }
@@ -330,7 +362,7 @@ export default function ChatPanel({ agentId }) {
                 }
 
                 return updated;
-              })
+              }),
             );
           } catch {
             // Skip malformed JSON chunks
@@ -340,16 +372,14 @@ export default function ChatPanel({ agentId }) {
 
       // Mark streaming complete
       setMessages((prev) =>
-        prev.map((m) => (m.ts === assistantId ? { ...m, streaming: false } : m))
+        prev.map((m) => (m.ts === assistantId ? { ...m, streaming: false } : m)),
       );
     } catch (err) {
       if (err.name !== "AbortError") {
         setMessages((prev) =>
           prev.map((m) =>
-            m.ts === assistantId
-              ? { ...m, content: `Error: ${err.message}`, streaming: false }
-              : m
-          )
+            m.ts === assistantId ? { ...m, content: `Error: ${err.message}`, streaming: false } : m,
+          ),
         );
       }
     } finally {
@@ -383,20 +413,40 @@ export default function ChatPanel({ agentId }) {
   // Show setup wizard if no providers
   if (showSetup && hasProviders === false) {
     return (
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 w-full" style={{ minHeight: "350px" }}>
-        <LLMSetupWizard onComplete={() => { setShowSetup(false); setHasProviders(true); }} />
+      <div
+        className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 w-full"
+        style={{ minHeight: "350px" }}
+      >
+        <LLMSetupWizard
+          onComplete={() => {
+            setShowSetup(false);
+            setHasProviders(true);
+          }}
+        />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col bg-white border border-slate-200 rounded-2xl overflow-hidden w-full" style={{ height: "calc(100vh - 20rem)", minHeight: "350px", maxHeight: "calc(100vh - 12rem)" }}>
+    <div
+      className="flex flex-col bg-white border border-slate-200 rounded-2xl overflow-hidden w-full"
+      style={{
+        height: "calc(100vh - 20rem)",
+        minHeight: "350px",
+        maxHeight: "calc(100vh - 12rem)",
+      }}
+    >
       {/* No-provider banner */}
       {hasProviders === false && !showSetup && (
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-700">
           <AlertTriangle size={12} />
           <span>No LLM provider configured.</span>
-          <button onClick={() => setShowSetup(true)} className="font-bold text-amber-800 underline hover:text-amber-900">Set up now</button>
+          <button
+            onClick={() => setShowSetup(true)}
+            className="font-bold text-amber-800 underline hover:text-amber-900"
+          >
+            Set up now
+          </button>
         </div>
       )}
       {/* Header */}
@@ -446,9 +496,7 @@ export default function ChatPanel({ agentId }) {
             </p>
           </div>
         ) : (
-          messages.map((msg, i) => (
-            <MessageBubble key={msg.ts || i} message={msg} />
-          ))
+          messages.map((msg, i) => <MessageBubble key={msg.ts || i} message={msg} />)
         )}
       </div>
 
@@ -518,7 +566,7 @@ function renderMarkdown(text) {
             <pre className="p-3 bg-slate-800 text-slate-200 text-xs font-mono overflow-x-auto leading-relaxed">
               {codeLines.join("\n")}
             </pre>
-          </div>
+          </div>,
         );
         inCode = false;
         codeLines = [];
@@ -540,19 +588,31 @@ function renderMarkdown(text) {
 
     // Headers
     if (line.startsWith("### ")) {
-      elements.push(<p key={key++} className="font-bold text-slate-900 mt-2 mb-1">{formatInline(line.slice(4))}</p>);
+      elements.push(
+        <p key={key++} className="font-bold text-slate-900 mt-2 mb-1">
+          {formatInline(line.slice(4))}
+        </p>,
+      );
     } else if (line.startsWith("## ")) {
-      elements.push(<p key={key++} className="font-bold text-slate-900 text-base mt-3 mb-1">{formatInline(line.slice(3))}</p>);
+      elements.push(
+        <p key={key++} className="font-bold text-slate-900 text-base mt-3 mb-1">
+          {formatInline(line.slice(3))}
+        </p>,
+      );
     } else if (line.startsWith("# ")) {
-      elements.push(<p key={key++} className="font-black text-slate-900 text-lg mt-3 mb-1">{formatInline(line.slice(2))}</p>);
+      elements.push(
+        <p key={key++} className="font-black text-slate-900 text-lg mt-3 mb-1">
+          {formatInline(line.slice(2))}
+        </p>,
+      );
     }
     // Bullet lists
-    else if (/^[\-\*]\s/.test(line)) {
+    else if (/^[-*]\s/.test(line)) {
       elements.push(
         <div key={key++} className="flex gap-2 ml-1">
           <span className="text-blue-400 shrink-0 mt-0.5">•</span>
           <span>{formatInline(line.slice(2))}</span>
-        </div>
+        </div>,
       );
     }
     // Numbered lists
@@ -560,9 +620,11 @@ function renderMarkdown(text) {
       const num = line.match(/^(\d+)\./)[1];
       elements.push(
         <div key={key++} className="flex gap-2 ml-1">
-          <span className="text-blue-500 font-bold shrink-0 mt-0.5 text-xs w-4 text-right">{num}.</span>
+          <span className="text-blue-500 font-bold shrink-0 mt-0.5 text-xs w-4 text-right">
+            {num}.
+          </span>
           <span>{formatInline(line.replace(/^\d+\.\s/, ""))}</span>
-        </div>
+        </div>,
       );
     }
     // Blockquotes
@@ -570,7 +632,7 @@ function renderMarkdown(text) {
       elements.push(
         <div key={key++} className="border-l-2 border-blue-300 pl-3 text-slate-500 italic my-1">
           {formatInline(line.slice(2))}
-        </div>
+        </div>,
       );
     }
     // Empty line = paragraph break
@@ -579,7 +641,12 @@ function renderMarkdown(text) {
     }
     // Normal text
     else {
-      elements.push(<span key={key++}>{formatted}{"\n"}</span>);
+      elements.push(
+        <span key={key++}>
+          {formatted}
+          {"\n"}
+        </span>,
+      );
     }
   }
 
@@ -595,7 +662,7 @@ function renderMarkdown(text) {
         <pre className="p-3 bg-slate-800 text-slate-200 text-xs font-mono overflow-x-auto leading-relaxed">
           {codeLines.join("\n")}
         </pre>
-      </div>
+      </div>,
     );
   }
 
@@ -639,13 +706,20 @@ function formatInline(text) {
 
     if (firstMatch.type === "code") {
       parts.push(
-        <code key={key++} className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-xs font-mono">
+        <code
+          key={key++}
+          className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-xs font-mono"
+        >
           {firstMatch.match[1]}
-        </code>
+        </code>,
       );
       remaining = remaining.slice(firstIndex + firstMatch.match[0].length);
     } else if (firstMatch.type === "bold") {
-      parts.push(<strong key={key++} className="font-bold">{firstMatch.match[1]}</strong>);
+      parts.push(
+        <strong key={key++} className="font-bold">
+          {firstMatch.match[1]}
+        </strong>,
+      );
       remaining = remaining.slice(firstIndex + firstMatch.match[0].length);
     }
   }
@@ -661,7 +735,9 @@ function MessageBubble({ message }) {
   const [showToolArgs, setShowToolArgs] = useState({});
 
   return (
-    <div className={`flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${isUser ? "flex-row-reverse" : ""}`}>
+    <div
+      className={`flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${isUser ? "flex-row-reverse" : ""}`}
+    >
       {/* Avatar */}
       <div
         className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center shadow-sm ${
@@ -691,7 +767,9 @@ function MessageBubble({ message }) {
             {showThinking && (
               <div className="mt-1.5 p-3 bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-100 rounded-xl text-xs text-purple-700 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto leading-relaxed">
                 {message.thinking}
-                {message.streaming && <span className="inline-block w-1.5 h-3.5 bg-purple-400 ml-0.5 animate-pulse rounded-sm" />}
+                {message.streaming && (
+                  <span className="inline-block w-1.5 h-3.5 bg-purple-400 ml-0.5 animate-pulse rounded-sm" />
+                )}
               </div>
             )}
           </div>
@@ -707,12 +785,14 @@ function MessageBubble({ message }) {
               return (
                 <div key={idx} className="text-left">
                   <button
-                    onClick={() => setShowToolArgs(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                    onClick={() => setShowToolArgs((prev) => ({ ...prev, [idx]: !prev[idx] }))}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl text-[11px] text-amber-700 font-mono hover:shadow-sm transition-all"
                   >
                     <Wrench size={11} className={message.streaming ? "animate-spin" : ""} />
                     <span className="font-bold">{name}</span>
-                    {args && <span className="text-amber-400 text-[9px]">{isExpanded ? "▼" : "▶"}</span>}
+                    {args && (
+                      <span className="text-amber-400 text-[9px]">{isExpanded ? "▼" : "▶"}</span>
+                    )}
                   </button>
                   {isExpanded && args && (
                     <pre className="mt-1 p-2 bg-slate-800 text-slate-200 text-[10px] font-mono rounded-lg overflow-x-auto max-h-32 overflow-y-auto">
@@ -726,16 +806,28 @@ function MessageBubble({ message }) {
         )}
 
         {/* Streaming "typing" indicator when no content yet */}
-        {message.streaming && !message.content && !message.thinking && message.toolCalls?.length === 0 && (
-          <div className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-xl">
-            <span className="text-xs text-slate-400 font-medium">Agent is thinking</span>
-            <span className="inline-flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-              <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-            </span>
-          </div>
-        )}
+        {message.streaming &&
+          !message.content &&
+          !message.thinking &&
+          message.toolCalls?.length === 0 && (
+            <div className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-xl">
+              <span className="text-xs text-slate-400 font-medium">Agent is thinking</span>
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+                  style={{ animationDelay: "0ms" }}
+                />
+                <span
+                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+                  style={{ animationDelay: "150ms" }}
+                />
+                <span
+                  className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+                  style={{ animationDelay: "300ms" }}
+                />
+              </span>
+            </div>
+          )}
 
         {/* Message content */}
         {message.content && (

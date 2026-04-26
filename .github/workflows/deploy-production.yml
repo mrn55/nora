@@ -173,6 +173,7 @@ jobs:
           done
 
           export NORA_ENV_FILE="$DEPLOY_ENV_FILE"
+          echo "Code update only: preserving compose volumes and provisioned agent Docker/K8s/VM instances."
           docker compose "${compose_args[@]}" up -d --build
           docker compose "${compose_args[@]}" ps
           REMOTE

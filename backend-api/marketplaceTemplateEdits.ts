@@ -21,11 +21,17 @@ function decodeMaybeString(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function stripAsciiControlCharacters(value) {
+  return Array.from(value)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join("");
+}
+
 function normalizeText(value, fallback = "", maxLength = 255) {
-  const normalized =
-    typeof value === "string"
-      ? value.replace(/[\x00-\x1f\x7f]/g, "").trim()
-      : "";
+  const normalized = typeof value === "string" ? stripAsciiControlCharacters(value).trim() : "";
   return (normalized || fallback).slice(0, maxLength);
 }
 
@@ -120,13 +126,9 @@ function buildMarketplaceTemplateUpdate(snapshot, listing, input = {}, options =
   const builtIn = options.builtIn === true || sourceType === "platform";
 
   const nameFallback = listing?.name || snapshot?.name || "Untitled Template";
-  const descriptionFallback =
-    listing?.description || snapshot?.description || "";
+  const descriptionFallback = listing?.description || snapshot?.description || "";
   const categoryFallback = listing?.category || "General";
-  const versionFallback = normalizePositiveInt(
-    listing?.current_version,
-    1
-  );
+  const versionFallback = normalizePositiveInt(listing?.current_version, 1);
 
   const nextName =
     input.name !== undefined
@@ -167,7 +169,7 @@ function buildMarketplaceTemplateUpdate(snapshot, listing, input = {}, options =
           ? normalizeTemplateKey(input.templateKey, snapshot?.template_key || null)
           : snapshot?.template_key || null,
       includeBootstrap: true,
-    }
+    },
   );
 
   const nextDefaults = {
@@ -185,21 +187,9 @@ function buildMarketplaceTemplateUpdate(snapshot, listing, input = {}, options =
 
       return normalizeBackend(currentDefaults.backend, currentDefaults.backend);
     })(),
-    vcpu: normalizePositiveInt(
-      input.vcpu,
-      currentDefaults.vcpu,
-      { min: 1, max: 128 }
-    ),
-    ram_mb: normalizePositiveInt(
-      input.ram_mb,
-      currentDefaults.ram_mb,
-      { min: 512, max: 1048576 }
-    ),
-    disk_gb: normalizePositiveInt(
-      input.disk_gb,
-      currentDefaults.disk_gb,
-      { min: 1, max: 32768 }
-    ),
+    vcpu: normalizePositiveInt(input.vcpu, currentDefaults.vcpu, { min: 1, max: 128 }),
+    ram_mb: normalizePositiveInt(input.ram_mb, currentDefaults.ram_mb, { min: 512, max: 1048576 }),
+    disk_gb: normalizePositiveInt(input.disk_gb, currentDefaults.disk_gb, { min: 1, max: 32768 }),
     image:
       input.image !== undefined
         ? normalizeImage(input.image, currentDefaults.image || null)
