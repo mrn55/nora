@@ -186,6 +186,57 @@ describe("openclaw channel catalog compatibility", () => {
     );
   });
 
+  it("retries QR login when the channel config restart briefly closes the gateway", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [{ id: "whatsapp", label: "WhatsApp" }],
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-connect-restart",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        restart: "requested",
+      })
+      .mockRejectedValueOnce(new Error("Gateway connection closed"))
+      .mockResolvedValueOnce({
+        qrDataUrl: "data:image/png;base64,qr-after-restart",
+        message: "Scan this QR in WhatsApp.",
+      });
+
+    const result = await connectOpenClawChannel(agent, "whatsapp", {
+      force: true,
+      timeoutMs: 30000,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      channel: "whatsapp",
+      restart: "requested",
+      qrDataUrl: "data:image/png;base64,qr-after-restart",
+    });
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      4,
+      agent,
+      "web.login.start",
+      {
+        force: true,
+        timeoutMs: 30000,
+      },
+      undefined,
+    );
+    expect(mockRpcCall).toHaveBeenNthCalledWith(
+      5,
+      agent,
+      "web.login.start",
+      {
+        force: true,
+        timeoutMs: 30000,
+      },
+      undefined,
+    );
+  });
+
   it("installs and restarts the WhatsApp provider when QR login is not loaded yet", async () => {
     mockRpcCall
       .mockResolvedValueOnce({

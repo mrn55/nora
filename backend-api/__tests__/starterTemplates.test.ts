@@ -24,13 +24,13 @@ describe("STARTER_TEMPLATES", () => {
     expect(template.name).toBe("Iris Instagram Manager");
     expect(filePathsFor("iris-instagram")).toEqual(
       expect.arrayContaining([
-        "AGENTS.md",
         "SOUL.md",
+        "TOOLS.md",
         "HEARTBEAT.md",
         "BOOTSTRAP.md",
         "BRAND.md",
         "README.md",
-      ])
+      ]),
     );
     expect(filePathsFor("iris-instagram")).not.toContain("manifest.json");
     expect(filePathsFor("iris-instagram")).not.toContain("openclaw.json");
@@ -38,7 +38,7 @@ describe("STARTER_TEMPLATES", () => {
 
     const brandFile = template.payload.files.find((file) => file.path === "BRAND.md");
     expect(decodeContentBase64(brandFile.contentBase64)).toContain(
-      "# BRAND.md — The Account Iris Manages"
+      "# BRAND.md — The Account Iris Manages",
     );
   });
 
@@ -49,14 +49,14 @@ describe("STARTER_TEMPLATES", () => {
     expect(template.name).toBe("Echo Personal Branding");
     expect(filePathsFor("personal-branding")).toEqual(
       expect.arrayContaining([
-        "AGENTS.md",
         "SOUL.md",
+        "TOOLS.md",
         "BOOTSTRAP.md",
         "PROFILE.md",
         "VOICE.md",
         "PLATFORMS.md",
         "README.md",
-      ])
+      ]),
     );
     expect(filePathsFor("personal-branding")).not.toContain("manifest.json");
     expect(filePathsFor("personal-branding")).not.toContain("openclaw.json");
@@ -64,7 +64,7 @@ describe("STARTER_TEMPLATES", () => {
 
     const voiceFile = template.payload.files.find((file) => file.path === "VOICE.md");
     expect(decodeContentBase64(voiceFile.contentBase64)).toContain(
-      "# VOICE.md — How the Operator Sounds"
+      "# VOICE.md — How the Operator Sounds",
     );
   });
 
@@ -86,7 +86,7 @@ describe("STARTER_TEMPLATES", () => {
         for (const disallowed of disallowedCredentialSetup) {
           if (file.content.includes(disallowed)) {
             throw new Error(
-              `${template.templateKey}/${file.path} contains disallowed credential setup: ${disallowed}`
+              `${template.templateKey}/${file.path} contains disallowed credential setup: ${disallowed}`,
             );
           }
         }

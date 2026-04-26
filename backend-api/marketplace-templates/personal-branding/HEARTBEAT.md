@@ -102,7 +102,7 @@ Draft a holding reply: "Thanks — let me come back to you with specifics." Rout
 Stop all scheduled activity. Ping operator immediately. Do not draft anything until the operator reviews.
 
 ### On "retrain voice" command
-Run the voice retrain workflow from AGENTS.md. Don't run other scheduled tasks during retrain.
+Run the voice retrain workflow from TOOLS.md. Don't run other scheduled tasks during retrain.
 
 ### On "rebootstrap" command
 Acknowledge, run BOOTSTRAP.md from step 1. Back up existing PROFILE.md and VOICE.md first as `PROFILE.backup-YYYY-MM-DD.md`.

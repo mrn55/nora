@@ -33,9 +33,13 @@ if [ -z "$env_file" ] || [ -z "$version" ] || [ -z "$commit" ]; then
   exit 1
 fi
 
+if [ ! -f "$env_file" ]; then
+  echo "env file does not exist: $env_file" >&2
+  echo "Run setup first or point DEPLOY_ENV_FILE at the existing production env file." >&2
+  exit 1
+fi
+
 env_dir="$(dirname "$env_file")"
-mkdir -p "$env_dir"
-touch "$env_file"
 
 tmp_file="$(mktemp "$env_dir/.nora-release-env.XXXXXX")"
 trap 'rm -f "$tmp_file"' EXIT

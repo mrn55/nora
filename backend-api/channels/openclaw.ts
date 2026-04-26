@@ -12,7 +12,14 @@ const OPENCLAW_QR_LOGIN_PROVIDER_INSTALLS = Object.freeze({
     packageSpec: "@openclaw/whatsapp",
   }),
 });
-const OPENCLAW_GATEWAY_RESTART_RETRY_DELAYS_MS = Object.freeze([0, 750, 1500, 3000]);
+const OPENCLAW_GATEWAY_RESTART_RETRY_DELAYS_MS = Object.freeze([
+  0,
+  750,
+  1500,
+  3000,
+  5000,
+  8000,
+]);
 const OPENCLAW_SELECTION_LABELS = Object.freeze({
   feishu: "Feishu/Lark (飞书)",
   googlechat: "Google Chat (Chat API)",
@@ -217,7 +224,7 @@ function isTransientGatewayRestartError(error) {
   const statusCode = Number(error?.statusCode || 0);
   if (statusCode >= 500) return true;
 
-  return /gateway|websocket|socket|connection|econnrefused|closed|unavailable|timed out/i.test(
+  return /gateway|websocket|socket|connection|not connected|econnrefused|closed|unavailable|timed out/i.test(
     String(error?.message || ""),
   );
 }
@@ -284,7 +291,12 @@ async function startLoginViaGateway(agent, options = {}) {
   });
 }
 
-async function startLoginAfterProviderInstall(agent, channelId, options = {}) {
+async function startLoginWithGatewayRetry(
+  agent,
+  channelId,
+  options = {},
+  { retryProviderUnavailable = false } = {},
+) {
   let lastError = null;
   for (const delayMs of OPENCLAW_GATEWAY_RESTART_RETRY_DELAYS_MS) {
     await sleep(delayMs);
@@ -293,7 +305,7 @@ async function startLoginAfterProviderInstall(agent, channelId, options = {}) {
     } catch (error) {
       lastError = error;
       if (
-        !isWebLoginProviderUnavailableError(error) &&
+        !(retryProviderUnavailable && isWebLoginProviderUnavailableError(error)) &&
         !isTransientGatewayRestartError(error)
       ) {
         throw error;
@@ -308,7 +320,7 @@ async function startLoginAfterProviderInstall(agent, channelId, options = {}) {
     );
   }
 
-  throw lastError || createHttpError(502, "OpenClaw QR login did not become available after plugin install.");
+  throw lastError || createHttpError(502, "OpenClaw QR login did not become available.");
 }
 
 function getConfigChannels(snapshot = {}) {
@@ -882,6 +894,9 @@ async function connectOpenClawChannel(agent, channelId, options = {}) {
     },
     { create: true },
   );
+  if (saveResult?.restart) {
+    evictGatewayConnection(agent);
+  }
   const loginResult = await startOpenClawChannelLogin(agent, channelId, options);
 
   return {
@@ -912,7 +927,7 @@ async function deleteOpenClawChannel(agent, channelId) {
 async function startOpenClawChannelLogin(agent, channelId, options = {}) {
   requireSupportedQrChannel(channelId);
   try {
-    return await startLoginViaGateway(agent, options);
+    return await startLoginWithGatewayRetry(agent, channelId, options);
   } catch (error) {
     if (!isWebLoginProviderUnavailableError(error)) {
       throw error;
@@ -921,7 +936,9 @@ async function startOpenClawChannelLogin(agent, channelId, options = {}) {
     if (!installed) {
       throw error;
     }
-    return await startLoginAfterProviderInstall(agent, channelId, options);
+    return await startLoginWithGatewayRetry(agent, channelId, options, {
+      retryProviderUnavailable: true,
+    });
   }
 }
 

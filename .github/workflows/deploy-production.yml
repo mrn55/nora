@@ -158,13 +158,26 @@ jobs:
             git pull --ff-only origin "$DEPLOY_REF"
           fi
 
+          if [ ! -f "$DEPLOY_ENV_FILE" ]; then
+            echo "Missing deploy env file: $DEPLOY_ENV_FILE" >&2
+            echo "Refusing to deploy with an empty generated env; run setup first or fix DEPLOY_ENV_FILE." >&2
+            exit 1
+          fi
+
+          for required_key in JWT_SECRET ENCRYPTION_KEY NEXTAUTH_SECRET DB_PASSWORD; do
+            if ! grep -Eq "^${required_key}=.+" "$DEPLOY_ENV_FILE"; then
+              echo "Deploy env file $DEPLOY_ENV_FILE is missing required key: $required_key" >&2
+              exit 1
+            fi
+          done
+
           bash infra/update-release-env.sh \
             "$DEPLOY_ENV_FILE" \
             "$TARGET_VERSION" \
             "$TARGET_COMMIT" \
             "$NORA_GITHUB_REPO"
 
-          compose_args=()
+          compose_args=(--env-file "$DEPLOY_ENV_FILE")
           IFS=':' read -r -a compose_files <<< "$DEPLOY_COMPOSE_FILES"
           for compose_file in "${compose_files[@]}"; do
             if [ -n "$compose_file" ]; then
@@ -176,6 +189,24 @@ jobs:
           echo "Code update only: preserving compose volumes and provisioned agent Docker/K8s/VM instances."
           docker compose "${compose_args[@]}" up -d --build
           docker compose "${compose_args[@]}" ps
+
+          echo "Waiting for backend-api health..."
+          for attempt in $(seq 1 30); do
+            if docker compose "${compose_args[@]}" exec -T backend-api \
+              node -e "require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"; then
+              echo "backend-api is healthy."
+              break
+            fi
+
+            if [ "$attempt" -eq 30 ]; then
+              echo "backend-api did not become healthy after deploy." >&2
+              docker compose "${compose_args[@]}" ps >&2 || true
+              docker compose "${compose_args[@]}" logs --tail=120 backend-api >&2 || true
+              exit 1
+            fi
+
+            sleep 3
+          done
           REMOTE
 
       - name: Deployment summary

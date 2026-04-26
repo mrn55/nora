@@ -9,7 +9,8 @@ One OpenClaw agent that runs your Instagram: content calendar, caption drafts, D
 ```
 ~/.openclaw/workspaces/iris-instagram/
 ├── SOUL.md          # Iris's identity, values, hard limits
-├── AGENTS.md        # Operating rules and workflows
+├── TOOLS.md         # Operating rules, tools, and workflows
+├── BOOTSTRAP.md     # First-run brand readback and setup checks
 ├── BRAND.md         # YOUR brand voice, audience, visual rules ← fill this in
 ├── HEARTBEAT.md     # Scheduled tasks (daily/weekly/monthly)
 ├── MEMORY.md        # Long-term memory, starts empty

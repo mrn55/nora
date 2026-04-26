@@ -40,7 +40,7 @@ If a post went up today:
 ### Sunday 17:00 — Week Planning
 1. Read the last 7 days of `./memory/` and `./trends/`.
 2. Read last week's `./memory/performance/YYYY-WW.md`.
-3. Draft next week's content calendar per the AGENTS workflow.
+3. Draft next week's content calendar per the TOOLS workflow.
 4. Save to `./calendar/YYYY-WW.md`.
 5. Send operator the plan for approval: angles, formats, publish days.
 6. Do not start drafting full captions until plan is approved.

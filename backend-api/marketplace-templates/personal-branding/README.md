@@ -17,7 +17,7 @@ One agent that helps you ghostwrite for yourself on X and LinkedIn. Learns your 
 ```
 ~/.openclaw/workspaces/echo-personal-brand/
 ├── SOUL.md          # Agent's identity (it's a ghostwriter, not a personality)
-├── AGENTS.md        # Operating rules and workflows
+├── TOOLS.md         # Operating rules, tools, and workflows
 ├── BOOTSTRAP.md     # The first-run onboarding script ← agent runs this automatically
 ├── PROFILE.md       # YOUR info (filled by bootstrap)
 ├── VOICE.md         # How you sound (built by bootstrap)
