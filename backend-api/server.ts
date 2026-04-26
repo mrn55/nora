@@ -815,23 +815,11 @@ gatewayUIAssetProxy.use("/agents/:agentId/hermes-ui", (req, res, next) => {
 
 async function proxyGatewayAsset(req, res) {
   try {
-    const db = require("./db");
-    const agentId = req.params.agentId;
-    const result = await db.query(
-      `SELECT host, gateway_host_port, gateway_host, gateway_port, status
-         FROM agents
-        WHERE id = $1`,
-      [agentId],
-    );
-    if (
-      !result.rows[0] ||
-      !isGatewayAvailableStatus(result.rows[0].status) ||
-      !hasGatewayEndpoint(result.rows[0])
-    ) {
-      return res.status(404).end();
-    }
+    const access = await resolveEmbedAccess(req, res);
+    if (!access) return;
+
     const gatewayPath = req.path || "/";
-    const targetUrl = `${gatewayUrlForAgent(result.rows[0], gatewayPath)}${req._parsedUrl?.search || ""}`;
+    const targetUrl = `${gatewayUrlForAgent(access.agent, gatewayPath)}${buildForwardedSearch(req)}`;
     const resp = await fetch(targetUrl, {
       method: req.method,
       headers: { Accept: req.headers.accept || "*/*", "Accept-Encoding": "identity" },
@@ -842,7 +830,7 @@ async function proxyGatewayAsset(req, res) {
     const body = await resp.arrayBuffer();
     res.send(Buffer.from(body));
   } catch {
-    res.status(502).end();
+    if (!res.headersSent) res.status(502).end();
   }
 }
 app.use(gatewayUIAssetProxy);

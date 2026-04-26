@@ -773,7 +773,7 @@ describe("gateway control-plane embed", () => {
     });
 
     const res = await request(app)
-      .get("/agents/agent-1/gateway/assets/app.js")
+      .get(`/agents/agent-1/gateway/assets/app.js?token=${encodeURIComponent(token)}`)
       .set("Host", "nora.test");
 
     expect(res.status).toBe(200);
@@ -802,7 +802,7 @@ describe("gateway control-plane embed", () => {
     });
 
     const res = await request(app)
-      .get("/agents/agent-1/gateway/assets/app.js")
+      .get(`/agents/agent-1/gateway/assets/app.js?token=${encodeURIComponent(token)}`)
       .set("Host", "nora.test");
 
     expect(res.status).toBe(200);
@@ -830,7 +830,7 @@ describe("gateway control-plane embed", () => {
     });
 
     const res = await request(app)
-      .get("/agents/agent-1/gateway/assets/app.js")
+      .get(`/agents/agent-1/gateway/assets/app.js?token=${encodeURIComponent(token)}`)
       .set("Host", "nora.test");
 
     expect(res.status).toBe(200);
@@ -852,7 +852,7 @@ describe("gateway control-plane embed", () => {
     });
 
     const res = await request(app)
-      .get("/agents/agent-1/gateway/assets/app.js")
+      .get(`/agents/agent-1/gateway/assets/app.js?token=${encodeURIComponent(token)}`)
       .set("Host", "nora.test");
 
     expect(res.status).toBe(404);
@@ -871,11 +871,55 @@ describe("gateway control-plane embed", () => {
     });
 
     const res = await request(app)
-      .get("/agents/agent-1/gateway/assets/app.js")
+      .get(`/agents/agent-1/gateway/assets/app.js?token=${encodeURIComponent(token)}`)
       .set("Host", "nora.test");
 
     expect(res.status).toBe(404);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects asset proxy access without an embed session or token so unauthenticated callers cannot fetch gateway bundles", async () => {
+    const res = await request(app)
+      .get("/agents/agent-1/gateway/assets/app.js")
+      .set("Host", "nora.test");
+
+    expect(res.status).toBe(401);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockDb.query).not.toHaveBeenCalled();
+  });
+
+  it("rejects asset proxy access when the embed cookie belongs to a user who does not own the agent", async () => {
+    const otherUserCookie = jwt.sign(
+      { id: "user-2", agentId: "agent-1", scope: "gateway-embed" },
+      JWT_SECRET,
+      { expiresIn: "15m", algorithm: "HS256" },
+    );
+    mockDb.query.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .get("/agents/agent-1/gateway/assets/app.js")
+      .set("Host", "nora.test")
+      .set("Cookie", `__nora_gateway_embed_agent-1=${otherUserCookie}`);
+
+    expect(res.status).toBe(404);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects asset proxy access when the embed cookie was minted for a different agent", async () => {
+    const wrongAgentCookie = jwt.sign(
+      { id: "user-1", agentId: "agent-2", scope: "gateway-embed" },
+      JWT_SECRET,
+      { expiresIn: "15m", algorithm: "HS256" },
+    );
+
+    const res = await request(app)
+      .get("/agents/agent-1/gateway/assets/app.js")
+      .set("Host", "nora.test")
+      .set("Cookie", `__nora_gateway_embed_agent-1=${wrongAgentCookie}`);
+
+    expect(res.status).toBe(401);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockDb.query).not.toHaveBeenCalled();
   });
 
   it("proxies embed-relative config and navigation paths via the embed session cookie", async () => {
