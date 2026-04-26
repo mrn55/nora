@@ -12,14 +12,7 @@ const OPENCLAW_QR_LOGIN_PROVIDER_INSTALLS = Object.freeze({
     packageSpec: "@openclaw/whatsapp",
   }),
 });
-const OPENCLAW_GATEWAY_RESTART_RETRY_DELAYS_MS = Object.freeze([
-  0,
-  750,
-  1500,
-  3000,
-  5000,
-  8000,
-]);
+const OPENCLAW_GATEWAY_RESTART_RETRY_DELAYS_MS = Object.freeze([0, 750, 1500, 3000, 5000, 8000]);
 const OPENCLAW_SELECTION_LABELS = Object.freeze({
   feishu: "Feishu/Lark (飞书)",
   googlechat: "Google Chat (Chat API)",
@@ -100,9 +93,7 @@ function restoreRedactedConfigValue(nextValue, currentValue) {
 
   if (Array.isArray(nextValue)) {
     const currentItems = Array.isArray(currentValue) ? currentValue : [];
-    return nextValue.map((entry, index) =>
-      restoreRedactedConfigValue(entry, currentItems[index]),
-    );
+    return nextValue.map((entry, index) => restoreRedactedConfigValue(entry, currentItems[index]));
   }
 
   if (isPlainObject(nextValue)) {
@@ -146,9 +137,11 @@ function normalizeSchemaType(value) {
 }
 
 function humanizeChannelId(channelId) {
-  return String(channelId || "")
-    .replace(/[-_]+/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase()) || "Channel";
+  return (
+    String(channelId || "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (match) => match.toUpperCase()) || "Channel"
+  );
 }
 
 function buildSelectionLabel(channelId, meta = {}) {
@@ -185,8 +178,17 @@ function assertOpenClawAgentReady(agent) {
   if (resolveAgentRuntimeFamily(agent) !== "openclaw") {
     throw createHttpError(409, "This agent does not use the OpenClaw runtime.");
   }
-  if (!OPENCLAW_RUNTIME_READY_STATUSES.has(String(agent?.status || "").trim().toLowerCase())) {
-    throw createHttpError(409, `OpenClaw channels are unavailable while the agent is ${agent?.status || "not ready"}.`);
+  if (
+    !OPENCLAW_RUNTIME_READY_STATUSES.has(
+      String(agent?.status || "")
+        .trim()
+        .toLowerCase(),
+    )
+  ) {
+    throw createHttpError(
+      409,
+      `OpenClaw channels are unavailable while the agent is ${agent?.status || "not ready"}.`,
+    );
   }
 }
 
@@ -194,7 +196,9 @@ function toGatewayError(error, fallbackMessage) {
   if (error?.statusCode) return error;
 
   const message = error?.message || fallbackMessage || "OpenClaw channel request failed";
-  const normalized = String(error?.code || "").trim().toUpperCase();
+  const normalized = String(error?.code || "")
+    .trim()
+    .toUpperCase();
 
   if (normalized === "INVALID_REQUEST") {
     return createHttpError(400, message);
@@ -543,7 +547,10 @@ async function readChannelSnapshot(agent) {
 function requireSnapshotHash(snapshot = {}) {
   const hash = typeof snapshot?.hash === "string" ? snapshot.hash.trim() : "";
   if (!hash) {
-    throw createHttpError(409, "OpenClaw config hash is unavailable. Reload the channel tab and retry.");
+    throw createHttpError(
+      409,
+      "OpenClaw config hash is unavailable. Reload the channel tab and retry.",
+    );
   }
   return hash;
 }
@@ -592,8 +599,7 @@ function buildFieldDefinition(basePath, child, lookup) {
   const options = resolveFieldOptions(schema);
   const key = relativeFieldKey(basePath, child.path);
   const resolvedType = normalizeSchemaType(schema.type || child.type);
-  const sensitive =
-    child?.hint?.sensitive === true || SECRET_LIKE_PATH_RE.test(key);
+  const sensitive = child?.hint?.sensitive === true || SECRET_LIKE_PATH_RE.test(key);
   const label = child?.hint?.label || key.split(".").slice(-1)[0];
   const help = child?.hint?.help || "";
   const placeholder = child?.hint?.placeholder || "";
@@ -616,7 +622,11 @@ function buildFieldDefinition(basePath, child, lookup) {
       ? lookup.children.find((entry) => entry.key === "*")
       : null;
     const itemType = normalizeSchemaType(item?.type);
-    if (item && !item.hasChildren && (!itemType || itemType === "string" || itemType === "integer" || itemType === "number")) {
+    if (
+      item &&
+      !item.hasChildren &&
+      (!itemType || itemType === "string" || itemType === "integer" || itemType === "number")
+    ) {
       return {
         key,
         label,
@@ -673,13 +683,7 @@ function buildFieldDefinition(basePath, child, lookup) {
 
   const format = typeof schema.format === "string" ? schema.format : "";
   const inputType =
-    format === "url"
-      ? "url"
-      : format === "email"
-        ? "email"
-        : sensitive
-          ? "password"
-          : "text";
+    format === "url" ? "url" : format === "email" ? "email" : sensitive ? "password" : "text";
 
   if (resolvedType == null && child.hasChildren) {
     return null;
@@ -859,10 +863,7 @@ async function saveOpenClawChannel(agent, channelId, input = {}, { create = fals
     : buildSeededChannelConfig(channelId, currentConfig);
 
   if (isPlainObject(input?.config)) {
-    nextConfig = deepMerge(
-      nextConfig,
-      restoreRedactedConfigValue(input.config, currentConfig),
-    );
+    nextConfig = deepMerge(nextConfig, restoreRedactedConfigValue(input.config, currentConfig));
   }
 
   if (typeof input?.enabled === "boolean") {
