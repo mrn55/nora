@@ -58,16 +58,11 @@ function normalizeUrl(value, fallback = DEFAULT_AGENT_HUB_SETTINGS.url) {
   }
 }
 
-function normalizeDeploymentDefaults(
-  input = {},
-  fallback = DEFAULT_DEPLOYMENT_DEFAULTS
-) {
+function normalizeDeploymentDefaults(input = {}, fallback = DEFAULT_DEPLOYMENT_DEFAULTS) {
   return {
     vcpu: parseInteger(input.vcpu ?? input.default_vcpu) ?? fallback.vcpu,
-    ram_mb:
-      parseInteger(input.ram_mb ?? input.default_ram_mb) ?? fallback.ram_mb,
-    disk_gb:
-      parseInteger(input.disk_gb ?? input.default_disk_gb) ?? fallback.disk_gb,
+    ram_mb: parseInteger(input.ram_mb ?? input.default_ram_mb) ?? fallback.ram_mb,
+    disk_gb: parseInteger(input.disk_gb ?? input.default_disk_gb) ?? fallback.disk_gb,
   };
 }
 
@@ -98,18 +93,12 @@ function isSystemBannerFeatureEnabled() {
   return parseBoolean(process.env.NORA_SYSTEM_BANNER_ENABLED, false);
 }
 
-function normalizeSystemBanner(
-  input = {},
-  fallback = DEFAULT_SYSTEM_BANNER
-) {
+function normalizeSystemBanner(input = {}, fallback = DEFAULT_SYSTEM_BANNER) {
   const requestedSeverity = normalizeText(
-    input.system_banner_severity ?? input.severity
+    input.system_banner_severity ?? input.severity,
   ).toLowerCase();
   return {
-    enabled: parseBoolean(
-      input.system_banner_enabled ?? input.enabled,
-      fallback.enabled
-    ),
+    enabled: parseBoolean(input.system_banner_enabled ?? input.enabled, fallback.enabled),
     severity: SYSTEM_BANNER_SEVERITIES.has(requestedSeverity)
       ? requestedSeverity
       : fallback.severity,
@@ -237,7 +226,7 @@ async function getDeploymentDefaults() {
     `SELECT default_vcpu, default_ram_mb, default_disk_gb
        FROM platform_settings
       WHERE singleton = TRUE
-      LIMIT 1`
+      LIMIT 1`,
   );
   return clampDeploymentDefaults(result.rows[0] || DEFAULT_DEPLOYMENT_DEFAULTS);
 }
@@ -250,12 +239,10 @@ async function getSystemBanner() {
             system_banner_message
        FROM platform_settings
       WHERE singleton = TRUE
-      LIMIT 1`
+      LIMIT 1`,
   );
 
-  return resolveSystemBannerPayload(
-    result.rows[0] || DEFAULT_SYSTEM_BANNER
-  );
+  return resolveSystemBannerPayload(result.rows[0] || DEFAULT_SYSTEM_BANNER);
 }
 
 async function getAgentHubSettings() {
@@ -288,7 +275,7 @@ async function updateDeploymentDefaults(defaults = {}, limits = {}) {
        default_disk_gb = EXCLUDED.default_disk_gb,
        updated_at = NOW()
      RETURNING default_vcpu, default_ram_mb, default_disk_gb`,
-    [clamped.vcpu, clamped.ram_mb, clamped.disk_gb]
+    [clamped.vcpu, clamped.ram_mb, clamped.disk_gb],
   );
 
   return clampDeploymentDefaults(result.rows[0] || clamped, limits);
@@ -316,7 +303,7 @@ async function updateSystemBanner(banner = {}) {
                system_banner_severity,
                system_banner_title,
                system_banner_message`,
-    [next.enabled, next.severity, next.title, next.message]
+    [next.enabled, next.severity, next.title, next.message],
   );
 
   return resolveSystemBannerPayload(result.rows[0] || next);

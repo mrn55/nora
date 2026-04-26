@@ -59,10 +59,7 @@ function parseFilename(headerValue, fallbackName) {
 
 async function downloadResponseAsFile(response, fallbackName) {
   const blob = await response.blob();
-  const filename = parseFilename(
-    response.headers.get("content-disposition"),
-    fallbackName
-  );
+  const filename = parseFilename(response.headers.get("content-disposition"), fallbackName);
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -82,9 +79,7 @@ function firstInspectableFile(detail) {
 }
 
 function buildEditableFiles(detail) {
-  const corePathSet = new Set(
-    (detail?.template?.coreFiles || []).map((file) => file.path)
-  );
+  const corePathSet = new Set((detail?.template?.coreFiles || []).map((file) => file.path));
 
   return (detail?.template?.files || []).map((file) => ({
     path: file.path,
@@ -169,7 +164,7 @@ export default function AgentHubTemplateDetail() {
       setSelectedFilePath((current) =>
         current && data.template?.files?.some((file) => file.path === current)
           ? current
-          : firstInspectableFile(data)
+          : firstInspectableFile(data),
       );
     } catch (error) {
       console.error(error);
@@ -294,7 +289,7 @@ export default function AgentHubTemplateDetail() {
     setEditor((current) => ({
       ...current,
       files: current.files.map((file, fileIndex) =>
-        fileIndex === index ? { ...file, ...patch } : file
+        fileIndex === index ? { ...file, ...patch } : file,
       ),
     }));
   }
@@ -356,7 +351,7 @@ export default function AgentHubTemplateDetail() {
       setSelectedFilePath((current) =>
         current && data.template?.files?.some((file) => file.path === current)
           ? current
-          : firstInspectableFile(data)
+          : firstInspectableFile(data),
       );
       setEditorOpen(false);
       toast.success("Agent Hub listing updated");
@@ -370,12 +365,9 @@ export default function AgentHubTemplateDetail() {
 
   const coreFiles = detail?.template?.coreFiles?.filter((file) => file.present) || [];
   const selectedFile =
-    detail?.template?.files?.find((file) => file.path === selectedFilePath) ||
-    coreFiles[0] ||
-    null;
+    detail?.template?.files?.find((file) => file.path === selectedFilePath) || coreFiles[0] || null;
   const corePathSet = new Set(coreFiles.map((file) => file.path));
-  const extraFiles =
-    detail?.template?.files?.filter((file) => !corePathSet.has(file.path)) || [];
+  const extraFiles = detail?.template?.files?.filter((file) => !corePathSet.has(file.path)) || [];
   const isOwner =
     detail?.source_type === "community" &&
     Boolean(currentUser?.id) &&
@@ -391,15 +383,13 @@ export default function AgentHubTemplateDetail() {
     STATUS_STYLES[detail?.status] || "bg-slate-100 text-slate-700 border-slate-200";
   const installActiveExecutionTarget = activeExecutionTargetFromConfig(
     backendConfig,
-    installExecutionTarget
+    installExecutionTarget,
   );
   const installActiveSandboxOption = activeSandboxOptionFromTarget(
     installActiveExecutionTarget,
-    installSandboxProfile
+    installSandboxProfile,
   );
-  const canInstall = Boolean(
-    backendConfig && installActiveSandboxOption?.available
-  );
+  const canInstall = Boolean(backendConfig && installActiveSandboxOption?.available);
 
   return (
     <Layout>
@@ -429,9 +419,7 @@ export default function AgentHubTemplateDetail() {
         ) : !detail ? (
           <div className="flex h-80 flex-col items-center justify-center rounded-[2.5rem] border border-dashed border-slate-200 bg-white text-center text-slate-400">
             <Bot size={34} className="mb-3 opacity-60" />
-            <p className="text-sm font-semibold text-slate-600">
-              Template not found.
-            </p>
+            <p className="text-sm font-semibold text-slate-600">Template not found.</p>
           </div>
         ) : (
           <>
@@ -444,13 +432,22 @@ export default function AgentHubTemplateDetail() {
                         "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]",
                         isPreset
                           ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
-                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
                       )}
                     >
                       {isPreset ? <ShieldCheck size={12} /> : <Users size={12} />}
-                      {isPreset ? "Platform Preset" : detail.remote ? "Community Template" : "Shared Template"}
+                      {isPreset
+                        ? "Platform Preset"
+                        : detail.remote
+                          ? "Community Template"
+                          : "Shared Template"}
                     </span>
-                    <span className={clsx("inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]", statusClass)}>
+                    <span
+                      className={clsx(
+                        "inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]",
+                        statusClass,
+                      )}
+                    >
                       {String(detail.status || "unknown").replace(/_/g, " ")}
                     </span>
                   </div>
@@ -510,14 +507,12 @@ export default function AgentHubTemplateDetail() {
                         OpenClaw core files included
                       </h2>
                       <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
-                        Inspect the markdown files that will be installed into the agent template. This view does not change download counts.
+                        Inspect the markdown files that will be installed into the agent template.
+                        This view does not change download counts.
                       </p>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
-                      <InfoMetric
-                        label="Sandbox"
-                        value={detail.defaults?.sandbox || "standard"}
-                      />
+                      <InfoMetric label="Sandbox" value={detail.defaults?.sandbox || "standard"} />
                       <InfoMetric
                         label="Specs"
                         value={`${detail.defaults?.vcpu || 2} vCPU / ${Math.round((detail.defaults?.ram_mb || 2048) / 1024)} GB / ${detail.defaults?.disk_gb || 20} GB`}
@@ -548,7 +543,7 @@ export default function AgentHubTemplateDetail() {
                             "w-full rounded-2xl border px-4 py-3 text-left transition-all",
                             selectedFilePath === file.path
                               ? "border-blue-500 bg-blue-50 text-blue-700"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                           )}
                         >
                           <p className="text-sm font-bold">{file.label}</p>
@@ -569,7 +564,7 @@ export default function AgentHubTemplateDetail() {
                                 "w-full rounded-2xl border px-4 py-3 text-left transition-all",
                                 selectedFilePath === file.path
                                   ? "border-slate-900 bg-slate-50 text-slate-900"
-                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                               )}
                             >
                               <p className="text-sm font-bold">{file.path}</p>
@@ -617,7 +612,9 @@ export default function AgentHubTemplateDetail() {
                           Update your listing and resubmit
                         </h2>
                         <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-                          Editing a shared listing updates the internal template immediately and refreshes community sync when that target is enabled. Core files stay pinned to the OpenClaw filenames, and extra files can be added or removed.
+                          Editing a shared listing updates the internal template immediately and
+                          refreshes community sync when that target is enabled. Core files stay
+                          pinned to the OpenClaw filenames, and extra files can be added or removed.
                         </p>
                       </div>
 
@@ -634,7 +631,11 @@ export default function AgentHubTemplateDetail() {
                           disabled={editorSaving}
                           className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
                         >
-                          {editorSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                          {editorSaving ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Save size={16} />
+                          )}
                           Save Changes
                         </button>
                       </div>
@@ -729,7 +730,7 @@ export default function AgentHubTemplateDetail() {
                                     "w-full rounded-2xl border px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500",
                                     file.isCore
                                       ? "border-slate-200 bg-slate-50 text-slate-500"
-                                      : "border-slate-200 bg-white text-slate-900"
+                                      : "border-slate-200 bg-white text-slate-900",
                                   )}
                                 />
                               </div>
@@ -816,7 +817,11 @@ export default function AgentHubTemplateDetail() {
                       disabled={downloading}
                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 transition-colors hover:bg-slate-50 disabled:opacity-50"
                     >
-                      {downloading ? <Loader2 size={16} className="animate-spin" /> : <ArrowDownToLine size={16} />}
+                      {downloading ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <ArrowDownToLine size={16} />
+                      )}
                       Download Template JSON
                     </button>
                     {showReport ? (
@@ -836,13 +841,31 @@ export default function AgentHubTemplateDetail() {
                     Metadata
                   </p>
                   <div className="mt-4 space-y-4 text-sm">
-                    <MetadataRow label="Source" value={isPreset ? "Platform preset" : detail.remote ? "Community" : "Internal shared"} />
-                    <MetadataRow label="Status" value={String(detail.status || "unknown").replace(/_/g, " ")} />
+                    <MetadataRow
+                      label="Source"
+                      value={
+                        isPreset
+                          ? "Platform preset"
+                          : detail.remote
+                            ? "Community"
+                            : "Internal shared"
+                      }
+                    />
+                    <MetadataRow
+                      label="Status"
+                      value={String(detail.status || "unknown").replace(/_/g, " ")}
+                    />
                     <MetadataRow label="Category" value={detail.category || "General"} />
                     <MetadataRow label="Price" value={detail.price || "Free"} />
-                    <MetadataRow label="Owner" value={detail.owner_name || detail.owner_email || "Nora"} />
+                    <MetadataRow
+                      label="Owner"
+                      value={detail.owner_name || detail.owner_email || "Nora"}
+                    />
                     <MetadataRow label="Version" value={`v${detail.current_version || 1}`} />
-                    <MetadataRow label="Template Key" value={detail.snapshot?.templateKey || "Not set"} />
+                    <MetadataRow
+                      label="Template Key"
+                      value={detail.snapshot?.templateKey || "Not set"}
+                    />
                     <MetadataRow label="Snapshot Kind" value={detail.snapshot?.kind || "unknown"} />
                   </div>
                 </section>
@@ -905,9 +928,7 @@ function HeroMetric({ icon: Icon, label, value }) {
 function InfoMetric({ label, value }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-        {label}
-      </p>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
       <p className="mt-2 text-sm font-bold text-slate-900">{value}</p>
     </div>
   );
@@ -916,9 +937,7 @@ function InfoMetric({ label, value }) {
 function MetadataRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-        {label}
-      </p>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
       <p className="max-w-[60%] text-right font-semibold text-slate-900">{value}</p>
     </div>
   );
@@ -931,12 +950,7 @@ type EditorFieldProps = {
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"];
 };
 
-function EditorField({
-  label,
-  value,
-  onChange,
-  inputMode = "text",
-}: EditorFieldProps) {
+function EditorField({ label, value, onChange, inputMode = "text" }: EditorFieldProps) {
   return (
     <label className="block">
       <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
@@ -1022,17 +1036,19 @@ function InstallTemplateDialog({
             <Plus size={18} className="text-blue-600" />
           </div>
           <div className="flex-1">
-            <h3
-              id="install-template-dialog-title"
-              className="text-lg font-bold text-slate-900"
-            >
+            <h3 id="install-template-dialog-title" className="text-lg font-bold text-slate-900">
               Install Template
             </h3>
             <p className="mt-1 text-sm leading-relaxed text-slate-500">
-              {item.name} will be turned into a new queued agent in your fleet, including the OpenClaw core markdown files shown on this page.
+              {item.name} will be turned into a new queued agent in your fleet, including the
+              OpenClaw core markdown files shown on this page.
             </p>
           </div>
-          <button onClick={onCancel} disabled={loading} className="text-slate-400 hover:text-slate-600">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="text-slate-400 hover:text-slate-600"
+          >
             <X size={18} />
           </button>
         </div>
@@ -1120,7 +1136,11 @@ function ReportListingDialog({
               Flag this community listing for admin review.
             </p>
           </div>
-          <button onClick={onCancel} disabled={loading} className="text-slate-400 hover:text-slate-600">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="text-slate-400 hover:text-slate-600"
+          >
             <X size={18} />
           </button>
         </div>

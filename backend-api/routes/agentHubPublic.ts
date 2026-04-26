@@ -114,10 +114,9 @@ router.get("/catalog/:id", async (req, res, next) => {
       !listing ||
       listing.source_type !== marketplace.LISTING_SOURCE_COMMUNITY ||
       listing.status !== marketplace.LISTING_STATUS_PUBLISHED ||
-      ![
-        marketplace.LISTING_SHARE_TARGET_COMMUNITY,
-        marketplace.LISTING_SHARE_TARGET_BOTH,
-      ].includes(listing.share_target)
+      ![marketplace.LISTING_SHARE_TARGET_COMMUNITY, marketplace.LISTING_SHARE_TARGET_BOTH].includes(
+        listing.share_target,
+      )
     ) {
       return res.status(404).json({ error: "Listing not found" });
     }

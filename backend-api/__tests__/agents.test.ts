@@ -792,7 +792,9 @@ describe("Hermes WebUI routes", () => {
     });
     expect(mockRunContainerCommand).toHaveBeenCalledTimes(1);
     expect(mockRunContainerCommand.mock.calls[0][1]).toContain("setsid");
-    expect(mockRunContainerCommand.mock.calls[0][1]).toContain('gosu hermes "$HERMES_BIN" dashboard');
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain(
+      'gosu hermes "$HERMES_BIN" dashboard',
+    );
     expect(mockRunContainerCommand.mock.calls[0][1]).not.toContain("hermes_cli.web_server");
   });
 
@@ -885,7 +887,9 @@ describe("Hermes WebUI routes", () => {
     });
     expect(mockRunContainerCommand).toHaveBeenCalledTimes(1);
     expect(mockRunContainerCommand.mock.calls[0][1]).toContain("setsid");
-    expect(mockRunContainerCommand.mock.calls[0][1]).toContain('gosu hermes "$HERMES_BIN" dashboard');
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain(
+      'gosu hermes "$HERMES_BIN" dashboard',
+    );
     expect(mockRunContainerCommand.mock.calls[0][1]).not.toContain("hermes_cli.web_server");
     expect(global.fetch).toHaveBeenNthCalledWith(
       4,

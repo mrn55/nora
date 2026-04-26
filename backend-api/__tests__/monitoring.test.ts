@@ -65,7 +65,7 @@ describe("monitoring metrics", () => {
       "waiting",
       "active",
       "completed",
-      "failed"
+      "failed",
     );
   });
 
@@ -104,13 +104,11 @@ describe("monitoring metrics", () => {
     expect(db.query).toHaveBeenNthCalledWith(
       1,
       "SELECT status, count(*)::int FROM agents WHERE user_id = $1 GROUP BY status",
-      ["user-1"]
+      ["user-1"],
     );
-    expect(db.query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("FROM deployments d"),
-      ["user-1"]
-    );
+    expect(db.query).toHaveBeenNthCalledWith(2, expect.stringContaining("FROM deployments d"), [
+      "user-1",
+    ]);
     expect(deployQueue.getJobCounts).not.toHaveBeenCalled();
   });
 
@@ -163,7 +161,7 @@ describe("monitoring metrics", () => {
         "admin_action_failed",
         expect.any(Date),
         expect.any(Date),
-      ])
+      ]),
     );
     expect(db.query).toHaveBeenNthCalledWith(
       3,
@@ -175,7 +173,7 @@ describe("monitoring metrics", () => {
         expect.any(Date),
         10,
         10,
-      ])
+      ]),
     );
   });
 
@@ -207,19 +205,14 @@ describe("monitoring metrics", () => {
         type: "agent_started",
       }),
     ]);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining("SELECT e.* FROM events e"),
-      ["user-1", "user-1", 25]
-    );
-    expect(db.query.mock.calls[0][0]).toContain(
-      "metadata #>> '{source,account,userId}' = $1"
-    );
-    expect(db.query.mock.calls[0][0]).toContain(
-      "metadata #>> '{agent,ownerUserId}' = $1"
-    );
-    expect(db.query.mock.calls[0][0]).toContain(
-      "scoped_agents.user_id = $2::uuid"
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining("SELECT e.* FROM events e"), [
+      "user-1",
+      "user-1",
+      25,
+    ]);
+    expect(db.query.mock.calls[0][0]).toContain("metadata #>> '{source,account,userId}' = $1");
+    expect(db.query.mock.calls[0][0]).toContain("metadata #>> '{agent,ownerUserId}' = $1");
+    expect(db.query.mock.calls[0][0]).toContain("scoped_agents.user_id = $2::uuid");
   });
 
   it("returns paged user events with available types", async () => {
@@ -274,13 +267,12 @@ describe("monitoring metrics", () => {
         "agent_hub_install",
         expect.any(Date),
         expect.any(Date),
-      ])
+      ]),
     );
-    expect(db.query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("SELECT DISTINCT e.type"),
-      ["user-1", "user-1"]
-    );
+    expect(db.query).toHaveBeenNthCalledWith(2, expect.stringContaining("SELECT DISTINCT e.type"), [
+      "user-1",
+      "user-1",
+    ]);
     expect(db.query).toHaveBeenNthCalledWith(
       3,
       expect.stringContaining("ORDER BY e.created_at DESC LIMIT"),
@@ -293,7 +285,7 @@ describe("monitoring metrics", () => {
         expect.any(Date),
         10,
         10,
-      ])
+      ]),
     );
     expect(db.query.mock.calls[0][0]).toContain("scoped_agents.user_id = $2::uuid");
     expect(db.query.mock.calls[2][0]).toContain("scoped_agents.user_id = $2::uuid");
@@ -308,11 +300,7 @@ describe("monitoring metrics", () => {
 
     expect(db.query).toHaveBeenCalledWith(
       "INSERT INTO events(type, message, metadata) VALUES($1, $2, $3)",
-      [
-        "maintenance_completed",
-        "Maintenance completed",
-        expect.any(String),
-      ]
+      ["maintenance_completed", "Maintenance completed", expect.any(String)],
     );
 
     const serializedMetadata = db.query.mock.calls[0][1][2];
@@ -325,7 +313,7 @@ describe("monitoring metrics", () => {
           service: "backend-api",
           label: "System · backend-api",
         }),
-      })
+      }),
     );
   });
 });

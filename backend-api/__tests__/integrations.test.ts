@@ -23,15 +23,17 @@ describe("integration secret handling", () => {
 
   it("redacts sensitive config and does not return access_token after create", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        id: "int-1",
-        agent_id: "agent-1",
-        provider: "github",
-        catalog_id: "github",
-        access_token: "enc(secret-token)",
-        config: '{"api_key":"enc(config-secret)","base_url":"https://api.github.com"}',
-        status: "active",
-      }],
+      rows: [
+        {
+          id: "int-1",
+          agent_id: "agent-1",
+          provider: "github",
+          catalog_id: "github",
+          access_token: "enc(secret-token)",
+          config: '{"api_key":"enc(config-secret)","base_url":"https://api.github.com"}',
+          status: "active",
+        },
+      ],
     });
 
     const result = await integrations.connectIntegration("agent-1", "github", "secret-token", {
@@ -131,7 +133,7 @@ describe("integration secret handling", () => {
           ],
         },
       ],
-      { reservedNames: new Set(["health_check"]) }
+      { reservedNames: new Set(["health_check"]) },
     );
 
     expect(tools).toEqual([
@@ -206,7 +208,7 @@ describe("integration secret handling", () => {
             expect.objectContaining({ key: "business_account_id", type: "text" }),
           ]),
         }),
-      ])
+      ]),
     );
   });
 });

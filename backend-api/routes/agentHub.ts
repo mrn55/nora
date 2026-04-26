@@ -787,7 +787,11 @@ router.patch(
     let finalListing = savedListing;
     if (shareTargetIncludesCommunity(nextShareTarget)) {
       const templatePayload = update.snapshot.config?.templatePayload || {};
-      const centralResult = await submitToCentralHub(savedListing, updatedSnapshot, templatePayload);
+      const centralResult = await submitToCentralHub(
+        savedListing,
+        updatedSnapshot,
+        templatePayload,
+      );
       finalListing =
         (await marketplace.updateCentralShareStatus(savedListing.id, {
           status: centralResult.status,

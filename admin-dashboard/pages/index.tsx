@@ -144,8 +144,8 @@ export default function AdminHome() {
               Admin control plane
             </h1>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Ops-first visibility for fleet health, queue pressure, user
-              management, and recent platform activity.
+              Ops-first visibility for fleet health, queue pressure, user management, and recent
+              platform activity.
             </p>
           </div>
 
@@ -200,10 +200,7 @@ export default function AdminHome() {
                     { label: "Completed", value: queue.completed ?? 0 },
                     { label: "Failed", value: queue.failed ?? 0 },
                   ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="rounded-[1.5rem] bg-slate-50 px-5 py-5"
-                    >
+                    <div key={item.label} className="rounded-[1.5rem] bg-slate-50 px-5 py-5">
                       <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
                         {item.label}
                       </p>
@@ -216,9 +213,7 @@ export default function AdminHome() {
               </section>
 
               <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-black tracking-tight text-slate-950">
-                  Attention now
-                </h2>
+                <h2 className="text-lg font-black tracking-tight text-slate-950">Attention now</h2>
                 <p className="mt-1 text-sm font-medium text-slate-500">
                   Quick triage shortcuts for the highest-value admin actions.
                 </p>
@@ -252,9 +247,7 @@ export default function AdminHome() {
                       className="flex items-center justify-between rounded-[1.5rem] border border-slate-200 px-4 py-4 transition-colors hover:border-red-200 hover:bg-red-50/50"
                     >
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {item.label}
-                        </p>
+                        <p className="text-sm font-semibold text-slate-900">{item.label}</p>
                         <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
                           Open relevant admin flow
                         </p>

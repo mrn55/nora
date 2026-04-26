@@ -80,7 +80,9 @@ function formatVersionLabel(version) {
 }
 
 function formatInstallMethod(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (!normalized || normalized === "source") return "Source checkout";
   return normalized
     .split(/[-_\s]+/)
@@ -178,9 +180,7 @@ export default function AdminSettingsPage() {
 
       const defaultsPayload = await defaultsRes.json().catch(() => ({}));
       if (!defaultsRes.ok) {
-        throw new Error(
-          defaultsPayload.error || "Failed to load deployment defaults"
-        );
+        throw new Error(defaultsPayload.error || "Failed to load deployment defaults");
       }
 
       setDefaults(defaultsPayload);
@@ -235,18 +235,15 @@ export default function AdminSettingsPage() {
   async function handleSave() {
     setSaving(true);
     try {
-      const response = await fetchWithAuth(
-        "/api/admin/settings/deployment-defaults",
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            vcpu: form.vcpu,
-            ram_mb: form.ram_mb,
-            disk_gb: form.disk_gb,
-          }),
-        }
-      );
+      const response = await fetchWithAuth("/api/admin/settings/deployment-defaults", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vcpu: form.vcpu,
+          ram_mb: form.ram_mb,
+          disk_gb: form.disk_gb,
+        }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload.error || "Failed to save deployment defaults");
@@ -326,9 +323,7 @@ export default function AdminSettingsPage() {
   const bannerFeatureEnabled = Boolean(systemBanner?.featureEnabled);
   const bannerPreviewTone = getBannerTone(bannerForm.severity);
   const persistedBannerTone = getBannerTone(systemBanner?.severity);
-  const bannerPreviewVisible = Boolean(
-    bannerForm.title.trim() || bannerForm.message.trim()
-  );
+  const bannerPreviewVisible = Boolean(bannerForm.title.trim() || bannerForm.message.trim());
 
   async function handleCopyUpgradeCommand() {
     const command = release?.manualUpgrade?.command;
@@ -365,9 +360,8 @@ export default function AdminSettingsPage() {
               Platform Settings
             </h1>
             <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-              Configure the platform release path, the global testing warning
-              banner, and the default CPU, RAM, and disk used for future
-              deployments.
+              Configure the platform release path, the global testing warning banner, and the
+              default CPU, RAM, and disk used for future deployments.
             </p>
           </div>
 
@@ -414,9 +408,9 @@ export default function AdminSettingsPage() {
                     Upgrade status and manual path
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-                    Track the running Nora build, review the latest announced
-                    release, and copy the current host-side upgrade command.
-                    Auto-upgrade is intentionally not enabled yet.
+                    Track the running Nora build, review the latest announced release, and copy the
+                    current host-side upgrade command. Auto-upgrade is intentionally not enabled
+                    yet.
                   </p>
                 </div>
 
@@ -500,8 +494,7 @@ export default function AdminSettingsPage() {
 
                   <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-black/30 p-4 text-sm font-semibold leading-relaxed text-slate-100">
                     <code>
-                      {release?.manualUpgrade?.command ||
-                        "Upgrade command not configured"}
+                      {release?.manualUpgrade?.command || "Upgrade command not configured"}
                     </code>
                   </pre>
                 </section>
@@ -519,9 +512,7 @@ export default function AdminSettingsPage() {
                         <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white">
                           {index + 1}
                         </span>
-                        <p className="text-sm font-medium leading-relaxed text-slate-600">
-                          {step}
-                        </p>
+                        <p className="text-sm font-medium leading-relaxed text-slate-600">{step}</p>
                       </div>
                     ))}
                   </div>
@@ -535,8 +526,8 @@ export default function AdminSettingsPage() {
                     <p
                       className={`mt-1 text-sm font-medium leading-relaxed ${releaseStatus.bodyClassName}`}
                     >
-                      Use the host command above until a dedicated updater
-                      service exists for this install path.
+                      Use the host command above until a dedicated updater service exists for this
+                      install path.
                     </p>
                   </div>
 
@@ -575,9 +566,9 @@ export default function AdminSettingsPage() {
                     Testing warning across all dashboards
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-                    Publish one top-of-page warning across the operator and admin
-                    surfaces. Use it for staging-only notices, maintenance
-                    warnings, or other global operator guidance.
+                    Publish one top-of-page warning across the operator and admin surfaces. Use it
+                    for staging-only notices, maintenance warnings, or other global operator
+                    guidance.
                   </p>
                 </div>
 
@@ -605,9 +596,8 @@ export default function AdminSettingsPage() {
                     Banner rendering is disabled by instance config.
                   </p>
                   <p className="mt-1 text-sm font-medium leading-relaxed text-amber-800/80">
-                    Set <code>NORA_SYSTEM_BANNER_ENABLED=true</code> in{" "}
-                    <code>.env</code> and restart Nora. You can still save the
-                    draft below before you flip the flag.
+                    Set <code>NORA_SYSTEM_BANNER_ENABLED=true</code> in <code>.env</code> and
+                    restart Nora. You can still save the draft below before you flip the flag.
                   </p>
                 </div>
               ) : null}
@@ -618,9 +608,7 @@ export default function AdminSettingsPage() {
                     <input
                       type="checkbox"
                       checked={bannerForm.enabled}
-                      onChange={(event) =>
-                        updateBannerField("enabled", event.target.checked)
-                      }
+                      onChange={(event) => updateBannerField("enabled", event.target.checked)}
                       className="mt-1 h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
                     />
                     <span>
@@ -628,9 +616,8 @@ export default function AdminSettingsPage() {
                         Show banner on every dashboard page
                       </span>
                       <span className="mt-1 block text-sm font-medium leading-relaxed text-slate-500">
-                        When enabled, this banner appears across <code>/app</code>{" "}
-                        and <code>/admin</code>. Operators cannot dismiss it per
-                        session.
+                        When enabled, this banner appears across <code>/app</code> and{" "}
+                        <code>/admin</code>. Operators cannot dismiss it per session.
                       </span>
                     </span>
                   </label>
@@ -642,9 +629,7 @@ export default function AdminSettingsPage() {
                       </span>
                       <select
                         value={bannerForm.severity}
-                        onChange={(event) =>
-                          updateBannerField("severity", event.target.value)
-                        }
+                        onChange={(event) => updateBannerField("severity", event.target.value)}
                         className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-red-300"
                       >
                         <option value="warning">Warning</option>
@@ -666,8 +651,8 @@ export default function AdminSettingsPage() {
                               : "Hidden until enabled"}
                       </p>
                       <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
-                        Save changes here to update the shared banner payload used
-                        by both dashboards.
+                        Save changes here to update the shared banner payload used by both
+                        dashboards.
                       </p>
                     </div>
                   </div>
@@ -680,9 +665,7 @@ export default function AdminSettingsPage() {
                       type="text"
                       maxLength={120}
                       value={bannerForm.title}
-                      onChange={(event) =>
-                        updateBannerField("title", event.target.value)
-                      }
+                      onChange={(event) => updateBannerField("title", event.target.value)}
                       placeholder="Testing warning"
                       className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-red-300"
                     />
@@ -696,9 +679,7 @@ export default function AdminSettingsPage() {
                       rows={4}
                       maxLength={600}
                       value={bannerForm.message}
-                      onChange={(event) =>
-                        updateBannerField("message", event.target.value)
-                      }
+                      onChange={(event) => updateBannerField("message", event.target.value)}
                       placeholder="This Nora control plane is a staging environment. Expect resets and avoid production workloads."
                       className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium leading-relaxed text-slate-900 outline-none focus:border-red-300"
                     />
@@ -718,8 +699,8 @@ export default function AdminSettingsPage() {
                       Save banner
                     </button>
                     <p className="text-xs font-medium text-slate-500">
-                      Best for maintenance notices, staging disclaimers, and
-                      other system-wide operator warnings.
+                      Best for maintenance notices, staging disclaimers, and other system-wide
+                      operator warnings.
                     </p>
                   </div>
                 </section>
@@ -765,8 +746,7 @@ export default function AdminSettingsPage() {
                       </div>
                     ) : (
                       <div className="mt-4 rounded-[1.5rem] border border-dashed border-slate-300 bg-white px-4 py-6 text-sm font-medium text-slate-500">
-                        Add a title and message to preview the banner before you
-                        save it.
+                        Add a title and message to preview the banner before you save it.
                       </div>
                     )}
                   </section>
@@ -906,9 +886,9 @@ export default function AdminSettingsPage() {
                     Resource defaults for new deployments
                   </h2>
                   <p className="mt-2 text-sm font-medium text-slate-500">
-                    These values are applied when a new deployment does not
-                    override its own resource request. PaaS plans also use these
-                    values as the per-agent resource bundle.
+                    These values are applied when a new deployment does not override its own
+                    resource request. PaaS plans also use these values as the per-agent resource
+                    bundle.
                   </p>
                 </div>
 
@@ -956,9 +936,7 @@ export default function AdminSettingsPage() {
                         min={field.min}
                         step="1"
                         value={form[field.key]}
-                        onChange={(event) =>
-                          updateField(field.key, event.target.value)
-                        }
+                        onChange={(event) => updateField(field.key, event.target.value)}
                         className="mt-3 w-full bg-transparent text-3xl font-black tracking-tight text-slate-950 outline-none"
                       />
                       <span className="mt-1 block text-xs font-medium text-slate-400">
@@ -969,13 +947,10 @@ export default function AdminSettingsPage() {
                 </div>
 
                 <div className="mt-6 rounded-[1.5rem] border border-red-100 bg-red-50 px-5 py-4">
-                  <p className="text-sm font-semibold text-red-700">
-                    New deployments only.
-                  </p>
+                  <p className="text-sm font-semibold text-red-700">New deployments only.</p>
                   <p className="mt-1 text-sm font-medium leading-relaxed text-red-700/80">
-                    Existing agents keep their saved resource specs. Changing
-                    this setting only affects future deploys that start from the
-                    platform default.
+                    Existing agents keep their saved resource specs. Changing this setting only
+                    affects future deploys that start from the platform default.
                   </p>
                 </div>
 
@@ -985,11 +960,7 @@ export default function AdminSettingsPage() {
                     disabled={saving || loading}
                     className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition-all hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {saving ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <Save size={16} />
-                    )}
+                    {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                     Save defaults
                   </button>
                 </div>
@@ -1017,9 +988,7 @@ export default function AdminSettingsPage() {
                         Platform mode
                       </p>
                       <p className="mt-2 text-lg font-black text-slate-950">
-                        {platformConfig?.mode === "paas"
-                          ? "PaaS"
-                          : "Self-hosted"}
+                        {platformConfig?.mode === "paas" ? "PaaS" : "Self-hosted"}
                       </p>
                     </div>
                   </div>
@@ -1030,17 +999,14 @@ export default function AdminSettingsPage() {
                     Behavior
                   </p>
                   <div className="mt-4 space-y-4 text-sm font-medium leading-relaxed text-slate-500">
+                    <p>Blank deploys in the operator dashboard initialize from these values.</p>
                     <p>
-                      Blank deploys in the operator dashboard initialize from
-                      these values.
+                      Explicit per-agent resource requests in self-hosted mode can still override
+                      them, subject to platform limits.
                     </p>
                     <p>
-                      Explicit per-agent resource requests in self-hosted mode
-                      can still override them, subject to platform limits.
-                    </p>
-                    <p>
-                      Admin changes do not rewrite existing agents, redeploys,
-                      or Agent Hub listing defaults already stored elsewhere.
+                      Admin changes do not rewrite existing agents, redeploys, or Agent Hub listing
+                      defaults already stored elsewhere.
                     </p>
                   </div>
                 </section>

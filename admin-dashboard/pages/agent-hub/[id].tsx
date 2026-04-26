@@ -33,9 +33,7 @@ const STATUS_STYLES = {
 };
 
 function buildEditableFiles(detail) {
-  const corePathSet = new Set(
-    (detail?.template?.coreFiles || []).map((file) => file.path)
-  );
+  const corePathSet = new Set((detail?.template?.coreFiles || []).map((file) => file.path));
 
   return (detail?.template?.files || []).map((file) => ({
     path: file.path,
@@ -97,7 +95,7 @@ export default function AgentHubAdminDetailPage() {
       setSelectedFilePath((current) =>
         current && payload.template?.files?.some((file) => file.path === current)
           ? current
-          : firstInspectableFile(payload)
+          : firstInspectableFile(payload),
       );
     } catch (error) {
       console.error("Failed to load listing detail:", error);
@@ -120,7 +118,7 @@ export default function AgentHubAdminDetailPage() {
     setForm((current) => ({
       ...current,
       files: current.files.map((file, fileIndex) =>
-        fileIndex === index ? { ...file, ...patch } : file
+        fileIndex === index ? { ...file, ...patch } : file,
       ),
     }));
   }
@@ -184,7 +182,7 @@ export default function AgentHubAdminDetailPage() {
       setSelectedFilePath((current) =>
         current && payload.template?.files?.some((file) => file.path === current)
           ? current
-          : firstInspectableFile(payload)
+          : firstInspectableFile(payload),
       );
       toast.success("Template updated");
     } catch (error) {
@@ -225,9 +223,7 @@ export default function AgentHubAdminDetailPage() {
   }
 
   const selectedFile =
-    form.files.find((file) => file.path === selectedFilePath) ||
-    form.files[0] ||
-    null;
+    form.files.find((file) => file.path === selectedFilePath) || form.files[0] || null;
   const statusClass =
     STATUS_STYLES[detail?.status] || "bg-slate-100 text-slate-700 border-slate-200";
   const sourceIsPlatform = detail?.source_type === "platform";
@@ -260,9 +256,7 @@ export default function AgentHubAdminDetailPage() {
         ) : !detail ? (
           <div className="flex h-80 flex-col items-center justify-center rounded-[2.5rem] border border-dashed border-slate-200 bg-white text-center text-slate-400">
             <ShoppingBag size={34} className="mb-3 opacity-60" />
-            <p className="text-sm font-semibold text-slate-600">
-              Template not found.
-            </p>
+            <p className="text-sm font-semibold text-slate-600">Template not found.</p>
           </div>
         ) : (
           <>
@@ -275,13 +269,18 @@ export default function AgentHubAdminDetailPage() {
                         "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]",
                         sourceIsPlatform
                           ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
-                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
                       )}
                     >
                       {sourceIsPlatform ? <ShieldCheck size={12} /> : <Users size={12} />}
                       {sourceIsPlatform ? "Platform Preset" : "Community Template"}
                     </span>
-                    <span className={clsx("inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]", statusClass)}>
+                    <span
+                      className={clsx(
+                        "inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]",
+                        statusClass,
+                      )}
+                    >
                       {String(detail.status || "unknown").replace(/_/g, " ")}
                     </span>
                   </div>
@@ -344,7 +343,7 @@ export default function AgentHubAdminDetailPage() {
                           "w-full rounded-2xl border px-4 py-3 text-left transition-all",
                           selectedFilePath === file.path
                             ? "border-red-300 bg-red-50 text-red-700"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                         )}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -426,7 +425,8 @@ export default function AgentHubAdminDetailPage() {
                         Template Settings
                       </p>
                       <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
-                        Edit listing metadata, runtime defaults, template key, version, and review notes.
+                        Edit listing metadata, runtime defaults, template key, version, and review
+                        notes.
                       </p>
                     </div>
                     <button
@@ -440,15 +440,27 @@ export default function AgentHubAdminDetailPage() {
                   </div>
 
                   <div className="mt-5 space-y-4">
-                    <Field label="Name" value={form.name} onChange={(value) => updateField("name", value)} />
+                    <Field
+                      label="Name"
+                      value={form.name}
+                      onChange={(value) => updateField("name", value)}
+                    />
                     <TextareaField
                       label="Description"
                       value={form.description}
                       onChange={(value) => updateField("description", value)}
                       rows={4}
                     />
-                    <Field label="Category" value={form.category} onChange={(value) => updateField("category", value)} />
-                    <Field label="Slug" value={form.slug} onChange={(value) => updateField("slug", value)} />
+                    <Field
+                      label="Category"
+                      value={form.category}
+                      onChange={(value) => updateField("category", value)}
+                    />
+                    <Field
+                      label="Slug"
+                      value={form.slug}
+                      onChange={(value) => updateField("slug", value)}
+                    />
                     <Field
                       label="Template Key"
                       value={form.templateKey}
@@ -496,7 +508,11 @@ export default function AgentHubAdminDetailPage() {
                         inputMode="numeric"
                       />
                     </div>
-                    <Field label="Image" value={form.image} onChange={(value) => updateField("image", value)} />
+                    <Field
+                      label="Image"
+                      value={form.image}
+                      onChange={(value) => updateField("image", value)}
+                    />
                     <TextareaField
                       label="Review Notes"
                       value={form.reviewNotes}
@@ -512,8 +528,14 @@ export default function AgentHubAdminDetailPage() {
                   </p>
                   <div className="mt-4 space-y-4 text-sm">
                     <MetadataRow label="Price" value={detail.price || "Free"} />
-                    <MetadataRow label="Owner" value={detail.owner_name || detail.owner_email || "Nora"} />
-                    <MetadataRow label="Bootstrap" value={detail.template?.hasBootstrap ? "Included" : "Not included"} />
+                    <MetadataRow
+                      label="Owner"
+                      value={detail.owner_name || detail.owner_email || "Nora"}
+                    />
+                    <MetadataRow
+                      label="Bootstrap"
+                      value={detail.template?.hasBootstrap ? "Included" : "Not included"}
+                    />
                     <MetadataRow label="Snapshot Id" value={detail.snapshot?.id || "unknown"} />
                     <MetadataRow label="Created" value={formatDate(detail.created_at)} />
                     <MetadataRow label="Updated" value={formatDate(detail.updated_at)} />
@@ -533,7 +555,8 @@ export default function AgentHubAdminDetailPage() {
                         >
                           <p className="text-sm font-bold text-slate-900">{report.reason}</p>
                           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                            {report.status} {report.reporter_email ? `· ${report.reporter_email}` : ""}
+                            {report.status}{" "}
+                            {report.reporter_email ? `· ${report.reporter_email}` : ""}
                           </p>
                           {report.details ? (
                             <p className="mt-2 text-sm text-slate-600">{report.details}</p>
@@ -563,7 +586,8 @@ export default function AgentHubAdminDetailPage() {
                     Core files and extras
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-                    Admin edits apply directly to the Agent Hub template. Core files stay pinned to the expected OpenClaw filenames; extra files can be added or removed here.
+                    Admin edits apply directly to the Agent Hub template. Core files stay pinned to
+                    the expected OpenClaw filenames; extra files can be added or removed here.
                   </p>
                 </div>
 
@@ -596,7 +620,7 @@ export default function AgentHubAdminDetailPage() {
                             "w-full rounded-2xl border px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-red-500",
                             file.isCore
                               ? "border-slate-200 bg-slate-50 text-slate-500"
-                              : "border-slate-200 bg-white text-slate-900"
+                              : "border-slate-200 bg-white text-slate-900",
                           )}
                         />
                       </div>
@@ -651,9 +675,7 @@ function HeroMetric({ icon: Icon, label, value }) {
 function MetadataRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-        {label}
-      </p>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
       <p className="max-w-[60%] text-right font-semibold text-slate-900">{value}</p>
     </div>
   );

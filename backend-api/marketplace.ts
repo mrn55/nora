@@ -333,10 +333,10 @@ async function upsertListing({
         normalizedShareTarget,
         normalizedLocalVisibility,
         normalizedCentralShareStatus,
-        centralListingId !== undefined ? normalizeText(centralListingId, "") || null : existing.central_listing_id,
-        centralLastSyncedAt !== undefined
-          ? centralLastSyncedAt
-          : existing.central_last_synced_at,
+        centralListingId !== undefined
+          ? normalizeText(centralListingId, "") || null
+          : existing.central_listing_id,
+        centralLastSyncedAt !== undefined ? centralLastSyncedAt : existing.central_last_synced_at,
         centralError !== undefined ? normalizeDescription(centralError) : existing.central_error,
         resolvedSlug,
         nextVersion,

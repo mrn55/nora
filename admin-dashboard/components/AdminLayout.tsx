@@ -89,10 +89,9 @@ export default function AdminLayout({ children }) {
   }
 
   const showReleaseBanner = Boolean(release?.updateAvailable);
-  const bannerIsCritical =
-    release?.severity === "critical" || release?.upgradeRequired;
+  const bannerIsCritical = release?.severity === "critical" || release?.upgradeRequired;
   const showSystemBanner = Boolean(
-    systemBanner?.active && systemBanner?.title && systemBanner?.message
+    systemBanner?.active && systemBanner?.title && systemBanner?.message,
   );
   const systemBannerCritical = systemBanner?.severity === "critical";
 
@@ -125,7 +124,7 @@ export default function AdminLayout({ children }) {
                     "inline-flex items-center gap-3 whitespace-nowrap rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
                     active
                       ? "bg-red-600 text-white shadow-lg shadow-red-600/20"
-                      : "text-slate-400 hover:bg-white/5 hover:text-white"
+                      : "text-slate-400 hover:bg-white/5 hover:text-white",
                   )}
                 >
                   <item.icon size={18} />
@@ -141,8 +140,8 @@ export default function AdminLayout({ children }) {
                 Guardrail
               </p>
               <p className="mt-2 text-sm font-medium leading-relaxed text-slate-300">
-                This surface is for admins only. Prefer inspect-first workflows,
-                then use lifecycle and delete actions deliberately.
+                This surface is for admins only. Prefer inspect-first workflows, then use lifecycle
+                and delete actions deliberately.
               </p>
             </div>
           </div>
@@ -166,7 +165,7 @@ export default function AdminLayout({ children }) {
                   "mb-6 overflow-hidden rounded-[2rem] border px-5 py-5 shadow-sm sm:px-6",
                   systemBannerCritical
                     ? "border-red-200 bg-red-50"
-                    : "border-amber-200 bg-amber-50"
+                    : "border-amber-200 bg-amber-50",
                 )}
               >
                 <div className="flex items-start gap-3">
@@ -175,7 +174,7 @@ export default function AdminLayout({ children }) {
                       "mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl",
                       systemBannerCritical
                         ? "bg-red-100 text-red-700"
-                        : "bg-amber-100 text-amber-700"
+                        : "bg-amber-100 text-amber-700",
                     )}
                   >
                     <TriangleAlert size={20} />
@@ -184,7 +183,7 @@ export default function AdminLayout({ children }) {
                     <p
                       className={clsx(
                         "text-[11px] font-black uppercase tracking-[0.18em]",
-                        systemBannerCritical ? "text-red-600" : "text-amber-700"
+                        systemBannerCritical ? "text-red-600" : "text-amber-700",
                       )}
                     >
                       {systemBannerCritical ? "System Critical" : "System Warning"}
@@ -195,9 +194,7 @@ export default function AdminLayout({ children }) {
                     <p
                       className={clsx(
                         "mt-2 max-w-4xl text-sm font-medium leading-relaxed",
-                        systemBannerCritical
-                          ? "text-red-700/80"
-                          : "text-amber-800/90"
+                        systemBannerCritical ? "text-red-700/80" : "text-amber-800/90",
                       )}
                     >
                       {systemBanner.message}
@@ -210,9 +207,7 @@ export default function AdminLayout({ children }) {
               <section
                 className={clsx(
                   "mb-6 overflow-hidden rounded-[2rem] border px-5 py-5 shadow-sm sm:px-6",
-                  bannerIsCritical
-                    ? "border-red-200 bg-red-50"
-                    : "border-amber-200 bg-amber-50"
+                  bannerIsCritical ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50",
                 )}
               >
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -220,12 +215,10 @@ export default function AdminLayout({ children }) {
                     <p
                       className={clsx(
                         "text-[11px] font-black uppercase tracking-[0.18em]",
-                        bannerIsCritical ? "text-red-600" : "text-amber-700"
+                        bannerIsCritical ? "text-red-600" : "text-amber-700",
                       )}
                     >
-                      {bannerIsCritical
-                        ? "Upgrade Required"
-                        : "New Nora Version Available"}
+                      {bannerIsCritical ? "Upgrade Required" : "New Nora Version Available"}
                     </p>
                     <h2 className="mt-2 text-xl font-black tracking-tight text-slate-950">
                       {release?.latestVersion
@@ -241,9 +234,7 @@ export default function AdminLayout({ children }) {
                           }. Review the upgrade guidance and use the host-side command to move to the latest release.`
                         : "This instance is not reporting its current version yet. Review the upgrade guidance and verify the host-side build before you upgrade."}
                       {release?.publishedAt
-                        ? ` Latest release announced ${formatDateTime(
-                            release.publishedAt
-                          )}.`
+                        ? ` Latest release announced ${formatDateTime(release.publishedAt)}.`
                         : ""}
                     </p>
                   </div>
@@ -255,7 +246,7 @@ export default function AdminLayout({ children }) {
                         "inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold shadow-sm transition-all hover:-translate-y-0.5",
                         bannerIsCritical
                           ? "bg-red-600 text-white hover:bg-red-700"
-                          : "bg-amber-500 text-slate-950 hover:bg-amber-400"
+                          : "bg-amber-500 text-slate-950 hover:bg-amber-400",
                       )}
                     >
                       Review upgrade

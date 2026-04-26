@@ -76,12 +76,12 @@ export default function AgentHubAdmin() {
       }
 
       setItems((current) =>
-        current.map((entry) => (entry.id === item.id ? { ...entry, ...payload } : entry))
+        current.map((entry) => (entry.id === item.id ? { ...entry, ...payload } : entry)),
       );
       setReports((current) =>
         current.map((entry) =>
-          entry.listing_id === item.id ? { ...entry, status: "resolved" } : entry
-        )
+          entry.listing_id === item.id ? { ...entry, status: "resolved" } : entry,
+        ),
       );
       toast.success(`Listing marked ${status.replace(/_/g, " ")}`);
     } catch (error) {
@@ -105,9 +105,7 @@ export default function AgentHubAdmin() {
         throw new Error(payload.error || "Failed to resolve report");
       }
 
-      setReports((current) =>
-        current.map((entry) => (entry.id === reportId ? payload : entry))
-      );
+      setReports((current) => current.map((entry) => (entry.id === reportId ? payload : entry)));
       toast.success(`Report marked ${payload.status}`);
     } catch (error) {
       console.error("Failed to resolve report:", error);
@@ -131,7 +129,8 @@ export default function AgentHubAdmin() {
               Agent Hub moderation
             </h1>
             <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-              Review community submissions, inspect real template details, approve or reject listings, and resolve user reports.
+              Review community submissions, inspect real template details, approve or reject
+              listings, and resolve user reports.
             </p>
           </div>
 
@@ -149,16 +148,8 @@ export default function AgentHubAdmin() {
 
         <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-5 flex flex-wrap items-center gap-3">
-            <MetricPill
-              icon={ShoppingBag}
-              label="Listings"
-              value={formatCount(items.length)}
-            />
-            <MetricPill
-              icon={Flag}
-              label="Open Reports"
-              value={formatCount(openReports.length)}
-            />
+            <MetricPill icon={ShoppingBag} label="Listings" value={formatCount(items.length)} />
+            <MetricPill icon={Flag} label="Open Reports" value={formatCount(openReports.length)} />
           </div>
 
           {loading ? (
@@ -199,26 +190,24 @@ export default function AgentHubAdmin() {
                   {items.map((item) => {
                     const sourceIsPlatform = item.source_type === "platform";
                     const statusClass =
-                      STATUS_STYLES[item.status] ||
-                      "bg-slate-100 text-slate-700 border-slate-200";
+                      STATUS_STYLES[item.status] || "bg-slate-100 text-slate-700 border-slate-200";
                     return (
-                      <tr
-                        key={item.id}
-                        className="border-b border-slate-100 last:border-b-0"
-                      >
+                      <tr key={item.id} className="border-b border-slate-100 last:border-b-0">
                         <td className="px-2 py-4">
                           <div>
-                            <p className="text-sm font-semibold text-slate-950">
-                              {item.name}
-                            </p>
+                            <p className="text-sm font-semibold text-slate-950">{item.name}</p>
                             <p className="mt-1 max-w-xl text-sm text-slate-500">
                               {item.description}
                             </p>
                             <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                              {item.category || "General"} {item.owner_email ? `· ${item.owner_email}` : ""}
+                              {item.category || "General"}{" "}
+                              {item.owner_email ? `· ${item.owner_email}` : ""}
                             </p>
                             <p className="mt-2 text-xs font-semibold text-slate-500">
-                              v{item.current_version || 1} · {item.template?.presentRequiredCoreCount || 0}/{item.template?.requiredCoreCount || 7} core files · {item.template?.fileCount || 0} files
+                              v{item.current_version || 1} ·{" "}
+                              {item.template?.presentRequiredCoreCount || 0}/
+                              {item.template?.requiredCoreCount || 7} core files ·{" "}
+                              {item.template?.fileCount || 0} files
                             </p>
                           </div>
                         </td>
@@ -238,7 +227,9 @@ export default function AgentHubAdmin() {
                           </div>
                         </td>
                         <td className="px-2 py-4">
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest ${statusClass}`}>
+                          <span
+                            className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest ${statusClass}`}
+                          >
                             {String(item.status || "unknown").replace(/_/g, " ")}
                           </span>
                         </td>
@@ -291,11 +282,10 @@ export default function AgentHubAdmin() {
 
         <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-5">
-            <h2 className="text-lg font-black tracking-tight text-slate-950">
-              User reports
-            </h2>
+            <h2 className="text-lg font-black tracking-tight text-slate-950">User reports</h2>
             <p className="mt-1 text-sm font-medium text-slate-500">
-              {formatCount(openReports.length)} open report{openReports.length === 1 ? "" : "s"} awaiting review.
+              {formatCount(openReports.length)} open report{openReports.length === 1 ? "" : "s"}{" "}
+              awaiting review.
             </p>
           </div>
 
@@ -311,15 +301,10 @@ export default function AgentHubAdmin() {
           ) : (
             <div className="space-y-3">
               {openReports.map((report) => (
-                <div
-                  key={report.id}
-                  className="rounded-[1.5rem] border border-slate-100 p-4"
-                >
+                <div key={report.id} className="rounded-[1.5rem] border border-slate-100 p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-2">
-                      <p className="text-sm font-semibold text-slate-950">
-                        {report.listing_name}
-                      </p>
+                      <p className="text-sm font-semibold text-slate-950">{report.listing_name}</p>
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
                         {report.reason} {report.reporter_email ? `· ${report.reporter_email}` : ""}
                       </p>
@@ -372,9 +357,7 @@ function MetricPill({ icon: Icon, label, value }) {
         <Icon size={18} className="text-slate-700" />
       </div>
       <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-          {label}
-        </p>
+        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
         <p className="text-base font-black text-slate-900">{value}</p>
       </div>
     </div>

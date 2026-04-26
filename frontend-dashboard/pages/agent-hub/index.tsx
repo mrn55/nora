@@ -70,10 +70,7 @@ function parseFilename(headerValue, fallbackName) {
 
 async function downloadResponseAsFile(response, fallbackName) {
   const blob = await response.blob();
-  const filename = parseFilename(
-    response.headers.get("content-disposition"),
-    fallbackName
-  );
+  const filename = parseFilename(response.headers.get("content-disposition"), fallbackName);
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -133,7 +130,7 @@ export default function AgentHub() {
           ? communityData.items
           : Array.isArray(communityData)
             ? communityData
-            : []
+            : [],
       );
       setCommunityHub(communityData?.hub || null);
       setMyItems(Array.isArray(mineData) ? mineData : []);
@@ -166,28 +163,20 @@ export default function AgentHub() {
         query: { ...router.query, tab: nextTab },
       },
       undefined,
-      { shallow: true }
+      { shallow: true },
     );
   }
 
   const presets = browseItems;
   const community = communityItems;
   const scopedItems =
-    activeTab === "presets"
-      ? presets
-      : activeTab === "community"
-        ? community
-        : myItems;
+    activeTab === "presets" ? presets : activeTab === "community" ? community : myItems;
   const categories = [
     "All",
-    ...Array.from(
-      new Set(scopedItems.map((item) => item.category).filter(Boolean))
-    ),
+    ...Array.from(new Set(scopedItems.map((item) => item.category).filter(Boolean))),
   ];
   const filteredItems =
-    category === "All"
-      ? scopedItems
-      : scopedItems.filter((item) => item.category === category);
+    category === "All" ? scopedItems : scopedItems.filter((item) => item.category === category);
 
   async function installAgent() {
     if (!selectedItem) return;
@@ -289,7 +278,9 @@ export default function AgentHub() {
               Install presets, browse community templates, and track your own shared agents.
             </h1>
             <p className="text-slate-400 font-medium text-lg leading-relaxed">
-              Platform starter packs and internal shares stay separated from the hosted community catalog. Inspect each template before installing, including the OpenClaw core files that will ship with it.
+              Platform starter packs and internal shares stay separated from the hosted community
+              catalog. Inspect each template before installing, including the OpenClaw core files
+              that will ship with it.
             </p>
           </div>
         </header>
@@ -305,7 +296,7 @@ export default function AgentHub() {
                     "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.14em] transition-all whitespace-nowrap ring-1",
                     activeTab === tab.id
                       ? "bg-blue-600 text-white ring-blue-500/50"
-                      : "bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 ring-slate-200"
+                      : "bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 ring-slate-200",
                   )}
                 >
                   {tab.label}
@@ -332,7 +323,8 @@ export default function AgentHub() {
                   Share from any agent detail page.
                 </p>
                 <p className="mt-1 text-sm text-blue-700/80">
-                  Nora exports template files only, strips wiring and secrets, and applies the admin default share target.
+                  Nora exports template files only, strips wiring and secrets, and applies the admin
+                  default share target.
                 </p>
               </div>
               <a
@@ -351,7 +343,7 @@ export default function AgentHub() {
                 "rounded-[1.5rem] border px-5 py-4 text-sm font-medium",
                 communityHub.error
                   ? "border-amber-200 bg-amber-50 text-amber-800"
-                  : "border-emerald-100 bg-emerald-50 text-emerald-800"
+                  : "border-emerald-100 bg-emerald-50 text-emerald-800",
               )}
             >
               {communityHub.error
@@ -369,7 +361,7 @@ export default function AgentHub() {
                   "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-[0.14em] transition-all whitespace-nowrap ring-1",
                   category === cat
                     ? "bg-slate-900 text-white ring-slate-900"
-                    : "bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 ring-slate-200"
+                    : "bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 ring-slate-200",
                 )}
               >
                 {cat}
@@ -479,17 +471,21 @@ function AgentHubCard({
               "w-16 h-16 rounded-[1.4rem] flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 group-hover:-rotate-3",
               isPreset
                 ? "bg-blue-50 text-blue-600 shadow-blue-500/10"
-                : "bg-emerald-50 text-emerald-600 shadow-emerald-500/10"
+                : "bg-emerald-50 text-emerald-600 shadow-emerald-500/10",
             )}
           >
-            {isPreset ? <ShieldCheck size={30} strokeWidth={2.4} /> : <Users size={30} strokeWidth={2.4} />}
+            {isPreset ? (
+              <ShieldCheck size={30} strokeWidth={2.4} />
+            ) : (
+              <Users size={30} strokeWidth={2.4} />
+            )}
           </div>
           <span
             className={clsx(
               "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
               isPreset
                 ? "bg-slate-100 text-slate-700 border-slate-200"
-                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                : "bg-emerald-50 text-emerald-700 border-emerald-200",
             )}
           >
             {isPreset ? "Preset" : item.remote ? "Community" : "Shared"}
@@ -573,7 +569,11 @@ function AgentHubCard({
             disabled={downloading}
             className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all text-sm font-bold text-slate-800 rounded-2xl disabled:opacity-50"
           >
-            {downloading ? <Loader2 size={16} className="animate-spin" /> : <ArrowDownToLine size={16} />}
+            {downloading ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <ArrowDownToLine size={16} />
+            )}
             Download
           </button>
           <button
@@ -601,8 +601,7 @@ function AgentHubCard({
 }
 
 function MyListingCard({ item, onDownload, downloading }) {
-  const statusClass =
-    STATUS_STYLES[item.status] || "bg-slate-100 text-slate-700 border-slate-200";
+  const statusClass = STATUS_STYLES[item.status] || "bg-slate-100 text-slate-700 border-slate-200";
 
   return (
     <div className="bg-white border border-slate-200 rounded-[2.3rem] shadow-sm overflow-hidden flex flex-col p-6 gap-5">
@@ -610,7 +609,12 @@ function MyListingCard({ item, onDownload, downloading }) {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-xl font-black text-slate-900">{item.name}</h3>
-            <span className={clsx("px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border", statusClass)}>
+            <span
+              className={clsx(
+                "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                statusClass,
+              )}
+            >
               {String(item.status || "unknown").replace(/_/g, " ")}
             </span>
           </div>
@@ -622,9 +626,7 @@ function MyListingCard({ item, onDownload, downloading }) {
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
             Version
           </p>
-          <p className="text-lg font-black text-slate-900">
-            v{item.current_version || 1}
-          </p>
+          <p className="text-lg font-black text-slate-900">v{item.current_version || 1}</p>
         </div>
       </div>
 
@@ -639,7 +641,9 @@ function MyListingCard({ item, onDownload, downloading }) {
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
             Share Target
           </p>
-          <p className="mt-1 font-semibold text-slate-900">{formatShareTarget(item.share_target)}</p>
+          <p className="mt-1 font-semibold text-slate-900">
+            {formatShareTarget(item.share_target)}
+          </p>
         </div>
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
@@ -651,7 +655,9 @@ function MyListingCard({ item, onDownload, downloading }) {
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
             Hub Sync
           </p>
-          <p className="mt-1 font-semibold text-slate-900">{formatCentralShareStatus(item.central_share_status)}</p>
+          <p className="mt-1 font-semibold text-slate-900">
+            {formatCentralShareStatus(item.central_share_status)}
+          </p>
         </div>
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
@@ -662,9 +668,7 @@ function MyListingCard({ item, onDownload, downloading }) {
           </p>
         </div>
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-            Files
-          </p>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Files</p>
           <p className="mt-1 font-semibold text-slate-900">{item.template?.fileCount || 0}</p>
         </div>
       </div>
@@ -680,9 +684,7 @@ function MyListingCard({ item, onDownload, downloading }) {
 
       {item.central_share_status === "failed" && item.central_error ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <p className="text-[10px] font-black uppercase tracking-[0.16em]">
-            Community Sync
-          </p>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em]">Community Sync</p>
           <p className="mt-2">{item.central_error}</p>
         </div>
       ) : null}
@@ -700,7 +702,11 @@ function MyListingCard({ item, onDownload, downloading }) {
           disabled={downloading}
           className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 hover:bg-blue-600 text-sm font-bold text-white rounded-2xl shadow-lg transition-colors disabled:opacity-50"
         >
-          {downloading ? <Loader2 size={16} className="animate-spin" /> : <ArrowDownToLine size={16} />}
+          {downloading ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <ArrowDownToLine size={16} />
+          )}
           Download Template
         </button>
         {item.source_agent_id && (
@@ -722,9 +728,7 @@ function TemplateInfoPill({ icon: Icon, label, value }) {
     <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
       <div className="flex items-center gap-2 text-slate-400">
         <Icon size={14} />
-        <p className="text-[10px] font-black uppercase tracking-[0.16em]">
-          {label}
-        </p>
+        <p className="text-[10px] font-black uppercase tracking-[0.16em]">{label}</p>
       </div>
       <p className="mt-2 text-sm font-bold text-slate-900">{value}</p>
     </div>
@@ -748,7 +752,11 @@ function InstallTemplateDialog({ item, name, loading, onCancel, onConfirm, onNam
               {item.name} will be turned into a new queued agent in your fleet.
             </p>
           </div>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 transition-colors" disabled={loading}>
+          <button
+            onClick={onCancel}
+            className="text-slate-400 hover:text-slate-600 transition-colors"
+            disabled={loading}
+          >
             <X size={18} />
           </button>
         </div>
@@ -760,7 +768,9 @@ function InstallTemplateDialog({ item, name, loading, onCancel, onConfirm, onNam
         </div>
 
         <div>
-          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">New Agent Name</label>
+          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">
+            New Agent Name
+          </label>
           <input
             type="text"
             value={name}
@@ -817,13 +827,19 @@ function ReportListingDialog({
               Flag {item.name} for admin review.
             </p>
           </div>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 transition-colors" disabled={loading}>
+          <button
+            onClick={onCancel}
+            className="text-slate-400 hover:text-slate-600 transition-colors"
+            disabled={loading}
+          >
             <X size={18} />
           </button>
         </div>
 
         <div>
-          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Reason</label>
+          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">
+            Reason
+          </label>
           <select
             value={reason}
             onChange={(e) => onReasonChange(e.target.value)}
@@ -838,7 +854,9 @@ function ReportListingDialog({
         </div>
 
         <div>
-          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Details</label>
+          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">
+            Details
+          </label>
           <textarea
             value={details}
             onChange={(e) => onDetailsChange(e.target.value)}

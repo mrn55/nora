@@ -51,7 +51,11 @@ function normalizeCatalogItem(item = {}) {
 }
 
 function normalizeCatalogPayload(payload = {}, { hubUrl = "", error = "" } = {}) {
-  const rawItems = Array.isArray(payload) ? payload : Array.isArray(payload.items) ? payload.items : [];
+  const rawItems = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.items)
+      ? payload.items
+      : [];
   const items = rawItems.map(normalizeCatalogItem).filter(Boolean);
   return {
     items,
@@ -87,7 +91,12 @@ async function fetchCatalog(settings = {}, options = {}) {
   }
 
   const now = Date.now();
-  if (!options.refresh && catalogCache.url === hubUrl && catalogCache.payload && catalogCache.expiresAt > now) {
+  if (
+    !options.refresh &&
+    catalogCache.url === hubUrl &&
+    catalogCache.payload &&
+    catalogCache.expiresAt > now
+  ) {
     return catalogCache.payload;
   }
 
@@ -103,7 +112,8 @@ async function fetchCatalog(settings = {}, options = {}) {
     };
     return normalized;
   } catch (error) {
-    const fallback = catalogCache.url === hubUrl && catalogCache.payload ? catalogCache.payload : null;
+    const fallback =
+      catalogCache.url === hubUrl && catalogCache.payload ? catalogCache.payload : null;
     return {
       items: fallback?.items || [],
       hub: {
@@ -120,7 +130,9 @@ async function fetchListing(settings = {}, remoteId) {
   if (!hubUrl) {
     throw new Error("Agent Hub URL is not configured");
   }
-  const normalizedRemoteId = String(remoteId || "").replace(/^hub:/, "").trim();
+  const normalizedRemoteId = String(remoteId || "")
+    .replace(/^hub:/, "")
+    .trim();
   if (!normalizedRemoteId) {
     throw new Error("remote listing id is required");
   }

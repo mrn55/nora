@@ -265,7 +265,9 @@ test.describe("Complete platform journey", () => {
     await authenticatePage(page, admin.token, "/app/monitoring");
     await expect(page.getByRole("heading", { name: /fleet monitoring/i })).toBeVisible();
     await expect(page.getByRole("link", { name: new RegExp(primaryAgent.name) })).toBeVisible();
-    await expect(page.getByText(/submitted for review/i)).toBeVisible();
+    await expect(
+      page.getByText(`Agent Hub listing "${publishedListing.name}" was shared`),
+    ).toBeVisible();
 
     await authenticatePage(page, admin.token, "/app/logs");
     await expect(page.getByRole("heading", { name: /account event log/i })).toBeVisible();
@@ -321,7 +323,7 @@ test.describe("Complete platform journey", () => {
     await expect(page.getByRole("button", { name: /approve listing/i })).toBeVisible();
 
     await page.goto("/admin/agent-hub", { waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: /agent-hub moderation/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /agent hub moderation/i })).toBeVisible();
 
     const listingRow = page.getByRole("row").filter({ hasText: publishedListing.name }).first();
     await expect(listingRow).toBeVisible();

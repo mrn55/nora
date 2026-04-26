@@ -1063,9 +1063,9 @@ function PublishAgentHubDialog({
               Share to Agent Hub
             </h3>
             <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-              Share <span className="font-semibold text-slate-700">{sourceName}</span> as a
-              reusable template. Nora shares only template files and runs a secret scan before
-              saving the listing.
+              Share <span className="font-semibold text-slate-700">{sourceName}</span> as a reusable
+              template. Nora shares only template files and runs a secret scan before saving the
+              listing.
             </p>
           </div>
           <button
