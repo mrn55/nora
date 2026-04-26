@@ -22,8 +22,7 @@ const {
 const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
 const {
   KNOWN_RUNTIME_FAMILIES,
-  buildBackendEnablementMessage,
-  getBackendStatus,
+  getRuntimeSelectionStatus,
   isKnownRuntimeFamily,
   normalizeRuntimeFamilyName,
 } = require("../../agent-runtime/lib/backendCatalog");
@@ -80,32 +79,22 @@ function normalizeRequestedRuntimeFamily(value) {
   return normalizeRuntimeFamilyName(value);
 }
 
-function assertSupportedRuntimeSelection(runtimeFields) {
-  if (runtimeFields?.runtime_family === "hermes") {
-    if (runtimeFields.deploy_target !== "docker") {
-      throw createHttpError("Hermes runtime is only supported on the Docker execution target.");
-    }
-    if (runtimeFields.sandbox_profile !== "standard") {
-      throw createHttpError("Hermes runtime currently supports only the Standard sandbox profile.");
-    }
-    return;
-  }
-  if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
-  if (runtimeFields.deploy_target === "docker") return;
-
-  throw createHttpError("NemoClaw sandbox is only supported on the Docker execution target.");
-}
-
-function assertBackendAvailable(backend) {
-  const status = getBackendStatus(backend);
+function assertRuntimeSelectionAvailable(runtimeFields) {
+  const status = getRuntimeSelectionStatus(runtimeFields);
   if (!status.enabled) {
-    throw createHttpError(buildBackendEnablementMessage(status));
+    if (status.issue && /does not support/i.test(status.issue)) {
+      throw createHttpError(status.issue);
+    }
+    throw createHttpError(
+      `Runtime selection is not enabled. Enable runtime_family=${status.runtimeFamily}, deploy_target=${status.deployTarget}, and sandbox_profile=${status.sandboxProfile} for this Nora control plane.`,
+    );
   }
   if (!status.configured) {
     throw createHttpError(
-      status.issue || `${status.label} is not configured for this Nora control plane.`,
+      status.issue || "Runtime selection is not configured for this Nora control plane.",
     );
   }
+  return status;
 }
 
 function resolveRequestedImage({
@@ -126,6 +115,7 @@ function resolveRequestedImage({
   }
 
   return getDefaultAgentImage({
+    runtime_family: runtimeFields?.runtime_family,
     backend: runtimeFields?.backend_type,
     deploy_target: runtimeFields?.deploy_target,
     sandbox_profile: runtimeFields?.sandbox_profile,
@@ -1029,8 +1019,7 @@ router.post(
       },
       fallback: currentRuntimeFields,
     });
-    assertSupportedRuntimeSelection(runtimeFields);
-    assertBackendAvailable(runtimeFields.backend_type);
+    assertRuntimeSelectionAvailable(runtimeFields);
     const containerName = resolveContainerName({
       requestedName: requestBody.container_name,
       currentName: agent.container_name,

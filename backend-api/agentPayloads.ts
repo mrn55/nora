@@ -6,11 +6,7 @@ const channels = require("./channels");
 const { runtimeUrlForAgent } = require("../agent-runtime/lib/agentEndpoints");
 const { NORA_INTEGRATIONS_CONTEXT_FILE } = require("../agent-runtime/lib/runtimeBootstrap");
 const { NORA_INTEGRATIONS_SKILL_FILE } = require("../agent-runtime/lib/integrationTools");
-const {
-  isKnownBackend,
-  normalizeBackendName,
-  sandboxForBackend,
-} = require("../agent-runtime/lib/backendCatalog");
+const { isKnownBackend, normalizeBackendName } = require("../agent-runtime/lib/backendCatalog");
 const { buildAgentRuntimeFields } = require("./agentRuntimeFields");
 
 const CLONE_MODES = new Set(["files_only", "files_plus_memory", "full_clone"]);
@@ -388,7 +384,7 @@ function containerNamePrefixForRuntime(runtimeSelection = {}) {
   if (runtimeFields.runtime_family === "hermes") {
     return "hermes-agent";
   }
-  if (normalizeBackendName(runtimeFields.backend_type) === "nemoclaw") {
+  if (runtimeFields.sandbox_profile === "nemoclaw") {
     return "oclaw-nemoclaw";
   }
   return "oclaw-agent";
@@ -686,14 +682,12 @@ function extractTemplatePayloadFromSnapshot(snapshot, options = {}) {
 function extractTemplateDefaultsFromSnapshot(snapshot) {
   const config = decodeMaybeString(snapshot?.config);
   const defaults = config.defaults && typeof config.defaults === "object" ? config.defaults : {};
-  const backend = isKnownBackend(defaults.backend)
-    ? normalizeBackendName(defaults.backend)
-    : defaults.sandbox === "nemoclaw"
-      ? "nemoclaw"
-      : null;
-  const sandbox = backend
-    ? sandboxForBackend(backend)
-    : defaults.sandbox === "nemoclaw"
+  const requestedBackend = defaults.deploy_target || defaults.deployTarget || defaults.backend;
+  const backend = isKnownBackend(requestedBackend) ? normalizeBackendName(requestedBackend) : null;
+  const sandbox =
+    String(defaults.sandbox_profile || defaults.sandboxProfile || defaults.sandbox || "")
+      .trim()
+      .toLowerCase() === "nemoclaw"
       ? "nemoclaw"
       : "standard";
 

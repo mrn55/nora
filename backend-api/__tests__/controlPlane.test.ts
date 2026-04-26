@@ -38,7 +38,18 @@ const RELEASE_ENV_KEYS = [
   "NORA_MANUAL_UPGRADE_COMMAND",
   "NORA_MANUAL_UPGRADE_STEPS",
 ];
-const CATALOG_ENV_KEYS = ["ENABLED_BACKENDS", "ENABLED_RUNTIME_FAMILIES", "KUBECONFIG"];
+const CATALOG_ENV_KEYS = [
+  "ENABLED_BACKENDS",
+  "ENABLED_RUNTIME_FAMILIES",
+  "ENABLED_SANDBOX_PROFILES",
+  "KUBECONFIG",
+  "PROXMOX_API_URL",
+  "PROXMOX_TOKEN_ID",
+  "PROXMOX_TOKEN_SECRET",
+  "PROXMOX_SSH_HOST",
+  "PROXMOX_SSH_USER",
+  "PROXMOX_SSH_PASSWORD",
+];
 
 jest.mock("../db", () => mockDb);
 jest.mock("../redisQueue", () => ({
@@ -245,7 +256,7 @@ describe("public platform config", () => {
               expect.objectContaining({
                 id: "nemoclaw",
                 label: "NemoClaw",
-                legacyBackendId: "nemoclaw",
+                legacyBackendId: "docker",
                 enabled: false,
                 maturityTier: "experimental",
               }),
@@ -272,13 +283,6 @@ describe("public platform config", () => {
             sandboxProfile: "standard",
             maturityTier: "ga",
           }),
-          expect.objectContaining({
-            id: "nemoclaw",
-            selectionType: "sandbox_profile",
-            deployTarget: "docker",
-            sandboxProfile: "nemoclaw",
-            maturityTier: "experimental",
-          }),
         ]),
       }),
     );
@@ -286,7 +290,8 @@ describe("public platform config", () => {
   });
 
   it("marks maturity tiers on deploy targets and surfaces Docker sandbox choices separately", async () => {
-    process.env.ENABLED_BACKENDS = "docker,nemoclaw,k8s,proxmox";
+    process.env.ENABLED_BACKENDS = "docker,k8s,proxmox";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
     process.env.KUBECONFIG = "/tmp/test-kubeconfig";
 
     const res = await request(app).get("/config/backends");
@@ -328,7 +333,7 @@ describe("public platform config", () => {
         enabled: true,
         available: true,
         maturityTier: "beta",
-        supportsSandboxSelection: false,
+        supportsSandboxSelection: true,
       }),
     );
 
@@ -336,13 +341,13 @@ describe("public platform config", () => {
       expect.objectContaining({
         enabled: true,
         available: false,
-        maturityTier: "blocked",
+        maturityTier: "beta",
         availableForOnboarding: false,
       }),
     );
   });
 
-  it("surfaces Hermes as a distinct runtime family and backend when ENABLED_RUNTIME_FAMILIES enables it", async () => {
+  it("surfaces Hermes as a runtime family on execution targets when ENABLED_RUNTIME_FAMILIES enables it", async () => {
     process.env.ENABLED_RUNTIME_FAMILIES = "hermes";
 
     const res = await request(app).get("/config/backends");
@@ -374,9 +379,9 @@ describe("public platform config", () => {
     expect(res.body.backends).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "hermes",
+          id: "docker",
           runtimeFamily: "hermes",
-          selectionType: "runtime_family",
+          selectionType: "deploy_target",
           deployTarget: "docker",
           sandboxProfile: "standard",
         }),
@@ -384,24 +389,18 @@ describe("public platform config", () => {
     );
   });
 
-  it("keeps legacy ENABLED_BACKENDS=hermes working for Hermes enablement", async () => {
+  it("ignores legacy ENABLED_BACKENDS=hermes instead of enabling Hermes", async () => {
     process.env.ENABLED_BACKENDS = "hermes";
 
     const res = await request(app).get("/config/backends");
 
     expect(res.status).toBe(200);
-    expect(res.body.defaultRuntimeFamily).toBe("hermes");
-    expect(res.body.backends).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "hermes",
-          runtimeFamily: "hermes",
-        }),
-      ]),
-    );
+    expect(res.body.defaultRuntimeFamily).toBe("openclaw");
+    expect(res.body.enabledBackends).toEqual(["docker"]);
+    expect(res.body.backends.map((backend) => backend.id)).not.toContain("hermes");
   });
 
-  it("fills in a default backend for runtime families that are enabled without an explicit backend", async () => {
+  it("does not synthesize backend ids for runtime families that lack a compatible enabled target", async () => {
     process.env.ENABLED_RUNTIME_FAMILIES = "openclaw,hermes";
     process.env.ENABLED_BACKENDS = "k8s";
     process.env.KUBECONFIG = "/tmp/test-kubeconfig";
@@ -409,21 +408,17 @@ describe("public platform config", () => {
     const res = await request(app).get("/config/backends");
 
     expect(res.status).toBe(200);
-    expect(res.body.enabledBackends).toEqual(["k8s", "hermes"]);
+    expect(res.body.enabledBackends).toEqual(["k8s"]);
     expect(res.body.runtimeFamilies).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "openclaw" }),
-        expect.objectContaining({ id: "hermes" }),
+        expect.objectContaining({ id: "hermes", available: false }),
       ]),
     );
     expect(res.body.backends).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "k8s",
-          enabled: true,
-        }),
-        expect.objectContaining({
-          id: "hermes",
           enabled: true,
         }),
         expect.objectContaining({
@@ -1006,7 +1001,7 @@ describe("Hermes dashboard embed", () => {
             runtime_host: "10.0.0.40",
             runtime_port: 8642,
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             status: "warning",
           },
         ],
@@ -1018,7 +1013,7 @@ describe("Hermes dashboard embed", () => {
             runtime_host: "10.0.0.40",
             runtime_port: 8642,
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             status: "warning",
           },
         ],
@@ -1030,7 +1025,7 @@ describe("Hermes dashboard embed", () => {
             runtime_host: "10.0.0.40",
             runtime_port: 8642,
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             status: "warning",
           },
         ],
@@ -1042,7 +1037,7 @@ describe("Hermes dashboard embed", () => {
             runtime_host: "10.0.0.40",
             runtime_port: 8642,
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             status: "warning",
           },
         ],
@@ -1153,7 +1148,7 @@ describe("Hermes dashboard embed", () => {
             runtime_host: "10.0.0.41",
             runtime_port: 8642,
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             status: "running",
           },
         ],
@@ -1165,7 +1160,7 @@ describe("Hermes dashboard embed", () => {
             runtime_host: "10.0.0.41",
             runtime_port: 8642,
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             status: "running",
           },
         ],
@@ -1218,7 +1213,7 @@ describe("Hermes dashboard embed", () => {
           runtime_host: "10.0.0.40",
           runtime_port: 8642,
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           status: "stopped",
         },
       ],

@@ -24,12 +24,10 @@ const {
 const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
 const {
   DEFAULT_RUNTIME_FAMILY,
-  buildBackendEnablementMessage,
-  getBackendStatus,
   getDefaultBackend,
+  getRuntimeSelectionStatus,
   isKnownBackend,
   normalizeBackendName,
-  sandboxForBackend,
 } = require("../../agent-runtime/lib/backendCatalog");
 const { asyncHandler } = require("../middleware/errorHandler");
 const {
@@ -117,6 +115,7 @@ function resolveRequestedImage({
   }
 
   return getDefaultAgentImage({
+    runtime_family: runtimeFields?.runtime_family,
     backend: runtimeFields?.backend_type,
     deploy_target: runtimeFields?.deploy_target,
     sandbox_profile: runtimeFields?.sandbox_profile,
@@ -126,22 +125,14 @@ function resolveRequestedImage({
 function resolveRequestedDeployTarget({
   requestedDeployTarget,
   requestedBackend,
-  requestedSandboxProfile = null,
   fallbackDeployTarget = null,
   fallbackBackend = null,
-  fallbackSandbox = "standard",
 } = {}) {
-  if (requestedSandboxProfile === "nemoclaw") {
-    return "nemoclaw";
-  }
   if (isKnownBackend(requestedDeployTarget)) {
     return normalizeBackendName(requestedDeployTarget);
   }
   if (isKnownBackend(requestedBackend)) {
     return normalizeBackendName(requestedBackend);
-  }
-  if (requestedSandboxProfile == null && fallbackSandbox === "nemoclaw") {
-    return "nemoclaw";
   }
   if (isKnownBackend(fallbackDeployTarget)) {
     return normalizeBackendName(fallbackDeployTarget);
@@ -149,7 +140,7 @@ function resolveRequestedDeployTarget({
   if (isKnownBackend(fallbackBackend)) {
     return normalizeBackendName(fallbackBackend);
   }
-  return getDefaultBackend(process.env, { sandbox: fallbackSandbox });
+  return getDefaultBackend(process.env);
 }
 
 function normalizeRequestedRuntimeFamily(value) {
@@ -160,26 +151,23 @@ function normalizeRequestedRuntimeFamily(value) {
   return normalized === DEFAULT_RUNTIME_FAMILY ? DEFAULT_RUNTIME_FAMILY : null;
 }
 
-function assertSupportedRuntimeSelection(runtimeFields) {
-  if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
-
-  if (runtimeFields.deploy_target !== "docker") {
-    const error = new Error("NemoClaw sandbox is only supported on the Docker execution target.");
-    error.statusCode = 400;
-    throw error;
-  }
-}
-
-function assertBackendAvailable(backend) {
-  const status = getBackendStatus(backend);
+function assertRuntimeSelectionAvailable(runtimeFields) {
+  const status = getRuntimeSelectionStatus(runtimeFields);
   if (!status.enabled) {
-    const error = new Error(buildBackendEnablementMessage(status));
+    if (status.issue && /does not support/i.test(status.issue)) {
+      const error = new Error(status.issue);
+      error.statusCode = 400;
+      throw error;
+    }
+    const error = new Error(
+      `Runtime selection is not enabled. Enable runtime_family=${status.runtimeFamily}, deploy_target=${status.deployTarget}, and sandbox_profile=${status.sandboxProfile} for this Nora control plane.`,
+    );
     error.statusCode = 400;
     throw error;
   }
   if (!status.configured) {
     const error = new Error(
-      status.issue || `${status.label} is not configured for this Nora control plane.`,
+      status.issue || "Runtime selection is not configured for this Nora control plane.",
     );
     error.statusCode = 400;
     throw error;
@@ -230,13 +218,12 @@ function buildSnapshotConfigFromAgent(agent, templatePayload) {
   const backend = resolveRequestedDeployTarget({
     fallbackDeployTarget: runtimeFields.deploy_target,
     fallbackBackend: runtimeFields.backend_type,
-    fallbackSandbox: runtimeFields.sandbox_profile,
   });
   return {
     kind: "community-template",
     defaults: {
       backend,
-      sandbox: sandboxForBackend(backend),
+      sandbox: runtimeFields.sandbox_profile,
       vcpu: agent.vcpu || 2,
       ram_mb: agent.ram_mb || 2048,
       disk_gb: agent.disk_gb || 20,
@@ -627,8 +614,7 @@ router.post(
       backend_type: defaults.backend || null,
       sandbox_type: defaults.sandbox || "standard",
     });
-    assertSupportedRuntimeSelection(runtimeFields);
-    assertBackendAvailable(runtimeFields.backend_type);
+    assertRuntimeSelectionAvailable(runtimeFields);
 
     const specs = resolveTemplateSpecs(defaults, limits.subscription || {});
     const image = resolveRequestedImage({

@@ -4,9 +4,9 @@
 // re-reads the file on startup (it does not hot-reload from disk).
 // Called whenever LLM provider keys or LLM-relevant integrations change.
 
-const db = require('./db');
+const db = require("./db");
 const containerManager = require("./containerManager");
-const llmProviders = require('./llmProviders');
+const llmProviders = require("./llmProviders");
 const { runtimeUrlForAgent } = require("../agent-runtime/lib/agentEndpoints");
 const { waitForAgentReadiness } = require("./healthChecks");
 const { resolveAgentRuntimeFamily } = require("./agentRuntimeFields");
@@ -14,27 +14,27 @@ const { shellSingleQuote } = require("../agent-runtime/lib/containerCommand");
 
 const providerCatalog = Array.isArray(llmProviders.PROVIDERS)
   ? llmProviders.PROVIDERS
-  : (typeof llmProviders.getAvailableProviders === 'function' ? llmProviders.getAvailableProviders() : []);
-const providerCatalogById = new Map(
-  providerCatalog.map((provider) => [provider.id, provider])
-);
+  : typeof llmProviders.getAvailableProviders === "function"
+    ? llmProviders.getAvailableProviders()
+    : [];
+const providerCatalogById = new Map(providerCatalog.map((provider) => [provider.id, provider]));
 const LLM_ENV_VARS = new Set(providerCatalog.map((provider) => provider.envVar).filter(Boolean));
 
 const PROVIDER_MODEL_DEFAULTS = {
-  anthropic: 'claude-sonnet-4-5',
-  openai:    'gpt-5.4',
-  google:    'gemini-3.1-pro-preview',
-  groq:      'llama-3.3-70b-versatile',
-  mistral:   'mistral-large-latest',
-  deepseek:  'deepseek-chat',
-  openrouter:'openrouter/auto',
-  together:  'together/moonshotai/Kimi-K2.5',
-  cohere:    'command-r-plus',
-  xai:       'grok-4',
-  nvidia:    'nvidia/nvidia/nemotron-3-super-120b-a12b',
-  moonshot:  'kimi-k2.5',
-  zai:       'glm-5',
-  minimax:   'MiniMax-M2.7',
+  anthropic: "claude-sonnet-4-5",
+  openai: "gpt-5.4",
+  google: "gemini-3.1-pro-preview",
+  groq: "llama-3.3-70b-versatile",
+  mistral: "mistral-large-latest",
+  deepseek: "deepseek-chat",
+  openrouter: "openrouter/auto",
+  together: "together/moonshotai/Kimi-K2.5",
+  cohere: "command-r-plus",
+  xai: "grok-4",
+  nvidia: "nvidia/nvidia/nemotron-3-super-120b-a12b",
+  moonshot: "kimi-k2.5",
+  zai: "glm-5",
+  minimax: "MiniMax-M2.7",
 };
 
 const HERMES_NATIVE_PROVIDER_MAP = Object.freeze({
@@ -62,20 +62,14 @@ const HERMES_CUSTOM_PROVIDER_BASE_URLS = Object.freeze({
   together: "https://api.together.xyz/v1",
 });
 
-const CONTAINER_EXEC_AUTH_FALLBACK_BACKENDS = new Set([
-  "docker",
-  "hermes",
-  "nemoclaw",
-]);
+const CONTAINER_EXEC_AUTH_FALLBACK_BACKENDS = new Set(["docker", "proxmox"]);
 
 function normalizeProviderConfig(config) {
   if (!config) return {};
   if (typeof config === "string") {
     try {
       const parsed = JSON.parse(config);
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? parsed
-        : {};
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch {
       return {};
     }
@@ -113,9 +107,7 @@ function buildHermesModelConfig(defaultProvider = null) {
       : PROVIDER_MODEL_DEFAULTS[providerId];
 
   if (!modelId) {
-    throw new Error(
-      `Default provider ${providerId} needs a saved model before Hermes can use it`
-    );
+    throw new Error(`Default provider ${providerId} needs a saved model before Hermes can use it`);
   }
 
   const nativeProvider = HERMES_NATIVE_PROVIDER_MAP[providerId];
@@ -128,15 +120,10 @@ function buildHermesModelConfig(defaultProvider = null) {
   }
 
   const resolvedBaseUrl =
-    savedBaseUrl ||
-    catalogBaseUrl ||
-    HERMES_CUSTOM_PROVIDER_BASE_URLS[providerId] ||
-    "";
+    savedBaseUrl || catalogBaseUrl || HERMES_CUSTOM_PROVIDER_BASE_URLS[providerId] || "";
 
   if (!resolvedBaseUrl) {
-    throw new Error(
-      `Provider ${providerId} needs a base URL before Hermes can use it`
-    );
+    throw new Error(`Provider ${providerId} needs a base URL before Hermes can use it`);
   }
 
   return {
@@ -150,7 +137,7 @@ function hasMeaningfulHermesModelConfig(modelConfig = {}) {
   return Boolean(
     String(modelConfig?.defaultModel || "").trim() ||
     String(modelConfig?.provider || "").trim() ||
-    String(modelConfig?.baseUrl || "").trim()
+    String(modelConfig?.baseUrl || "").trim(),
   );
 }
 
@@ -164,7 +151,7 @@ async function buildAuthProfilesForAgent(userId, agentId) {
   const llmKeys = await llmProviders.getProviderKeys(userId);
 
   try {
-    const { getIntegrationEnvVars } = require('./integrations');
+    const { getIntegrationEnvVars } = require("./integrations");
     const integrationEnvVars = await getIntegrationEnvVars(agentId);
     const integrationLlmKeys = {};
     for (const [envVar, value] of Object.entries(integrationEnvVars)) {
@@ -183,24 +170,24 @@ async function buildHermesManagedEnvForAgent(userId, agentId) {
   const llmKeys = await llmProviders.getProviderKeys(userId);
 
   try {
-    const { getIntegrationEnvVars } = require('./integrations');
+    const { getIntegrationEnvVars } = require("./integrations");
     const integrationEnvVars = await getIntegrationEnvVars(agentId);
     return Object.fromEntries(
       Object.entries({ ...integrationEnvVars, ...llmKeys }).filter(
-        ([key, value]) => key && value != null && String(value) !== ""
-      )
+        ([key, value]) => key && value != null && String(value) !== "",
+      ),
     );
   } catch {
     return Object.fromEntries(
       Object.entries(llmKeys).filter(
-        ([key, value]) => key && value != null && String(value) !== ""
-      )
+        ([key, value]) => key && value != null && String(value) !== "",
+      ),
     );
   }
 }
 
 function buildAuthProfilesWriteCommand(authProfiles) {
-  const authJsonB64 = Buffer.from(JSON.stringify(authProfiles)).toString('base64');
+  const authJsonB64 = Buffer.from(JSON.stringify(authProfiles)).toString("base64");
   return (
     `mkdir -p /root/.openclaw/agents/main/agent && ` +
     `printf '%s' '${authJsonB64}' | base64 -d > /root/.openclaw/agents/main/agent/auth-profiles.json && ` +
@@ -211,13 +198,10 @@ function buildAuthProfilesWriteCommand(authProfiles) {
 function buildDefaultModelCommand(defaultProvider = null) {
   if (!defaultProvider) return null;
 
-  const modelId =
-    defaultProvider.model || PROVIDER_MODEL_DEFAULTS[defaultProvider.provider];
+  const modelId = defaultProvider.model || PROVIDER_MODEL_DEFAULTS[defaultProvider.provider];
   if (!modelId) return null;
 
-  const fullModel = modelId.includes('/')
-    ? modelId
-    : `${defaultProvider.provider}/${modelId}`;
+  const fullModel = modelId.includes("/") ? modelId : `${defaultProvider.provider}/${modelId}`;
 
   return (
     'OPENCLAW_BIN="${OPENCLAW_CLI_PATH:-/usr/local/bin/openclaw}"; ' +
@@ -250,18 +234,18 @@ function buildHermesEnvWriteCommand(envVars = {}) {
     'end_marker="# <<< NORA MANAGED ENV <<<"',
     'tmp_file="$(mktemp)"',
     "if [ -f /opt/data/.env ]; then",
-    "  awk -v start=\"$start_marker\" -v end=\"$end_marker\" 'BEGIN{skip=0} $0==start {skip=1; next} $0==end {skip=0; next} !skip {print}' /opt/data/.env > \"$tmp_file\"",
+    '  awk -v start="$start_marker" -v end="$end_marker" \'BEGIN{skip=0} $0==start {skip=1; next} $0==end {skip=0; next} !skip {print}\' /opt/data/.env > "$tmp_file"',
     "else",
-    "  : > \"$tmp_file\"",
+    '  : > "$tmp_file"',
     "fi",
-    "if [ -s \"$tmp_file\" ]; then printf '\\n' >> \"$tmp_file\"; fi",
-    "printf '%s\\n' \"$start_marker\" >> \"$tmp_file\"",
+    'if [ -s "$tmp_file" ]; then printf \'\\n\' >> "$tmp_file"; fi',
+    'printf \'%s\\n\' "$start_marker" >> "$tmp_file"',
     `printf '%s' ${shellSingleQuote(blockB64)} | base64 -d >> "$tmp_file"`,
     "printf '\\n' >> \"$tmp_file\"",
-    "printf '%s\\n' \"$end_marker\" >> \"$tmp_file\"",
+    'printf \'%s\\n\' "$end_marker" >> "$tmp_file"',
     'chown hermes:hermes "$tmp_file" 2>/dev/null || true',
     'chmod 0600 "$tmp_file"',
-    "mv \"$tmp_file\" /opt/data/.env",
+    'mv "$tmp_file" /opt/data/.env',
     "chown hermes:hermes /opt/data/.env 2>/dev/null || true",
     "chmod 0600 /opt/data/.env",
   ].join("\n");
@@ -294,7 +278,9 @@ async function runRuntimeCommand(agent, command, { timeout = 30000 } = {}) {
   }
 
   if ((payload.exitCode || 0) !== 0) {
-    throw new Error(payload.stderr || payload.stdout || `Runtime command exited with code ${payload.exitCode}`);
+    throw new Error(
+      payload.stderr || payload.stdout || `Runtime command exited with code ${payload.exitCode}`,
+    );
   }
 
   return payload;
@@ -347,7 +333,10 @@ async function runContainerCommand(agent, command, { timeout = 30000 } = {}) {
   const inspectResult = await execResult.exec.inspect();
   const exitCode = inspectResult?.ExitCode ?? 0;
   if (exitCode !== 0) {
-    throw new Error(output.trim() || `Container command exited with code ${exitCode}`);
+    const error = new Error(output.trim() || `Container command exited with code ${exitCode}`);
+    error.exitCode = exitCode;
+    error.output = output;
+    throw error;
   }
 
   return { exitCode, output };
@@ -358,7 +347,9 @@ async function writeAuthToContainer(agent, authProfiles) {
   try {
     return await runRuntimeCommand(agent, command);
   } catch (error) {
-    const backendType = String(agent?.backend_type || "").trim().toLowerCase();
+    const backendType = String(agent?.backend_type || "")
+      .trim()
+      .toLowerCase();
     if (!CONTAINER_EXEC_AUTH_FALLBACK_BACKENDS.has(backendType)) {
       throw error;
     }
@@ -381,7 +372,7 @@ async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
   const onlyIfAuthPresent = Boolean(options?.onlyIfAuthPresent);
   const defaultRow = await db.query(
     "SELECT id, provider, model, config FROM llm_providers WHERE user_id = $1 AND is_default = true LIMIT 1",
-    [userId]
+    [userId],
   );
   const defaultProvider = defaultRow.rows[0] || null;
   const modelCommand = buildDefaultModelCommand(defaultProvider);
@@ -405,8 +396,10 @@ async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
   // Evict stale gateway connections — the restart will invalidate them
   let evictConnection;
   try {
-    evictConnection = require('./gatewayProxy').evictConnection;
-  } catch { /* gatewayProxy not available in worker context */ }
+    evictConnection = require("./gatewayProxy").evictConnection;
+  } catch {
+    /* gatewayProxy not available in worker context */
+  }
 
   const results = [];
   for (const agent of agents.rows) {
@@ -460,21 +453,19 @@ async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
         });
         if (!readiness.ok) {
           throw new Error(
-            `Agent runtime did not recover after env sync restart (${readiness.runtime?.error || "unreachable"})`
+            `Agent runtime did not recover after env sync restart (${readiness.runtime?.error || "unreachable"})`,
           );
         }
 
-        console.log(`[authSync] Synced Hermes env + model config to agent ${agent.id} (backend restarted)`);
-        results.push({ agentId: agent.id, status: 'synced' });
+        console.log(
+          `[authSync] Synced Hermes env + model config to agent ${agent.id} (backend restarted)`,
+        );
+        results.push({ agentId: agent.id, status: "synced" });
         continue;
       }
 
       const authProfiles = await buildAuthProfilesForAgent(userId, agent.id);
-      if (
-        onlyIfAuthPresent &&
-        Object.keys(authProfiles).length === 0 &&
-        !modelCommand
-      ) {
+      if (onlyIfAuthPresent && Object.keys(authProfiles).length === 0 && !modelCommand) {
         results.push({ agentId: agent.id, status: "skipped" });
         continue;
       }
@@ -491,7 +482,7 @@ async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
       });
       if (!readiness.ok) {
         throw new Error(
-          `Agent runtime did not recover after auth sync restart (${readiness.runtime?.error || readiness.gateway?.error || "unreachable"})`
+          `Agent runtime did not recover after auth sync restart (${readiness.runtime?.error || readiness.gateway?.error || "unreachable"})`,
         );
       }
 
@@ -500,10 +491,10 @@ async function syncAuthToUserAgents(userId, agentId = null, options = {}) {
       }
 
       console.log(`[authSync] Synced auth-profiles.json to agent ${agent.id} (backend restarted)`);
-      results.push({ agentId: agent.id, status: 'synced' });
+      results.push({ agentId: agent.id, status: "synced" });
     } catch (e) {
       console.warn(`[authSync] Failed for agent ${agent.id}:`, e.message);
-      results.push({ agentId: agent.id, status: 'failed', error: e.message });
+      results.push({ agentId: agent.id, status: "failed", error: e.message });
     }
   }
   return results;

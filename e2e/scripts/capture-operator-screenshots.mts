@@ -98,7 +98,7 @@ const HERMES_README_AGENT = {
   user_id: "readme-hermes-operator",
   name: "Hermes Ops Coordinator",
   status: "running",
-  backend_type: "hermes",
+  backend_type: "docker",
   runtime_family: "hermes",
   deploy_target: "docker",
   sandbox_profile: "standard",

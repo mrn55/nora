@@ -4,11 +4,7 @@ const {
   extractTemplateDefaultsFromSnapshot,
   extractTemplatePayloadFromSnapshot,
 } = require("./agentPayloads");
-const {
-  isKnownBackend,
-  normalizeBackendName,
-  sandboxForBackend,
-} = require("../agent-runtime/lib/backendCatalog");
+const { isKnownBackend, normalizeBackendName } = require("../agent-runtime/lib/backendCatalog");
 
 function decodeMaybeString(value) {
   if (typeof value === "string") {
@@ -179,12 +175,6 @@ function buildAgentHubTemplateUpdate(snapshot, listing, input = {}, options = {}
         return normalizeBackend(input.backend, currentDefaults.backend);
       }
 
-      if (sandboxInputProvided) {
-        const nextSandbox = normalizeSandbox(input.sandbox, currentDefaults.sandbox);
-        if (nextSandbox === "nemoclaw") return "nemoclaw";
-        if (currentDefaults.backend === "nemoclaw") return null;
-      }
-
       return normalizeBackend(currentDefaults.backend, currentDefaults.backend);
     })(),
     vcpu: normalizePositiveInt(input.vcpu, currentDefaults.vcpu, { min: 1, max: 128 }),
@@ -195,11 +185,9 @@ function buildAgentHubTemplateUpdate(snapshot, listing, input = {}, options = {}
         ? normalizeImage(input.image, currentDefaults.image || null)
         : currentDefaults.image || null,
   };
-  nextDefaults.sandbox = nextDefaults.backend
-    ? sandboxForBackend(nextDefaults.backend)
-    : sandboxInputProvided
-      ? normalizeSandbox(input.sandbox, currentDefaults.sandbox)
-      : currentDefaults.sandbox;
+  nextDefaults.sandbox = sandboxInputProvided
+    ? normalizeSandbox(input.sandbox, currentDefaults.sandbox)
+    : currentDefaults.sandbox;
 
   return {
     listing: {

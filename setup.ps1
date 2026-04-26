@@ -450,7 +450,8 @@ Write-Header "Deploy Backends"
 $DOCKER_BACKEND_ENABLED = $true
 $K8S_BACKEND_ENABLED = $false
 $PROXMOX_BACKEND_ENABLED = $false
-$NEMOCLAW_BACKEND_ENABLED = $false
+$HERMES_RUNTIME_ENABLED = $false
+$NEMOCLAW_SANDBOX_ENABLED = $false
 $K8S_NAMESPACE = "openclaw-agents"
 $K8S_EXPOSURE_MODE = "cluster-ip"
 $K8S_RUNTIME_NODE_PORT = ""
@@ -460,7 +461,15 @@ $PROXMOX_API_URL = ""
 $PROXMOX_TOKEN_ID = ""
 $PROXMOX_TOKEN_SECRET = ""
 $PROXMOX_NODE = "pve"
-$PROXMOX_TEMPLATE = "ubuntu-22.04-standard"
+$PROXMOX_TEMPLATE = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+$PROXMOX_HERMES_TEMPLATE = ""
+$PROXMOX_NEMOCLAW_TEMPLATE = ""
+$PROXMOX_ROOTFS_STORAGE = "local-lvm"
+$PROXMOX_BRIDGE = "vmbr0"
+$PROXMOX_SSH_HOST = ""
+$PROXMOX_SSH_USER = "root"
+$PROXMOX_SSH_PRIVATE_KEY_PATH = ""
+$PROXMOX_SSH_PASSWORD = ""
 $NVIDIA_API_KEY = ""
 
 $dockerBackendAnswer = Read-Host "  Enable Docker backend for local socket provisioning? [Y/n]"
@@ -488,32 +497,52 @@ if ($proxmoxBackendAnswer -match '^[Yy]$') {
     $PROXMOX_TOKEN_SECRET = Read-Host "  Proxmox Token Secret"
     $input = Read-Host "  Proxmox Node [pve]"
     if ($input) { $PROXMOX_NODE = $input }
-    $input = Read-Host "  Proxmox Template [ubuntu-22.04-standard]"
+    $input = Read-Host "  Proxmox OpenClaw template [local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst]"
     if ($input) { $PROXMOX_TEMPLATE = $input }
+    $PROXMOX_HERMES_TEMPLATE = Read-Host "  Proxmox Hermes template [optional, required for Hermes + Proxmox]"
+    $PROXMOX_NEMOCLAW_TEMPLATE = Read-Host "  Proxmox NemoClaw template [optional, required for NemoClaw + Proxmox]"
+    $input = Read-Host "  Proxmox rootfs storage [local-lvm]"
+    if ($input) { $PROXMOX_ROOTFS_STORAGE = $input }
+    $input = Read-Host "  Proxmox network bridge [vmbr0]"
+    if ($input) { $PROXMOX_BRIDGE = $input }
+    $PROXMOX_SSH_HOST = Read-Host "  Proxmox SSH host for pct bootstrap"
+    $input = Read-Host "  Proxmox SSH user [root]"
+    if ($input) { $PROXMOX_SSH_USER = $input }
+    $PROXMOX_SSH_PRIVATE_KEY_PATH = Read-Host "  Proxmox SSH private key path [optional]"
+    if (-not $PROXMOX_SSH_PRIVATE_KEY_PATH) {
+        $PROXMOX_SSH_PASSWORD = Read-Host "  Proxmox SSH password [optional]"
+    }
     Write-Ok "Proxmox backend configured"
 } else {
     Write-Info "Proxmox backend disabled"
 }
 
-$nemoclawBackendAnswer = Read-Host "  Enable NemoClaw backend? [y/N]"
-if ($nemoclawBackendAnswer -match '^[Yy]$') {
-    $NEMOCLAW_BACKEND_ENABLED = $true
+$hermesRuntimeAnswer = Read-Host "  Enable Hermes runtime family? [y/N]"
+if ($hermesRuntimeAnswer -match '^[Yy]$') {
+    $HERMES_RUNTIME_ENABLED = $true
+    Write-Ok "Hermes runtime family enabled"
+} else {
+    Write-Info "Hermes runtime family disabled"
+}
+
+$nemoclawSandboxAnswer = Read-Host "  Enable NemoClaw sandbox profile? [y/N]"
+if ($nemoclawSandboxAnswer -match '^[Yy]$') {
+    $NEMOCLAW_SANDBOX_ENABLED = $true
     $nvidiaKey = Read-Host "  NVIDIA API key [optional during setup]"
     if ($nvidiaKey) {
         $NVIDIA_API_KEY = $nvidiaKey
-        Write-Ok "NemoClaw backend enabled with NVIDIA API key"
+        Write-Ok "NemoClaw sandbox profile enabled with NVIDIA API key"
     } else {
         Write-Warn "NemoClaw enabled without NVIDIA_API_KEY — add it to .env later if needed"
     }
 } else {
-    Write-Info "NemoClaw backend disabled"
+    Write-Info "NemoClaw sandbox profile disabled"
 }
 
 $enabledBackends = @()
 if ($DOCKER_BACKEND_ENABLED) { $enabledBackends += "docker" }
 if ($K8S_BACKEND_ENABLED) { $enabledBackends += "k8s" }
 if ($PROXMOX_BACKEND_ENABLED) { $enabledBackends += "proxmox" }
-if ($NEMOCLAW_BACKEND_ENABLED) { $enabledBackends += "nemoclaw" }
 
 if ($enabledBackends.Count -eq 0) {
     Write-Warn "No deploy backends selected — enabling Docker so Nora can deploy agents."
@@ -524,28 +553,15 @@ if ($enabledBackends.Count -eq 0) {
 $ENABLED_BACKENDS = $enabledBackends -join ","
 Write-Ok "Enabled backends: $ENABLED_BACKENDS"
 
-$enabledRuntimeFamilies = @()
-foreach ($backend in $enabledBackends) {
-    switch ($backend) {
-        { $_ -in @("docker", "k8s", "proxmox", "nemoclaw") } {
-            if (-not ($enabledRuntimeFamilies -contains "openclaw")) {
-                $enabledRuntimeFamilies += "openclaw"
-            }
-        }
-        "hermes" {
-            if (-not ($enabledRuntimeFamilies -contains "hermes")) {
-                $enabledRuntimeFamilies += "hermes"
-            }
-        }
-    }
-}
-
-if ($enabledRuntimeFamilies.Count -eq 0) {
-    $enabledRuntimeFamilies = @("openclaw")
-}
-
+$enabledRuntimeFamilies = @("openclaw")
+if ($HERMES_RUNTIME_ENABLED) { $enabledRuntimeFamilies += "hermes" }
 $ENABLED_RUNTIME_FAMILIES = $enabledRuntimeFamilies -join ","
 Write-Ok "Enabled runtime families: $ENABLED_RUNTIME_FAMILIES"
+
+$enabledSandboxProfiles = @("standard")
+if ($NEMOCLAW_SANDBOX_ENABLED) { $enabledSandboxProfiles += "nemoclaw" }
+$ENABLED_SANDBOX_PROFILES = $enabledSandboxProfiles -join ","
+Write-Ok "Enabled sandbox profiles: $ENABLED_SANDBOX_PROFILES"
 
 # ── Access mode ──────────────────────────────────────────────
 
@@ -763,9 +779,10 @@ STRIPE_WEBHOOK_SECRET=
 STRIPE_PRICE_PRO=
 STRIPE_PRICE_ENTERPRISE=
 
-# ── Runtime families & deploy backends ───────────────────────
+# ── Runtime families, deploy targets, and sandbox profiles ───
 ENABLED_RUNTIME_FAMILIES=$ENABLED_RUNTIME_FAMILIES
 ENABLED_BACKENDS=$ENABLED_BACKENDS
+ENABLED_SANDBOX_PROFILES=$ENABLED_SANDBOX_PROFILES
 
 # ── Kubernetes (when ENABLED_BACKENDS includes k8s) ──────────
 K8S_NAMESPACE=$K8S_NAMESPACE
@@ -780,11 +797,19 @@ PROXMOX_TOKEN_ID=$PROXMOX_TOKEN_ID
 PROXMOX_TOKEN_SECRET=$PROXMOX_TOKEN_SECRET
 PROXMOX_NODE=$PROXMOX_NODE
 PROXMOX_TEMPLATE=$PROXMOX_TEMPLATE
+PROXMOX_HERMES_TEMPLATE=$PROXMOX_HERMES_TEMPLATE
+PROXMOX_NEMOCLAW_TEMPLATE=$PROXMOX_NEMOCLAW_TEMPLATE
+PROXMOX_ROOTFS_STORAGE=$PROXMOX_ROOTFS_STORAGE
+PROXMOX_BRIDGE=$PROXMOX_BRIDGE
+PROXMOX_SSH_HOST=$PROXMOX_SSH_HOST
+PROXMOX_SSH_USER=$PROXMOX_SSH_USER
+PROXMOX_SSH_PRIVATE_KEY_PATH=$PROXMOX_SSH_PRIVATE_KEY_PATH
+PROXMOX_SSH_PASSWORD=$PROXMOX_SSH_PASSWORD
 
-# ── NemoClaw / NVIDIA (when ENABLED_BACKENDS includes nemoclaw) ──
+# ── NemoClaw / NVIDIA (when ENABLED_SANDBOX_PROFILES includes nemoclaw) ──
 NVIDIA_API_KEY=$NVIDIA_API_KEY
 NEMOCLAW_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b
-NEMOCLAW_SANDBOX_IMAGE=ghcr.io/nvidia/openshell-community/sandboxes/openclaw
+NEMOCLAW_SANDBOX_IMAGE=nora-nemoclaw-agent:local
 
 # ── Security ─────────────────────────────────────────────────
 CORS_ORIGINS=$CORS_ORIGINS
@@ -843,6 +868,7 @@ if ($PLATFORM_MODE -eq "paas") {
 
 Write-Host "  Families:     $ENABLED_RUNTIME_FAMILIES"
 Write-Host "  Backends:     $ENABLED_BACKENDS"
+Write-Host "  Sandboxes:    $ENABLED_SANDBOX_PROFILES"
 
 if ($GOOGLE_CLIENT_ID -or $GITHUB_CLIENT_ID) {
     $providers = @()

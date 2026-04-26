@@ -457,7 +457,7 @@ class NemoClawBackend extends ProvisionerBackend {
 
       if (!info.State?.Running) {
         return buildUnavailableTelemetry({
-          backendType: "nemoclaw",
+          backendType: "docker",
           running: false,
           uptime_seconds: uptimeFromContainerInfo(info),
           capabilities: DOCKER_CAPABILITIES,
@@ -465,10 +465,10 @@ class NemoClawBackend extends ProvisionerBackend {
       }
 
       const stats = await container.stats({ stream: false });
-      return buildDockerTelemetry({ stats, info, backendType: "nemoclaw" });
+      return buildDockerTelemetry({ stats, info, backendType: "docker" });
     } catch {
       return buildUnavailableTelemetry({
-        backendType: "nemoclaw",
+        backendType: "docker",
         running: Boolean(info?.State?.Running),
         uptime_seconds: uptimeFromContainerInfo(info),
         capabilities: DOCKER_CAPABILITIES,

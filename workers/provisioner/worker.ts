@@ -9,7 +9,6 @@ const {
   getEnabledBackends,
   isKnownBackend,
   normalizeBackendName,
-  sandboxForBackend,
 } = require("../../agent-runtime/lib/backendCatalog");
 const { buildAgentRuntimeFields } = require("../../agent-runtime/lib/agentRuntimeFields");
 const { getAgentSecretEnvVars } = require("../../backend-api/agentSecretOverrides");
@@ -182,7 +181,7 @@ const HERMES_CUSTOM_PROVIDER_BASE_URLS = Object.freeze({
   together: "https://api.together.xyz/v1",
 });
 
-const DOCKER_EXEC_FALLBACK_BACKENDS = new Set(["docker", "nemoclaw"]);
+const DOCKER_EXEC_FALLBACK_BACKENDS = new Set(["docker", "proxmox"]);
 
 function normalizeEnvValueMap(envVars = {}) {
   return Object.fromEntries(
@@ -900,7 +899,7 @@ async function reconcileSavedClawhubSkills({
     return;
   }
 
-  if (agent.backend_type !== "docker" || agent.runtime_family !== "openclaw") {
+  if (agent.runtime_family !== "openclaw") {
     return;
   }
 
@@ -971,35 +970,45 @@ async function reconcileSavedClawhubSkills({
 // ── Pluggable Backend ────────────────────────────────────
 const backendInstances = new Map();
 
-function loadBackend(backendId) {
-  const backend = normalizeBackendName(backendId || "docker");
-  if (backendInstances.has(backend)) return backendInstances.get(backend);
+function backendInstanceKey(runtimeFields = {}) {
+  const backend = normalizeBackendName(
+    runtimeFields.backend_type || runtimeFields.deploy_target || "docker",
+  );
+  if (backend === "docker") {
+    if (runtimeFields.runtime_family === "hermes") return "docker:hermes";
+    if (runtimeFields.sandbox_profile === "nemoclaw") return "docker:nemoclaw";
+  }
+  return backend;
+}
+
+function loadBackend(runtimeFields = {}) {
+  const key = backendInstanceKey(runtimeFields);
+  if (backendInstances.has(key)) return backendInstances.get(key);
 
   let instance;
-  switch (backend) {
+  switch (key) {
     case "docker":
       instance = new (require("./backends/docker"))();
       break;
-    case "hermes":
+    case "docker:hermes":
       instance = new (require("./backends/hermes"))();
       break;
-    case "nemoclaw":
+    case "docker:nemoclaw":
       instance = new (require("./backends/nemoclaw"))();
       break;
     case "proxmox":
       instance = new (require("./backends/proxmox"))();
       break;
     case "k8s":
-    case "kubernetes":
       instance = new (require("./backends/k8s"))();
       break;
     default:
-      console.warn(`Unknown backend "${backend}", falling back to docker`);
+      console.warn(`Unknown backend "${key}", falling back to docker`);
       instance = new (require("./backends/docker"))();
       break;
   }
 
-  backendInstances.set(backend, instance);
+  backendInstances.set(key, instance);
   return instance;
 }
 
@@ -1035,25 +1044,26 @@ const worker = new Worker(
       );
       const agentRow = agentRowResult.rows[0] || {};
       const storedRuntimeFields = buildAgentRuntimeFields(agentRow);
-      const resolvedBackend = isKnownBackend(backend)
-        ? normalizeBackendName(backend)
-        : isKnownBackend(storedRuntimeFields.backend_type)
-          ? normalizeBackendName(storedRuntimeFields.backend_type)
-          : getDefaultBackend(process.env, {
-              sandbox: sandbox || storedRuntimeFields.sandbox_profile || "standard",
-            });
       const resolvedRuntimeFields = buildAgentRuntimeFields({
         runtime_family: storedRuntimeFields.runtime_family,
-        backend_type: resolvedBackend,
-        sandbox_type: sandbox || storedRuntimeFields.sandbox_profile,
+        deploy_target: isKnownBackend(backend)
+          ? normalizeBackendName(backend)
+          : storedRuntimeFields.deploy_target,
+        backend_type: isKnownBackend(backend)
+          ? normalizeBackendName(backend)
+          : storedRuntimeFields.backend_type,
+        sandbox_profile: sandbox || storedRuntimeFields.sandbox_profile,
       });
+      const resolvedBackend = resolvedRuntimeFields.backend_type;
       const resolvedSandbox = resolvedRuntimeFields.sandbox_profile;
-      const provisioner = loadBackend(resolvedBackend);
+      const provisioner = loadBackend(resolvedRuntimeFields);
       const resolvedImage =
         image ||
         agentRow.image ||
         getDefaultAgentImage({
-          sandbox: resolvedSandbox,
+          runtime_family: resolvedRuntimeFields.runtime_family,
+          deploy_target: resolvedRuntimeFields.deploy_target,
+          sandbox_profile: resolvedSandbox,
           backend: resolvedBackend,
         });
       let templatePayload = agentRow.template_payload || {};
@@ -1316,11 +1326,16 @@ const worker = new Worker(
           disk_gb,
           container_name,
           templatePayload,
+          runtimeFamily: resolvedRuntimeFields.runtime_family,
+          deployTarget: resolvedRuntimeFields.deploy_target,
+          sandboxProfile: resolvedRuntimeFields.sandbox_profile,
           abortSignal: abortController.signal,
           env: {
             AGENT_ID: String(id),
             AGENT_NAME: name || "",
-            ...(resolvedBackend === "nemoclaw" && model ? { NEMOCLAW_MODEL: model } : {}),
+            ...(resolvedRuntimeFields.sandbox_profile === "nemoclaw" && model
+              ? { NEMOCLAW_MODEL: model }
+              : {}),
             ...agentSecretEnvVars,
             ...integrationEnvVars,
             ...llmEnvVars,
@@ -1685,13 +1700,13 @@ const clawhubInstallWorker = new Worker(
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }
-    if (agent.backend_type !== "docker" || agent.runtime_family !== "openclaw") {
-      throw new Error("ClawHub installs are only available for Docker-backed OpenClaw agents.");
+    if (agent.runtime_family !== "openclaw") {
+      throw new Error("ClawHub installs are only available for OpenClaw agents.");
     }
     if (!agent.container_id || (agent.status !== "running" && agent.status !== "warning")) {
       throw new Error("Start the agent before installing skills.");
     }
-    const provisioner = loadBackend(agent.backend_type);
+    const provisioner = loadBackend(buildAgentRuntimeFields(agent));
 
     logInstall("start", "Starting install job");
 

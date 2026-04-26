@@ -28,7 +28,7 @@ ClawHub integration in Nora has two user-facing flows and one shared backend sta
 - Canonical OpenClaw workspace path: `/root/.openclaw/workspace`
 - Legacy mirrored agent path: `/root/.openclaw/agents/main/agent`
 - V1 installed-skills lockfile path: `/root/.openclaw/workspace/.clawhub/lock.json`
-- Existing Docker-backed OpenClaw agents already support command execution through Nora's backend abstractions
+- Existing OpenClaw agents already support command execution through Nora's backend abstractions
 
 ### Locked Backend Decisions
 - Add a dedicated `clawhub_skills` column to the `agents` table instead of storing ClawHub selections inside `template_payload`
@@ -109,7 +109,7 @@ Implementation details:
 This layer is responsible for deciding whether Nora can install a skill for a specific agent, when to save the selected skill list, and how to prepare the running container before the actual install command runs.
 
 Responsibilities:
-- Confirm the agent exists, belongs to the current user, and is a Docker-backed OpenClaw agent
+- Confirm the agent exists, belongs to the current user, and is a OpenClaw agent
 - Confirm the target container is currently running before attempting an install
 - Distinguish between two cases:
   - an existing running agent, where Nora should install immediately
@@ -597,7 +597,7 @@ Error responses:
 ```json
 {
   "error": "unsupported_runtime",
-  "message": "ClawHub installs are only available for Docker-backed OpenClaw agents."
+  "message": "ClawHub installs are only available for OpenClaw agents."
 }
 ```
 
@@ -649,7 +649,7 @@ State mapping:
 - Skill detail view
 - Installed skill listing
 - Async install with polling
-- Docker-backed OpenClaw agents only
+- OpenClaw agents only
 - Immediate install for existing running agents
 - Saved successful installs in `agents.clawhub_skills`
 - Deploy/start reconciliation that installs only missing saved skills

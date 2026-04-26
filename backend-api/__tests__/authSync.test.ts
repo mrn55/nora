@@ -36,6 +36,7 @@ jest.mock("../healthChecks", () => ({
 
 const {
   buildHermesEnvWriteCommand,
+  runContainerCommand,
   syncAuthToUserAgents,
   writeAuthToContainer,
 } = require("../authSync");
@@ -63,9 +64,7 @@ function execResult(output = "", exitCode = 0) {
 }
 
 function decodeHermesScript(command) {
-  const match = String(command || "").match(
-    /base64\.b64decode\("([^"]+)"\)\.decode\('utf-8'\)/
-  );
+  const match = String(command || "").match(/base64\.b64decode\("([^"]+)"\)\.decode\('utf-8'\)/);
   if (!match) return "";
   return Buffer.from(match[1], "base64").toString("utf8");
 }
@@ -139,24 +138,22 @@ describe("auth sync", () => {
     const results = await syncAuthToUserAgents("user-1");
 
     expect(mockEvictConnection).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "agent-k8s-1" })
+      expect.objectContaining({ id: "agent-k8s-1" }),
     );
     expect(global.fetch).toHaveBeenNthCalledWith(
       1,
       "http://runtime.internal:9090/exec",
       expect.objectContaining({
         method: "POST",
-      })
+      }),
     );
-    expect(JSON.parse(global.fetch.mock.calls[0][1].body).command).toContain(
-      "auth-profiles.json"
-    );
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body).command).toContain("auth-profiles.json");
     expect(mockRestart).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "agent-k8s-1",
         backend_type: "k8s",
         container_id: "oclaw-agent-123",
-      })
+      }),
     );
     expect(mockWaitForAgentReadiness).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -165,14 +162,12 @@ describe("auth sync", () => {
         runtimePort: 9090,
         gatewayHost: "gateway.internal",
         gatewayPort: 18789,
-      })
+      }),
     );
     expect(JSON.parse(global.fetch.mock.calls[1][1].body).command).toContain(
-      'models" "set" "openai/gpt-5.4'
+      'models" "set" "openai/gpt-5.4',
     );
-    expect(results).toEqual([
-      { agentId: "agent-k8s-1", status: "synced" },
-    ]);
+    expect(results).toEqual([{ agentId: "agent-k8s-1", status: "synced" }]);
   });
 
   it("returns a failed sync result when the runtime write command fails", async () => {
@@ -197,7 +192,7 @@ describe("auth sync", () => {
       });
 
     global.fetch.mockResolvedValueOnce(
-      jsonResponse({ exitCode: 1, stdout: "", stderr: "write failed" })
+      jsonResponse({ exitCode: 1, stdout: "", stderr: "write failed" }),
     );
 
     const results = await syncAuthToUserAgents("user-1");
@@ -233,7 +228,7 @@ describe("auth sync", () => {
         },
         order: { openai: ["openai:default"] },
         lastGood: { openai: "openai:default" },
-      }
+      },
     );
 
     expect(mockExec).toHaveBeenCalledWith(
@@ -243,8 +238,28 @@ describe("auth sync", () => {
       }),
       expect.objectContaining({
         cmd: expect.arrayContaining(["/bin/sh", "-lc"]),
-      })
+      }),
     );
+  });
+
+  it("preserves container exec exit code metadata on failures", async () => {
+    mockExec.mockResolvedValueOnce(execResult("partial output", 137));
+
+    try {
+      await runContainerCommand(
+        {
+          id: "agent-docker-oom",
+          backend_type: "docker",
+          container_id: "docker-agent-oom",
+        },
+        "npm install something",
+      );
+      throw new Error("expected runContainerCommand to fail");
+    } catch (error) {
+      expect(error.message).toBe("partial output");
+      expect(error.exitCode).toBe(137);
+      expect(error.output).toBe("partial output");
+    }
   });
 
   it("skips best-effort syncs when no auth material exists", async () => {
@@ -278,9 +293,7 @@ describe("auth sync", () => {
     expect(mockExec).not.toHaveBeenCalled();
     expect(mockRestart).not.toHaveBeenCalled();
     expect(global.fetch).not.toHaveBeenCalled();
-    expect(results).toEqual([
-      { agentId: "agent-empty-1", status: "skipped" },
-    ]);
+    expect(results).toEqual([{ agentId: "agent-empty-1", status: "skipped" }]);
   });
 
   it("rewrites the Hermes model config and env file before waiting for runtime readiness", async () => {
@@ -296,7 +309,7 @@ describe("auth sync", () => {
           {
             id: "agent-hermes-1",
             container_id: "hermes-agent-123",
-            backend_type: "hermes",
+            backend_type: "docker",
             runtime_family: "hermes",
             host: "agent.internal",
             runtime_host: "runtime.internal",
@@ -314,7 +327,7 @@ describe("auth sync", () => {
     const results = await syncAuthToUserAgents("user-1");
 
     expect(mockEvictConnection).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "agent-hermes-1" })
+      expect.objectContaining({ id: "agent-hermes-1" }),
     );
     expect(mockExec).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -323,7 +336,7 @@ describe("auth sync", () => {
       }),
       expect.objectContaining({
         cmd: expect.arrayContaining(["/bin/sh", "-lc"]),
-      })
+      }),
     );
     expect(mockExec).toHaveBeenCalledTimes(2);
 
@@ -336,11 +349,11 @@ describe("auth sync", () => {
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain("/opt/data/.env");
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain("NORA MANAGED ENV");
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain(
-      'chown hermes:hermes "$tmp_file" 2>/dev/null || true'
+      'chown hermes:hermes "$tmp_file" 2>/dev/null || true',
     );
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain('chmod 0600 "$tmp_file"');
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain(
-      "chown hermes:hermes /opt/data/.env 2>/dev/null || true"
+      "chown hermes:hermes /opt/data/.env 2>/dev/null || true",
     );
     expect(execSpy.mock.calls[1][1].cmd[2]).toContain("chmod 0600 /opt/data/.env");
     expect(execSpy.mock.calls[1][1].cmd[2]).not.toContain("then;");
@@ -349,7 +362,7 @@ describe("auth sync", () => {
       expect.objectContaining({
         id: "agent-hermes-1",
         container_id: "hermes-agent-123",
-      })
+      }),
     );
     expect(mockWaitForAgentReadiness).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -357,12 +370,10 @@ describe("auth sync", () => {
         runtimeHost: "runtime.internal",
         runtimePort: 8642,
         checkGateway: false,
-      })
+      }),
     );
     expect(global.fetch).not.toHaveBeenCalled();
-    expect(results).toEqual([
-      { agentId: "agent-hermes-1", status: "synced" },
-    ]);
+    expect(results).toEqual([{ agentId: "agent-hermes-1", status: "synced" }]);
   });
 
   it("renders Hermes model config through json.loads when native providers omit base URLs", async () => {
@@ -378,7 +389,7 @@ describe("auth sync", () => {
           {
             id: "agent-hermes-google",
             container_id: "hermes-agent-google",
-            backend_type: "hermes",
+            backend_type: "docker",
             runtime_family: "hermes",
             host: "agent.internal",
             runtime_host: "runtime.internal",

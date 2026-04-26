@@ -7,12 +7,8 @@ const {
   DOCKER_CAPABILITIES,
   uptimeFromContainerInfo,
 } = require("./telemetry");
-const {
-  getHermesDockerAgentImage,
-} = require("../../../agent-runtime/lib/agentImages");
-const {
-  HERMES_DASHBOARD_PORT,
-} = require("../../../agent-runtime/lib/contracts");
+const { getHermesDockerAgentImage } = require("../../../agent-runtime/lib/agentImages");
+const { HERMES_DASHBOARD_PORT } = require("../../../agent-runtime/lib/contracts");
 const {
   buildContainerBootstrap,
   shellSingleQuote,
@@ -63,7 +59,7 @@ function throwIfAborted(abortSignal, stage = "hermes create") {
       : new Error(
           typeof abortSignal.reason === "string" && abortSignal.reason
             ? abortSignal.reason
-            : `${stage} aborted`
+            : `${stage} aborted`,
         );
   throw reason;
 }
@@ -116,9 +112,7 @@ class HermesBackend extends DockerBackend {
         await this._pullImage(imgName);
         return;
       } catch (error) {
-        console.warn(
-          `[hermes] Failed to refresh ${imgName}; using cached image: ${error.message}`
-        );
+        console.warn(`[hermes] Failed to refresh ${imgName}; using cached image: ${error.message}`);
         return;
       }
     }
@@ -127,16 +121,7 @@ class HermesBackend extends DockerBackend {
   }
 
   async create(config) {
-    const {
-      id,
-      name,
-      image,
-      vcpu,
-      ram_mb,
-      env,
-      container_name,
-      abortSignal,
-    } = config;
+    const { id, name, image, vcpu, ram_mb, env, container_name, abortSignal } = config;
     const containerName = container_name || `hermes-agent-${id}`;
     const imgName = image || getHermesDockerAgentImage();
     let container = null;
@@ -150,7 +135,7 @@ class HermesBackend extends DockerBackend {
       const existing = this.docker.getContainer(containerName);
       const info = await existing.inspect();
       console.log(
-        `[hermes] Removing orphaned container ${info.Id.slice(0, 12)} (${containerName})`
+        `[hermes] Removing orphaned container ${info.Id.slice(0, 12)} (${containerName})`,
       );
       try {
         await existing.stop({ t: 5 });
@@ -177,9 +162,7 @@ class HermesBackend extends DockerBackend {
     }).map(([key, value]) => `${key}=${value}`);
 
     const composeNetwork = await this._findComposeNetwork();
-    const networkingConfig = composeNetwork
-      ? { [composeNetwork]: {} }
-      : undefined;
+    const networkingConfig = composeNetwork ? { [composeNetwork]: {} } : undefined;
     const hostname = safeHostname(name || containerName, `hermes-${id}`);
 
     try {
@@ -196,7 +179,7 @@ class HermesBackend extends DockerBackend {
           buildContainerBootstrap(buildHermesStartCommand(), {
             shell: "/bin/bash",
             login: true,
-          })
+          }),
         ),
         WorkingDir: HERMES_HOME,
         ExposedPorts: {
@@ -242,9 +225,7 @@ class HermesBackend extends DockerBackend {
         host = info.NetworkSettings?.IPAddress || "localhost";
       }
 
-      console.log(
-        `[hermes] Container ${container.id} started at ${host}:${HERMES_RUNTIME_PORT}`
-      );
+      console.log(`[hermes] Container ${container.id} started at ${host}:${HERMES_RUNTIME_PORT}`);
 
       return {
         containerId: container.id,
@@ -275,7 +256,7 @@ class HermesBackend extends DockerBackend {
 
       if (!info.State?.Running) {
         return buildUnavailableTelemetry({
-          backendType: "hermes",
+          backendType: "docker",
           running: false,
           uptime_seconds: uptimeFromContainerInfo(info),
           capabilities: DOCKER_CAPABILITIES,
@@ -283,10 +264,10 @@ class HermesBackend extends DockerBackend {
       }
 
       const stats = await container.stats({ stream: false });
-      return buildDockerTelemetry({ stats, info, backendType: "hermes" });
+      return buildDockerTelemetry({ stats, info, backendType: "docker" });
     } catch {
       return buildUnavailableTelemetry({
-        backendType: "hermes",
+        backendType: "docker",
         running: Boolean(info?.State?.Running),
         uptime_seconds: uptimeFromContainerInfo(info),
         capabilities: DOCKER_CAPABILITIES,

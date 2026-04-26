@@ -8,7 +8,10 @@ const {
   buildTemplatePayloadBootstrapCommand,
   buildRuntimeEnv,
 } = require("../../../agent-runtime/lib/runtimeBootstrap");
-const { OPENCLAW_GATEWAY_PORT, AGENT_RUNTIME_PORT } = require("../../../agent-runtime/lib/contracts");
+const {
+  OPENCLAW_GATEWAY_PORT,
+  AGENT_RUNTIME_PORT,
+} = require("../../../agent-runtime/lib/contracts");
 const {
   buildContainerBootstrap,
   toK8sLaunch,
@@ -70,11 +73,11 @@ class K8sBackend extends ProvisionerBackend {
     // some flows expose them on `error.cause.body`. Stringify whatever we find.
     return String(
       error?.body?.message ||
-      error?.body ||
-      error?.responseBody ||
-      error?.cause?.body ||
-      error?.message ||
-      ""
+        error?.body ||
+        error?.responseBody ||
+        error?.cause?.body ||
+        error?.message ||
+        "",
     );
   }
 
@@ -84,10 +87,7 @@ class K8sBackend extends ProvisionerBackend {
 
   _isAlreadyExistsError(error) {
     const text = this._errorBodyText(error);
-    return (
-      this._errorStatus(error) === 409 ||
-      /\b409\b|already exists|AlreadyExists/i.test(text)
-    );
+    return this._errorStatus(error) === 409 || /\b409\b|already exists|AlreadyExists/i.test(text);
   }
 
   _isNodePortConflictError(error) {
@@ -114,8 +114,13 @@ class K8sBackend extends ProvisionerBackend {
   }
 
   async create(config) {
-    const { id, name, image, vcpu, ram_mb, env, templatePayload } = config;
+    const { id, name, image, vcpu, ram_mb, env, templatePayload, sandboxProfile } = config;
     const deployName = `oclaw-agent-${id}`;
+    const isNemoClaw = sandboxProfile === "nemoclaw";
+    const nemoModel =
+      env?.NEMOCLAW_MODEL ||
+      process.env.NEMOCLAW_DEFAULT_MODEL ||
+      "nvidia/nemotron-3-super-120b-a12b";
 
     await this._ensureNamespace();
 
@@ -127,29 +132,67 @@ class K8sBackend extends ProvisionerBackend {
     // Derive deterministic Ed25519 device identity from gatewayToken
     const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
     const PKCS8_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
-    const seed = crypto.createHash("sha256").update("openclaw-device:" + gatewayToken).digest();
+    const seed = crypto
+      .createHash("sha256")
+      .update("openclaw-device:" + gatewayToken)
+      .digest();
     const privateDer = Buffer.concat([PKCS8_PREFIX, seed]);
     const privateKey = crypto.createPrivateKey({ key: privateDer, format: "der", type: "pkcs8" });
     const publicKey = crypto.createPublicKey(privateKey);
     const spki = publicKey.export({ type: "spki", format: "der" });
     const rawPub = spki.subarray(ED25519_SPKI_PREFIX.length);
     const deviceId = crypto.createHash("sha256").update(rawPub).digest("hex");
-    const pubB64 = rawPub.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
-    const allScopes = ["operator.admin","operator.read","operator.write","operator.approvals","operator.pairing"];
+    const pubB64 = rawPub
+      .toString("base64")
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replace(/=+$/g, "");
+    const allScopes = [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.pairing",
+    ];
     const nowMs = Date.now();
     const pairedJson = JSON.stringify({
       [deviceId]: {
-        deviceId, publicKey: pubB64, platform: "linux", clientId: "gateway-client",
-        clientMode: "backend", role: "operator", roles: ["operator"],
-        scopes: allScopes, approvedScopes: allScopes,
-        tokens: { operator: { token: crypto.randomBytes(32).toString("hex"), role: "operator", scopes: allScopes, createdAtMs: nowMs } },
-        createdAtMs: nowMs, approvedAtMs: nowMs,
-      }
+        deviceId,
+        publicKey: pubB64,
+        platform: "linux",
+        clientId: "gateway-client",
+        clientMode: "backend",
+        role: "operator",
+        roles: ["operator"],
+        scopes: allScopes,
+        approvedScopes: allScopes,
+        tokens: {
+          operator: {
+            token: crypto.randomBytes(32).toString("hex"),
+            role: "operator",
+            scopes: allScopes,
+            createdAtMs: nowMs,
+          },
+        },
+        createdAtMs: nowMs,
+        approvedAtMs: nowMs,
+      },
     });
 
     const envVars = Object.entries({
       ...(env || {}),
       ...buildRuntimeEnv(),
+      ...(isNemoClaw
+        ? {
+            HOME: "/sandbox",
+            OPENCLAW_CLI_PATH: "/usr/bin/openclaw",
+            OPENCLAW_TSX_BIN: "/usr/bin/tsx",
+            NEMOCLAW_MODEL: nemoModel,
+            ...(process.env.NVIDIA_API_KEY && !env?.NVIDIA_API_KEY
+              ? { NVIDIA_API_KEY: process.env.NVIDIA_API_KEY }
+              : {}),
+          }
+        : {}),
       OPENCLAW_GATEWAY_TOKEN: gatewayToken,
     }).map(([k, v]) => ({ name: k, value: String(v) }));
 
@@ -158,16 +201,56 @@ class K8sBackend extends ProvisionerBackend {
     const escapedPaired = pairedJson.replace(/'/g, "'\\''");
     const runtimeBootstrapCmd = buildRuntimeBootstrapCommand();
     const templateBootstrapCmd = buildTemplatePayloadBootstrapCommand(templatePayload);
-    const ensureOpenClawCmd = buildOpenClawInstallCommand(["openclaw@latest"]);
+    const ensureOpenClawCmd = buildOpenClawInstallCommand(
+      isNemoClaw ? ["openclaw@latest", "nemoclaw@latest"] : ["openclaw@latest"],
+    );
+    const nemoPolicyCmd = isNemoClaw
+      ? `mkdir -p /opt/openclaw && echo '${JSON.stringify({
+          version: "1",
+          network: {
+            default: "deny",
+            rules: [
+              {
+                name: "nvidia",
+                endpoints: ["integrate.api.nvidia.com:443", "inference-api.nvidia.com:443"],
+                methods: ["*"],
+              },
+              {
+                name: "github",
+                endpoints: ["github.com:443", "api.github.com:443"],
+                methods: ["*"],
+              },
+              { name: "npm_registry", endpoints: ["registry.npmjs.org:443"], methods: ["GET"] },
+              {
+                name: "openclaw_api",
+                endpoints: ["openclaw.ai:443", "docs.openclaw.ai:443", "clawhub.com:443"],
+                methods: ["GET", "POST"],
+              },
+            ],
+          },
+          filesystem: {
+            readwrite: ["/sandbox", "/tmp", "/dev/null"],
+            readonly: ["/usr", "/lib", "/proc", "/dev/urandom", "/app", "/etc", "/var/log"],
+          },
+          inference: {
+            provider: "nvidia-nim",
+            endpoint: "https://integrate.api.nvidia.com/v1",
+            model: nemoModel,
+          },
+        }).replace(/'/g, "'\\''")}' > /opt/openclaw/policy.yaml && `
+      : "";
     const gatewayScript =
       ensureOpenClawCmd +
-      'mkdir -p ~/.openclaw/devices && ' +
+      "mkdir -p ~/.openclaw/devices && " +
       `echo '{"gateway":{"port":${OPENCLAW_GATEWAY_PORT},"bind":"lan","mode":"local"}}' > ~/.openclaw/openclaw.json && ` +
       `echo '${escapedPaired}' > ~/.openclaw/devices/paired.json && ` +
       `echo '{}' > ~/.openclaw/devices/pending.json && ` +
+      nemoPolicyCmd +
       templateBootstrapCmd +
       runtimeBootstrapCmd +
-      '"$OPENCLAW_BIN" gateway --port ' + OPENCLAW_GATEWAY_PORT + ` --password ${gatewayToken}`;
+      '"$OPENCLAW_BIN" gateway --port ' +
+      OPENCLAW_GATEWAY_PORT +
+      ` --password ${gatewayToken}`;
     const gatewayLaunch = toK8sLaunch(buildContainerBootstrap(gatewayScript));
 
     const deployment = {
@@ -195,18 +278,20 @@ class K8sBackend extends ProvisionerBackend {
           },
           spec: {
             // DNS-safe hostname from agent name (avoids Bonjour conflicts)
-            hostname: (name || `agent-${id}`)
-              .toLowerCase()
-              .replace(/[^a-z0-9-]/g, '-')
-              .replace(/-+/g, '-')
-              .replace(/^-|-$/g, '')
-              .slice(0, 63) || `agent-${id}`,
+            hostname:
+              (name || `agent-${id}`)
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, "-")
+                .replace(/-+/g, "-")
+                .replace(/^-|-$/g, "")
+                .slice(0, 63) || `agent-${id}`,
             containers: [
               {
                 name: "agent",
                 image: image || "node:24-slim",
                 command: gatewayLaunch.command,
                 args: gatewayLaunch.args,
+                workingDir: isNemoClaw ? "/sandbox" : undefined,
                 env: envVars,
                 ports: [
                   { name: "gateway", containerPort: OPENCLAW_GATEWAY_PORT },
@@ -230,7 +315,10 @@ class K8sBackend extends ProvisionerBackend {
     };
 
     try {
-      await this.appsApi.createNamespacedDeployment({ namespace: this.namespace, body: deployment });
+      await this.appsApi.createNamespacedDeployment({
+        namespace: this.namespace,
+        body: deployment,
+      });
     } catch (error) {
       if (!this._isAlreadyExistsError(error)) throw error;
       console.warn(`[k8s] Deployment ${deployName} already exists; reusing on retry`);
@@ -255,17 +343,23 @@ class K8sBackend extends ProvisionerBackend {
 
     let serviceResp = null;
     try {
-      serviceResp = await this.coreApi.createNamespacedService({ namespace: this.namespace, body: service });
+      serviceResp = await this.coreApi.createNamespacedService({
+        namespace: this.namespace,
+        body: service,
+      });
     } catch (error) {
       if (this._isAlreadyExistsError(error)) {
-        serviceResp = await this.coreApi.readNamespacedService({ name: deployName, namespace: this.namespace });
+        serviceResp = await this.coreApi.readNamespacedService({
+          name: deployName,
+          namespace: this.namespace,
+        });
       } else if (
         this._isNodePortExposure() &&
         service.spec.ports.some((port) => port.nodePort != null) &&
         this._isNodePortConflictError(error)
       ) {
         console.warn(
-          `[k8s] Fixed NodePort allocation unavailable for ${deployName}; retrying with dynamic NodePorts`
+          `[k8s] Fixed NodePort allocation unavailable for ${deployName}; retrying with dynamic NodePorts`,
         );
         const dynamicService = {
           ...service,
@@ -274,7 +368,10 @@ class K8sBackend extends ProvisionerBackend {
             ports: this._servicePortsWithoutNodePorts(service.spec.ports),
           },
         };
-        serviceResp = await this.coreApi.createNamespacedService({ namespace: this.namespace, body: dynamicService });
+        serviceResp = await this.coreApi.createNamespacedService({
+          namespace: this.namespace,
+          body: dynamicService,
+        });
       } else {
         throw error;
       }
@@ -282,7 +379,8 @@ class K8sBackend extends ProvisionerBackend {
 
     const host = `${deployName}.${this.namespace}.svc.cluster.local`;
     // v1.x returns the object directly; fall back to `.body` for belt-and-braces.
-    const servicePorts = serviceResp?.spec?.ports || serviceResp?.body?.spec?.ports || service.spec.ports;
+    const servicePorts =
+      serviceResp?.spec?.ports || serviceResp?.body?.spec?.ports || service.spec.ports;
 
     if (this._isNodePortExposure()) {
       const runtimeNodePort = servicePorts.find((port) => port.name === "runtime")?.nodePort;
@@ -292,13 +390,11 @@ class K8sBackend extends ProvisionerBackend {
       }
 
       const nodePortHost =
-        process.env.K8S_RUNTIME_HOST ||
-        process.env.GATEWAY_HOST ||
-        "host.docker.internal";
+        process.env.K8S_RUNTIME_HOST || process.env.GATEWAY_HOST || "host.docker.internal";
 
       console.log(
         `[k8s] Deployment ${deployName} created -> ${host} ` +
-        `(runtime nodePort ${runtimeNodePort}, gateway nodePort ${gatewayNodePort})`
+          `(runtime nodePort ${runtimeNodePort}, gateway nodePort ${gatewayNodePort})`,
       );
       return {
         containerId: deployName,
@@ -313,7 +409,7 @@ class K8sBackend extends ProvisionerBackend {
 
     console.log(
       `[k8s] Deployment ${deployName} created -> ${host} ` +
-      `(gateway ${OPENCLAW_GATEWAY_PORT}, runtime ${AGENT_RUNTIME_PORT})`
+        `(gateway ${OPENCLAW_GATEWAY_PORT}, runtime ${AGENT_RUNTIME_PORT})`,
     );
     return {
       containerId: deployName,
@@ -331,7 +427,10 @@ class K8sBackend extends ProvisionerBackend {
     console.log(`[k8s] Destroying deployment ${deployName}`);
 
     try {
-      await this.appsApi.deleteNamespacedDeployment({ name: deployName, namespace: this.namespace });
+      await this.appsApi.deleteNamespacedDeployment({
+        name: deployName,
+        namespace: this.namespace,
+      });
     } catch {
       // already gone
     }
@@ -346,9 +445,12 @@ class K8sBackend extends ProvisionerBackend {
   async status(containerId) {
     const deployName = containerId;
     try {
-      const res = await this.appsApi.readNamespacedDeployment({ name: deployName, namespace: this.namespace });
+      const res = await this.appsApi.readNamespacedDeployment({
+        name: deployName,
+        namespace: this.namespace,
+      });
       // v1.x returns the object directly; fall back to `.body` for belt-and-braces.
-      const status = (res?.status || res?.body?.status) || {};
+      const status = res?.status || res?.body?.status || {};
       const running = (status.availableReplicas || 0) > 0;
       return { running, uptime: null, cpu: null, memory: null };
     } catch {
@@ -429,13 +531,11 @@ class K8sBackend extends ProvisionerBackend {
     if (!runningPod) return null;
 
     const stream = new (require("stream").PassThrough)();
-    await log.log(
-      this.namespace,
-      runningPod.metadata.name,
-      "agent",
-      stream,
-      { follow: opts.follow !== false, tailLines: opts.tail || 100, timestamps: true }
-    );
+    await log.log(this.namespace, runningPod.metadata.name, "agent", stream, {
+      follow: opts.follow !== false,
+      tailLines: opts.tail || 100,
+      timestamps: true,
+    });
     return stream;
   }
 }

@@ -42,8 +42,7 @@ const { getDefaultAgentImage } = require("../../agent-runtime/lib/agentImages");
 const {
   DEFAULT_RUNTIME_FAMILY,
   KNOWN_RUNTIME_FAMILIES,
-  buildBackendEnablementMessage,
-  getBackendStatus,
+  getRuntimeSelectionStatus,
   isKnownRuntimeFamily,
   normalizeRuntimeFamilyName,
 } = require("../../agent-runtime/lib/backendCatalog");
@@ -90,6 +89,7 @@ function resolveRequestedImage({
   }
 
   return getDefaultAgentImage({
+    runtime_family: runtimeFields?.runtime_family,
     backend: runtimeFields?.backend_type,
     deploy_target: runtimeFields?.deploy_target,
     sandbox_profile: runtimeFields?.sandbox_profile,
@@ -101,30 +101,28 @@ function normalizeRequestedRuntimeFamily(value) {
   return normalizeRuntimeFamilyName(value);
 }
 
-function assertSupportedRuntimeSelection(runtimeFields) {
-  if (runtimeFields?.runtime_family === "hermes") {
-    if (runtimeFields.deploy_target !== "docker") {
-      const error = new Error("Hermes runtime is only supported on the Docker execution target.");
+function assertRuntimeSelectionAvailable(runtimeFields) {
+  const status = getRuntimeSelectionStatus(runtimeFields);
+  if (!status.enabled) {
+    if (status.issue && /does not support/i.test(status.issue)) {
+      const error = new Error(status.issue);
       error.statusCode = 400;
       throw error;
     }
-    if (runtimeFields.sandbox_profile !== "standard") {
-      const error = new Error(
-        "Hermes runtime currently supports only the Standard sandbox profile.",
-      );
-      error.statusCode = 400;
-      throw error;
-    }
-    return;
-  }
-
-  if (runtimeFields?.sandbox_profile !== "nemoclaw") return;
-
-  if (runtimeFields.deploy_target !== "docker") {
-    const error = new Error("NemoClaw sandbox is only supported on the Docker execution target.");
+    const error = new Error(
+      `Runtime selection is not enabled. Enable runtime_family=${status.runtimeFamily}, deploy_target=${status.deployTarget}, and sandbox_profile=${status.sandboxProfile} for this Nora control plane.`,
+    );
     error.statusCode = 400;
     throw error;
   }
+  if (!status.configured) {
+    const error = new Error(
+      status.issue || "Runtime selection is not configured for this Nora control plane.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  return status;
 }
 
 function normalizeGatewayHost(value) {
@@ -176,23 +174,6 @@ function resolvePublishedGatewayProtocol(req) {
   }
 
   return req.protocol === "https" ? "https" : "http";
-}
-
-function assertBackendAvailable(backend) {
-  const status = getBackendStatus(backend);
-  if (!status.enabled) {
-    const error = new Error(buildBackendEnablementMessage(status));
-    error.statusCode = 400;
-    throw error;
-  }
-  if (!status.configured) {
-    const error = new Error(
-      status.issue || `${status.label} is not configured for this Nora control plane.`,
-    );
-    error.statusCode = 400;
-    throw error;
-  }
-  return status;
 }
 
 function normalizeClawhubSkillEntry(entry) {
@@ -393,7 +374,7 @@ router.get(
       typeof agent.container_id === "string" &&
       agent.container_id.length > 0 &&
       READY_STATUSES.has(agent.status) &&
-      ["docker", "nemoclaw"].includes(backendType)
+      backendType === "docker"
     ) {
       try {
         const Docker = require("dockerode");
@@ -555,7 +536,7 @@ function buildHermesDashboardEnsureCommand() {
     'if ! "$HERMES_BIN" --help 2>/dev/null | grep -q "dashboard"; then echo "STATUS=missing-dashboard"; printf "VERSION=%s\\n" "$VERSION"; exit 0; fi',
     `if python3 -c 'import socket,sys;s=socket.socket();s.settimeout(1);rc=s.connect_ex(("127.0.0.1",${HERMES_DASHBOARD_PORT}));s.close();sys.exit(0 if rc==0 else 1)'; then echo "STATUS=already-running"; printf "VERSION=%s\\n" "$VERSION"; exit 0; fi`,
     'if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1; then setsid gosu hermes "$HERMES_BIN" dashboard --host 0.0.0.0 --insecure --no-open < /dev/null & else setsid "$HERMES_BIN" dashboard --host 0.0.0.0 --insecure --no-open < /dev/null & fi',
-    'started=0',
+    "started=0",
     `for _attempt in 1 2 3 4 5; do if python3 -c 'import socket,sys;s=socket.socket();s.settimeout(1);rc=s.connect_ex(("127.0.0.1",${HERMES_DASHBOARD_PORT}));s.close();sys.exit(0 if rc==0 else 1)'; then started=1; break; fi; sleep 1; done`,
     'if [ "$started" = "1" ]; then echo "STATUS=started"; else echo "STATUS=start-failed"; fi',
     'printf "VERSION=%s\\n" "$VERSION"',
@@ -1288,13 +1269,12 @@ router.post("/deploy", async (req, res) => {
       agentName: name,
       runtimeSelection: runtimeFields,
     });
-    assertSupportedRuntimeSelection(runtimeFields);
+    const runtimeSelectionStatus = assertRuntimeSelectionAvailable(runtimeFields);
     if (migrationDraft && runtimeFields.runtime_family !== migrationDraft.manifest.runtimeFamily) {
       return res.status(400).json({
         error: `Migration draft targets the ${migrationDraft.manifest.runtimeFamily} runtime family and cannot be deployed as ${runtimeFields.runtime_family}.`,
       });
     }
-    const backendStatus = assertBackendAvailable(runtimeFields.backend_type);
     const node = await scheduler.selectNode({ fallback: runtimeFields.deploy_target });
     const nodeName = node ? node.name : runtimeFields.deploy_target;
 
@@ -1409,7 +1389,7 @@ router.post("/deploy", async (req, res) => {
       clawhub_skills: clawhubSkills,
     });
 
-    const deployType = backendStatus.label;
+    const deployType = `${runtimeSelectionStatus.runtimeFamily}/${runtimeSelectionStatus.deployTarget}/${runtimeSelectionStatus.sandboxProfile}`;
     await monitoring.logEvent(
       "agent_deployed",
       `Agent "${name}" (${deployType}) queued for deployment`,
@@ -1511,8 +1491,7 @@ router.post(
       },
       fallback: sourceRuntime,
     });
-    assertSupportedRuntimeSelection(runtimeFields);
-    assertBackendAvailable(runtimeFields.backend_type);
+    assertRuntimeSelectionAvailable(runtimeFields);
     const node = await scheduler.selectNode({
       fallback: runtimeFields.deploy_target,
     });
@@ -1794,8 +1773,7 @@ router.post("/:id/redeploy", async (req, res) => {
       },
       fallback: currentRuntimeFields,
     });
-    assertSupportedRuntimeSelection(runtimeFields);
-    assertBackendAvailable(runtimeFields.backend_type);
+    assertRuntimeSelectionAvailable(runtimeFields);
     const containerName = resolveContainerName({
       requestedName: requestBody.container_name,
       currentName: agent.container_name,

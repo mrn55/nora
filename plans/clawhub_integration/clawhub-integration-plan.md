@@ -244,7 +244,7 @@ API contract:
   ```
 - `404` `{ "error": "agent_not_found" }`
 - `409` `{ "error": "container_not_running", "message": "Start the agent before installing skills." }`
-- `409` `{ "error": "unsupported_runtime", "message": "ClawHub installs are only available for Docker-backed OpenClaw agents." }`
+- `409` `{ "error": "unsupported_runtime", "message": "ClawHub installs are only available for OpenClaw agents." }`
 - `422` `{ "error": "npm_unavailable", "message": "The clawhub CLI could not be installed. Ensure Node.js is in your base image." }`
 
   Validation: `backend_type` must be `"docker"`, `runtime_family` must be `"openclaw"`, `status` must be `"running"`.

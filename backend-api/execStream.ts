@@ -63,7 +63,7 @@ function attachExecStream(server) {
                 deploy_target, sandbox_profile, user_id
            FROM agents
           WHERE id = $1`,
-        [agentId]
+        [agentId],
       );
       if (!result.rows[0]) {
         ws.send(JSON.stringify({ type: "error", message: "Agent not found" }));
@@ -79,7 +79,12 @@ function attachExecStream(server) {
       }
 
       if (!agent.container_id) {
-        ws.send(JSON.stringify({ type: "error", message: "No container ID — agent may still be provisioning" }));
+        ws.send(
+          JSON.stringify({
+            type: "error",
+            message: "No container ID — agent may still be provisioning",
+          }),
+        );
         ws.close();
         return;
       }
@@ -98,21 +103,19 @@ function attachExecStream(server) {
       }
 
       if (!isRunning) {
-        ws.send(JSON.stringify({
-          type: "system",
-          message: `Agent is ${agent.status} — terminal available when agent is running`,
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "system",
+            message: `Agent is ${agent.status} — terminal available when agent is running`,
+          }),
+        );
         ws.close();
         return;
       }
 
       // For Docker-backed backends, use direct dockerode for full TTY exec support
       const backendType = resolveAgentBackendType(agent);
-      if (
-        backendType === "docker" ||
-        backendType === "hermes" ||
-        backendType === "nemoclaw"
-      ) {
+      if (backendType === "docker") {
         if (!docker) {
           ws.send(JSON.stringify({ type: "error", message: "Docker not available on this host" }));
           ws.close();
@@ -135,10 +138,12 @@ function attachExecStream(server) {
           Tty: true,
         });
 
-        ws.send(JSON.stringify({
-          type: "system",
-          message: `Connected to ${agent.name} (${agent.container_id.slice(0, 12)})`,
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "system",
+            message: `Connected to ${agent.name} (${agent.container_id.slice(0, 12)})`,
+          }),
+        );
 
         // Container stdout/stderr → client
         stream.on("data", (chunk) => {
@@ -174,22 +179,31 @@ function attachExecStream(server) {
         });
       } else {
         // Non-Docker backends — basic shell via containerManager.exec
-        ws.send(JSON.stringify({
-          type: "system",
-          message: `Terminal for ${backendType} backend — limited TTY support`,
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "system",
+            message: `Terminal for ${backendType} backend — limited TTY support`,
+          }),
+        );
 
         try {
           const execResult = await containerManager.exec(agent);
           if (!execResult) {
-            ws.send(JSON.stringify({ type: "error", message: `Exec not supported for ${backendType} backend` }));
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                message: `Exec not supported for ${backendType} backend`,
+              }),
+            );
             ws.close();
             return;
           }
-          ws.send(JSON.stringify({
-            type: "system",
-            message: `Connected to ${agent.name} via ${backendType}`,
-          }));
+          ws.send(
+            JSON.stringify({
+              type: "system",
+              message: `Connected to ${agent.name} via ${backendType}`,
+            }),
+          );
         } catch (err) {
           ws.send(JSON.stringify({ type: "error", message: `Exec failed: ${err.message}` }));
           ws.close();

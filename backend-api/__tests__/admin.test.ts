@@ -273,6 +273,7 @@ beforeEach(() => {
   });
   delete process.env.ENABLED_BACKENDS;
   delete process.env.ENABLED_RUNTIME_FAMILIES;
+  delete process.env.ENABLED_SANDBOX_PROFILES;
 });
 
 describe("admin routes", () => {
@@ -1273,7 +1274,8 @@ describe("admin routes", () => {
   });
 
   it("requeues admin redeploys from new runtime columns when legacy aliases are missing", async () => {
-    process.env.ENABLED_BACKENDS = "docker,nemoclaw";
+    process.env.ENABLED_BACKENDS = "docker";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
 
     mockDb.query
       .mockResolvedValueOnce({
@@ -1304,14 +1306,15 @@ describe("admin routes", () => {
       expect.objectContaining({
         id: "agent-2",
         userId: "user-9",
-        backend: "nemoclaw",
+        backend: "docker",
         sandbox: "nemoclaw",
       }),
     );
   });
 
-  it("accepts legacy backend overrides on admin redeploy", async () => {
-    process.env.ENABLED_BACKENDS = "docker,nemoclaw";
+  it("accepts sandbox profile overrides on admin redeploy", async () => {
+    process.env.ENABLED_BACKENDS = "docker";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
 
     mockDb.query
       .mockResolvedValueOnce({
@@ -1337,7 +1340,7 @@ describe("admin routes", () => {
 
     const res = await withToken(
       request(app).post("/admin/agents/agent-3/redeploy").send({
-        backend: "nemoclaw",
+        sandbox_profile: "nemoclaw",
       }),
       adminToken,
     );
@@ -1345,7 +1348,7 @@ describe("admin routes", () => {
     expect(res.status).toBe(200);
     expect(mockDb.query).toHaveBeenNthCalledWith(2, expect.stringContaining("deploy_target = $5"), [
       "agent-3",
-      "nemoclaw",
+      "docker",
       "nemoclaw",
       "openclaw",
       "docker",
@@ -1357,7 +1360,7 @@ describe("admin routes", () => {
       expect.objectContaining({
         id: "agent-3",
         userId: "user-3",
-        backend: "nemoclaw",
+        backend: "docker",
         sandbox: "nemoclaw",
         image: "ghcr.io/nvidia/openshell-community/sandboxes/openclaw",
       }),

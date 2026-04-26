@@ -77,10 +77,8 @@ function validateInstallableAgent(agent) {
     throw error;
   }
 
-  if (agent.backend_type !== "docker" || agent.runtime_family !== "openclaw") {
-    const error = new Error(
-      "ClawHub installs are only available for Docker-backed OpenClaw agents.",
-    );
+  if (agent.runtime_family !== "openclaw") {
+    const error = new Error("ClawHub installs are only available for OpenClaw agents.");
     error.statusCode = 409;
     error.code = "unsupported_runtime";
     throw error;
@@ -142,7 +140,7 @@ function sendInstallError(res, error) {
   if (error?.code === "unsupported_runtime") {
     return res.status(409).json({
       error: "unsupported_runtime",
-      message: "ClawHub installs are only available for Docker-backed OpenClaw agents.",
+      message: "ClawHub installs are only available for OpenClaw agents.",
     });
   }
 

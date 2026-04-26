@@ -98,8 +98,10 @@ If either passes the SSRF guard, the assertion will flip red.
 
 - **Cells skip immediately.** Check `/api/config/platform.enabledBackends` —
   only cells matching what your stack was booted with will run. If you want
-  all four, boot with `ENABLED_BACKENDS=docker,k8s,nemoclaw` and
-  `ENABLED_RUNTIME_FAMILIES=openclaw,hermes`.
+  all current execution targets and runtime choices, boot with
+  `ENABLED_BACKENDS=docker,k8s,proxmox`,
+  `ENABLED_RUNTIME_FAMILIES=openclaw,hermes`, and
+  `ENABLED_SANDBOX_PROFILES=standard,nemoclaw`.
 - **`[L2] reach running` times out.** `docker compose logs worker-provisioner`
   and `docker compose logs backend-api` are the primary signal. For k8s, also
   `kubectl -n default get pods`.

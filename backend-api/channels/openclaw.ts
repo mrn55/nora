@@ -9,6 +9,8 @@ const OPENCLAW_QR_LOGIN_CHANNELS = new Set(["whatsapp"]);
 const OPENCLAW_LOGOUT_CHANNELS = new Set(["telegram", "qqbot", "whatsapp"]);
 const OPENCLAW_QR_LOGIN_PROVIDER_INSTALLS = Object.freeze({
   whatsapp: Object.freeze({
+    installSpec: "@openclaw/whatsapp",
+    fallbackSpec: "whatsapp",
     packageSpec: "@openclaw/whatsapp",
   }),
 });
@@ -241,6 +243,10 @@ function sleep(ms) {
 function buildOpenClawPluginInstallCommand(channelId) {
   const install = OPENCLAW_QR_LOGIN_PROVIDER_INSTALLS[channelId];
   if (!install) return "";
+  const installSpec = install.installSpec || install.packageSpec;
+  const fallbackSpec =
+    install.fallbackSpec && install.fallbackSpec !== installSpec ? install.fallbackSpec : "";
+  const { shellSingleQuote } = require("../../agent-runtime/lib/containerCommand");
 
   return [
     "set -eu",
@@ -249,11 +255,68 @@ function buildOpenClawPluginInstallCommand(channelId) {
     '[ -n "$OPENCLAW_BIN" ] && [ -x "$OPENCLAW_BIN" ]',
     `OPENCLAW_GATEWAY_PORT="\${OPENCLAW_GATEWAY_PORT:-${OPENCLAW_GATEWAY_PORT}}"`,
     "export OPENCLAW_GATEWAY_PORT",
-    `"$OPENCLAW_BIN" plugins install ${install.packageSpec} --force`,
+    'if ! printf "%s" "${NODE_OPTIONS:-}" | grep -Eq "(^| )--max-old-space-size="; then',
+    '  NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${OPENCLAW_PLUGIN_INSTALL_MAX_OLD_SPACE_MB:-256}"',
+    "fi",
+    "export NODE_OPTIONS",
+    "export npm_config_audit=false",
+    "export npm_config_fund=false",
+    "export npm_config_progress=false",
+    "export npm_config_update_notifier=false",
+    "install_openclaw_plugin() {",
+    '  spec="$1"',
+    '  log_file="$(mktemp /tmp/openclaw-plugin-install.XXXXXX)"',
+    '  if "$OPENCLAW_BIN" plugins install "$spec" --force >"$log_file" 2>&1; then',
+    '    cat "$log_file"',
+    '    rm -f "$log_file"',
+    "    return 0",
+    "  fi",
+    '  exit_code="$?"',
+    '  cat "$log_file" >&2 || true',
+    '  if [ "$exit_code" -eq 137 ]; then',
+    '    rm -f "$log_file"',
+    '    return "$exit_code"',
+    "  fi",
+    '  if [ -n "${2:-}" ] && grep -Eiq "not found|not in this registry|package unavailable|plugin unavailable|no npm install source" "$log_file"; then',
+    '    rm -f "$log_file"',
+    "    return 2",
+    "  fi",
+    '  rm -f "$log_file"',
+    '  return "$exit_code"',
+    "}",
+    `install_openclaw_plugin ${shellSingleQuote(installSpec)} ${
+      fallbackSpec ? shellSingleQuote(fallbackSpec) : ""
+    } || {`,
+    '  install_status="$?"',
+    `  if [ "$install_status" -eq 2 ]; then install_openclaw_plugin ${shellSingleQuote(
+      fallbackSpec,
+    )}; else exit "$install_status"; fi`,
+    "}",
     'if ! "$OPENCLAW_BIN" gateway restart; then',
     '  printf "%s\\n" "OpenClaw plugin install completed, but gateway restart did not complete through the CLI."',
     "fi",
   ].join("\n");
+}
+
+function formatOpenClawPluginInstallError(channelId, install, error) {
+  const label = buildSelectionLabel(channelId);
+  const installSpec = install.installSpec || install.packageSpec;
+  const fallbackSpec =
+    install.fallbackSpec && install.fallbackSpec !== installSpec
+      ? `; bundled fallback ${install.fallbackSpec}`
+      : "";
+  const detail = error?.message || "plugin install failed";
+  const exitCode = Number(error?.exitCode || 0);
+
+  if (exitCode === 137 || /code 137|sigkill|oom|out of memory/i.test(detail)) {
+    return (
+      `OpenClaw could not install the ${label} plugin using ${installSpec}${fallbackSpec}: ` +
+      "the install process was killed with exit code 137. This usually means the agent container ran out of memory while installing WhatsApp dependencies. " +
+      `Increase the agent RAM to at least 2048 MB and retry. Underlying error: ${detail}`
+    );
+  }
+
+  return `OpenClaw could not install the ${label} plugin using ${installSpec}${fallbackSpec}: ${detail}`;
 }
 
 function evictGatewayConnection(agent) {
@@ -280,7 +343,7 @@ async function installOpenClawLoginProvider(agent, channelId) {
   } catch (error) {
     throw createHttpError(
       502,
-      `OpenClaw could not install the ${buildSelectionLabel(channelId)} plugin (${install.packageSpec}): ${error?.message || "plugin install failed"}`,
+      formatOpenClawPluginInstallError(channelId, install, error),
     );
   }
 }

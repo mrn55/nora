@@ -22,10 +22,7 @@ function runtimeExposesGateway(agent) {
     .toLowerCase();
   if (runtimeFamily) return runtimeFamily !== "hermes";
 
-  const backendType = String(agent?.backend_type ?? agent?.backendType ?? "")
-    .trim()
-    .toLowerCase();
-  return backendType !== "hermes";
+  return true;
 }
 
 function runtimeUsesHermesDashboard(agent) {
@@ -36,10 +33,7 @@ function runtimeUsesHermesDashboard(agent) {
     .toLowerCase();
   if (runtimeFamily) return runtimeFamily === "hermes";
 
-  const backendType = String(agent?.backend_type ?? agent?.backendType ?? "")
-    .trim()
-    .toLowerCase();
-  return backendType === "hermes";
+  return false;
 }
 
 function joinHttpUrl(host, port, path = "/") {

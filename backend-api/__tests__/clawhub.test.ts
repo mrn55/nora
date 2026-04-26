@@ -330,7 +330,7 @@ Install and manage repos.
     });
   });
 
-  it("returns unsupported_runtime for non-docker or non-openclaw agents", async () => {
+  it("returns unsupported_runtime for non-openclaw agents", async () => {
     const handler = getRouteHandler("/agents/:agentId/skills/:slug/install", "post");
     db.query.mockResolvedValueOnce({
       rows: [
@@ -339,8 +339,8 @@ Install and manage repos.
           user_id: "user-1",
           status: "running",
           container_id: "container-1",
-          backend_type: "k8s",
-          runtime_family: "openclaw",
+          backend_type: "docker",
+          runtime_family: "hermes",
           clawhub_skills: [],
         },
       ],
@@ -357,7 +357,7 @@ Install and manage repos.
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual({
       error: "unsupported_runtime",
-      message: "ClawHub installs are only available for Docker-backed OpenClaw agents.",
+      message: "ClawHub installs are only available for OpenClaw agents.",
     });
   });
 

@@ -51,7 +51,7 @@ describe("containerManager NemoClaw routing", () => {
     mockDestroy.mockReset().mockResolvedValue(undefined);
     mockStatus.mockReset().mockResolvedValue({ running: true });
     mockStats.mockReset().mockResolvedValue({
-      backend_type: "nemoclaw",
+      backend_type: "docker",
       capabilities: { cpu: true, memory: true, network: true, disk: true, pids: true },
       current: { recorded_at: "2026-04-08T00:00:00.000Z", running: true, uptime_seconds: 5 },
     });
@@ -63,7 +63,7 @@ describe("containerManager NemoClaw routing", () => {
     mockHermesDestroy.mockReset().mockResolvedValue(undefined);
     mockHermesStatus.mockReset().mockResolvedValue({ running: true });
     mockHermesStats.mockReset().mockResolvedValue({
-      backend_type: "hermes",
+      backend_type: "docker",
       capabilities: { cpu: true, memory: true, network: true, disk: true, pids: true },
       current: { recorded_at: "2026-04-08T00:00:00.000Z", running: true, uptime_seconds: 5 },
     });
@@ -73,7 +73,13 @@ describe("containerManager NemoClaw routing", () => {
 
   it("routes lifecycle, telemetry, logs, and exec calls to the NemoClaw backend", async () => {
     const containerManager = require("../containerManager");
-    const agent = { backend_type: "nemoclaw", container_id: "nemo-123" };
+    const agent = {
+      runtime_family: "openclaw",
+      deploy_target: "docker",
+      sandbox_profile: "nemoclaw",
+      backend_type: "docker",
+      container_id: "nemo-123",
+    };
 
     await containerManager.start(agent);
     await containerManager.stop(agent);
@@ -92,7 +98,7 @@ describe("containerManager NemoClaw routing", () => {
     expect(mockStats).toHaveBeenCalledWith("nemo-123", agent);
     expect(mockLogs).toHaveBeenCalledWith("nemo-123", { tail: 50 });
     expect(mockExec).toHaveBeenCalledWith("nemo-123", { tty: true });
-    expect(telemetry).toEqual(expect.objectContaining({ backend_type: "nemoclaw" }));
+    expect(telemetry).toEqual(expect.objectContaining({ backend_type: "docker" }));
     expect(logs).toBe("log-stream");
     expect(exec).toEqual({ exec: "exec-instance", stream: "stream-instance" });
   });
@@ -119,7 +125,13 @@ describe("containerManager NemoClaw routing", () => {
 
   it("throws NoContainerError (409) when mutating an agent with null container_id", async () => {
     const containerManager = require("../containerManager");
-    const agent = { backend_type: "nemoclaw", container_id: null };
+    const agent = {
+      runtime_family: "openclaw",
+      deploy_target: "docker",
+      sandbox_profile: "nemoclaw",
+      backend_type: "docker",
+      container_id: null,
+    };
 
     await expect(containerManager.start(agent)).rejects.toMatchObject({
       name: "NoContainerError",
@@ -143,7 +155,13 @@ describe("containerManager NemoClaw routing", () => {
 
   it("returns a stable not-running snapshot for status()/stats() when container_id is null", async () => {
     const containerManager = require("../containerManager");
-    const agent = { backend_type: "nemoclaw", container_id: null };
+    const agent = {
+      runtime_family: "openclaw",
+      deploy_target: "docker",
+      sandbox_profile: "nemoclaw",
+      backend_type: "docker",
+      container_id: null,
+    };
 
     // status() is called from background reconciliation and from several live
     // endpoints — throwing would force every caller to try/catch. Instead we
@@ -157,24 +175,27 @@ describe("containerManager NemoClaw routing", () => {
     expect(mockStats).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, "", "  "])(
-    "treats container_id %p as missing",
-    async (value) => {
-      const containerManager = require("../containerManager");
-      const agent = { backend_type: "nemoclaw", container_id: value };
-      // Empty-string / whitespace container_id must be rejected the same as null.
-      // (Current guard is strict type+length; whitespace is allowed through so
-      //  it will bubble as a Docker 404 with the literal whitespace id. That's
-      //  at least informative — this test documents the intended contract.)
-      if (typeof value === "string" && value.length > 0) {
-        await containerManager.start(agent);
-        expect(mockStart).toHaveBeenCalledWith(value);
-      } else {
-        await expect(containerManager.start(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
-        expect(mockStart).not.toHaveBeenCalled();
-      }
-    },
-  );
+  it.each([undefined, "", "  "])("treats container_id %p as missing", async (value) => {
+    const containerManager = require("../containerManager");
+    const agent = {
+      runtime_family: "openclaw",
+      deploy_target: "docker",
+      sandbox_profile: "nemoclaw",
+      backend_type: "docker",
+      container_id: value,
+    };
+    // Empty-string / whitespace container_id must be rejected the same as null.
+    // (Current guard is strict type+length; whitespace is allowed through so
+    //  it will bubble as a Docker 404 with the literal whitespace id. That's
+    //  at least informative — this test documents the intended contract.)
+    if (typeof value === "string" && value.length > 0) {
+      await containerManager.start(agent);
+      expect(mockStart).toHaveBeenCalledWith(value);
+    } else {
+      await expect(containerManager.start(agent)).rejects.toMatchObject({ code: "NO_CONTAINER" });
+      expect(mockStart).not.toHaveBeenCalled();
+    }
+  });
 
   it("routes Hermes lifecycle, telemetry, logs, and exec calls to the Hermes backend", async () => {
     const containerManager = require("../containerManager");
@@ -202,7 +223,7 @@ describe("containerManager NemoClaw routing", () => {
     expect(mockHermesStats).toHaveBeenCalledWith("hermes-123", agent);
     expect(mockHermesLogs).toHaveBeenCalledWith("hermes-123", { tail: 25 });
     expect(mockHermesExec).toHaveBeenCalledWith("hermes-123", { tty: true });
-    expect(telemetry).toEqual(expect.objectContaining({ backend_type: "hermes" }));
+    expect(telemetry).toEqual(expect.objectContaining({ backend_type: "docker" }));
     expect(logs).toBe("hermes-log-stream");
     expect(exec).toEqual({ exec: "hermes-exec", stream: "hermes-stream" });
   });

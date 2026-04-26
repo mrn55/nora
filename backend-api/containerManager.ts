@@ -17,14 +17,20 @@
  */
 
 const path = require("path");
-const { resolveAgentBackendType } = require("./agentRuntimeFields");
+const {
+  resolveAgentBackendType,
+  resolveAgentRuntimeFamily,
+  resolveAgentSandboxProfile,
+} = require("./agentRuntimeFields");
 
 // Lazy-load backends so missing optional deps (e.g. @kubernetes/client-node)
 // don't crash the API server when only Docker is used.
 const backendCache = {};
 
 class NoContainerError extends Error {
-  constructor(message = "Agent has no container assigned (still provisioning, failed, or already destroyed)") {
+  constructor(
+    message = "Agent has no container assigned (still provisioning, failed, or already destroyed)",
+  ) {
     super(message);
     this.name = "NoContainerError";
     this.statusCode = 409;
@@ -67,12 +73,12 @@ function getBackendInstance(type) {
       backendCache[type] = new DockerBackend();
       break;
     }
-    case "hermes": {
+    case "docker:hermes": {
       const HermesBackend = require(resolveBackendPath("hermes"));
       backendCache[type] = new HermesBackend();
       break;
     }
-    case "nemoclaw": {
+    case "docker:nemoclaw": {
       const NemoClawBackend = require(resolveBackendPath("nemoclaw"));
       backendCache[type] = new NemoClawBackend();
       break;
@@ -102,6 +108,14 @@ function getBackendInstance(type) {
  */
 function backendFor(agent) {
   const type = resolveAgentBackendType(agent);
+  if (type === "docker") {
+    if (resolveAgentRuntimeFamily(agent) === "hermes") {
+      return getBackendInstance("docker:hermes");
+    }
+    if (resolveAgentSandboxProfile(agent) === "nemoclaw") {
+      return getBackendInstance("docker:nemoclaw");
+    }
+  }
   return getBackendInstance(type);
 }
 

@@ -129,11 +129,10 @@ export function visibleExecutionTargetsFromConfig(
   runtimeFamily = "",
 ) {
   const isAdmin = viewerRole === "admin";
-  const enabledExecutionTargets = enabledExecutionTargetsFromConfig(backendConfig, runtimeFamily);
+  const executionTargets = executionTargetsForRuntimeFamily(backendConfig, runtimeFamily);
+  const enabledExecutionTargets = executionTargets.filter((target) => target.enabled);
 
-  return isAdmin
-    ? enabledExecutionTargets
-    : enabledExecutionTargets.filter((target) => target.availableForOnboarding);
+  return isAdmin ? executionTargets : enabledExecutionTargets;
 }
 
 export function activeExecutionTargetFromConfig(
@@ -220,10 +219,6 @@ export function resolveAgentRuntimeFamily(agent: AgentRuntimeMeta = {}) {
   const explicitRuntimeFamily = normalizeRuntimeFamily(agent.runtime_family);
   if (explicitRuntimeFamily) return explicitRuntimeFamily;
 
-  const legacyBackend = String(agent.backend_type || "")
-    .trim()
-    .toLowerCase();
-  if (legacyBackend === "hermes") return "hermes";
   return "openclaw";
 }
 
@@ -231,12 +226,7 @@ export function resolveAgentExecutionTarget(agent: AgentRuntimeMeta = {}) {
   const explicitDeployTarget = normalizeDeployTarget(agent.deploy_target);
   if (explicitDeployTarget) return explicitDeployTarget;
 
-  const legacyBackend = String(agent.backend_type || "")
-    .trim()
-    .toLowerCase();
-  if (legacyBackend === "nemoclaw" || legacyBackend === "hermes") return "docker";
-
-  return normalizeDeployTarget(legacyBackend) || "docker";
+  return normalizeDeployTarget(agent.backend_type) || "docker";
 }
 
 export function resolveAgentSandboxProfile(agent: AgentRuntimeMeta = {}) {
@@ -244,11 +234,7 @@ export function resolveAgentSandboxProfile(agent: AgentRuntimeMeta = {}) {
     normalizeSandboxProfile(agent.sandbox_profile) || normalizeSandboxProfile(agent.sandbox_type);
   if (explicitSandboxProfile) return explicitSandboxProfile;
 
-  return String(agent.backend_type || "")
-    .trim()
-    .toLowerCase() === "nemoclaw"
-    ? "nemoclaw"
-    : "standard";
+  return "standard";
 }
 
 export function resolveBackendTypeForSelection({
@@ -256,13 +242,7 @@ export function resolveBackendTypeForSelection({
   deployTarget = "docker",
   sandboxProfile = "standard",
 } = {}) {
-  if (normalizeRuntimeFamily(runtimeFamily) === "hermes") {
-    return "hermes";
-  }
-
-  return normalizeSandboxProfile(sandboxProfile) === "nemoclaw"
-    ? "nemoclaw"
-    : normalizeDeployTarget(deployTarget) || "docker";
+  return normalizeDeployTarget(deployTarget) || "docker";
 }
 
 export function containerNamePrefixForSelection({
@@ -296,22 +276,13 @@ export function formatSandboxProfileLabel(value) {
 }
 
 export function formatRuntimePathLabel(agent: AgentRuntimeMeta = {}) {
-  if (resolveAgentRuntimeFamily(agent) === "hermes") {
-    return "Hermes + Docker";
-  }
+  const runtimeLabel = formatRuntimeFamilyLabel(resolveAgentRuntimeFamily(agent));
+  const targetLabel = formatExecutionTargetLabel(resolveAgentExecutionTarget(agent));
+  const sandboxProfile = resolveAgentSandboxProfile(agent);
 
-  if (resolveAgentSandboxProfile(agent) === "nemoclaw") {
-    return "NemoClaw + OpenClaw";
-  }
-
-  switch (resolveAgentExecutionTarget(agent)) {
-    case "k8s":
-      return "OpenClaw + Kubernetes";
-    case "proxmox":
-      return "OpenClaw + Proxmox";
-    default:
-      return "OpenClaw + Docker";
-  }
+  return sandboxProfile === "nemoclaw"
+    ? `${runtimeLabel} + ${targetLabel} + NemoClaw`
+    : `${runtimeLabel} + ${targetLabel}`;
 }
 
 export function isNemoClawSandbox(agent = {}) {

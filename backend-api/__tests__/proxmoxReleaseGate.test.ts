@@ -1,19 +1,24 @@
 // @ts-nocheck
 const {
-  PROXMOX_RELEASE_BLOCKER_ISSUE,
   getBackendCatalog,
   getBackendStatus,
   getDefaultBackend,
+  getRuntimeSelectionStatus,
 } = require("../../agent-runtime/lib/backendCatalog");
-const ProxmoxBackend = require("../../workers/provisioner/backends/proxmox");
 
 const ORIGINAL_ENV = { ...process.env };
 const ENV_KEYS = [
   "ENABLED_BACKENDS",
   "ENABLED_RUNTIME_FAMILIES",
+  "ENABLED_SANDBOX_PROFILES",
   "PROXMOX_API_URL",
   "PROXMOX_TOKEN_ID",
   "PROXMOX_TOKEN_SECRET",
+  "PROXMOX_SSH_HOST",
+  "PROXMOX_SSH_USER",
+  "PROXMOX_SSH_PASSWORD",
+  "PROXMOX_HERMES_TEMPLATE",
+  "PROXMOX_NEMOCLAW_TEMPLATE",
 ];
 
 function restoreEnv() {
@@ -26,28 +31,31 @@ function restoreEnv() {
   }
 }
 
-describe("proxmox release gate", () => {
+describe("proxmox runtime selection", () => {
   beforeEach(() => {
-    process.env.ENABLED_BACKENDS = "proxmox,docker";
+    process.env.ENABLED_BACKENDS = "docker,proxmox";
     process.env.PROXMOX_API_URL = "https://pve.example.com:8006/api2/json";
     process.env.PROXMOX_TOKEN_ID = "root@pam!openclaw";
     process.env.PROXMOX_TOKEN_SECRET = "secret";
+    process.env.PROXMOX_SSH_HOST = "pve.example.com";
+    process.env.PROXMOX_SSH_USER = "root";
+    process.env.PROXMOX_SSH_PASSWORD = "secret";
   });
 
   afterEach(() => {
     restoreEnv();
   });
 
-  it("keeps proxmox unavailable even when credentials are configured", () => {
+  it("marks Proxmox available when API and SSH bootstrap configuration exist", () => {
     const status = getBackendStatus("proxmox");
 
     expect(status.enabled).toBe(true);
-    expect(status.configured).toBe(false);
-    expect(status.available).toBe(false);
-    expect(status.issue).toBe(PROXMOX_RELEASE_BLOCKER_ISSUE);
+    expect(status.configured).toBe(true);
+    expect(status.available).toBe(true);
+    expect(status.maturityTier).toBe("beta");
   });
 
-  it("prefers a usable backend over proxmox for the default standard deployment path", () => {
+  it("keeps the first available deploy target as the default standard path", () => {
     const catalog = getBackendCatalog();
 
     expect(getDefaultBackend(process.env, { sandbox: "standard" })).toBe("docker");
@@ -55,11 +63,41 @@ describe("proxmox release gate", () => {
     expect(catalog.find((backend) => backend.id === "proxmox")?.isDefault).toBe(false);
   });
 
-  it("rejects proxmox create attempts instead of pretending a deployment succeeded", async () => {
-    const backend = new ProxmoxBackend();
+  it("requires ready-made Proxmox templates for Hermes and NemoClaw selections", () => {
+    process.env.ENABLED_RUNTIME_FAMILIES = "openclaw,hermes";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
 
-    await expect(
-      backend.create({ id: "agent-1", name: "Blocked Proxmox Agent" })
-    ).rejects.toThrow(PROXMOX_RELEASE_BLOCKER_ISSUE);
+    expect(
+      getRuntimeSelectionStatus({
+        runtime_family: "hermes",
+        deploy_target: "proxmox",
+        sandbox_profile: "standard",
+      }),
+    ).toEqual(expect.objectContaining({ enabled: true, available: false }));
+    expect(
+      getRuntimeSelectionStatus({
+        runtime_family: "openclaw",
+        deploy_target: "proxmox",
+        sandbox_profile: "nemoclaw",
+      }),
+    ).toEqual(expect.objectContaining({ enabled: true, available: false }));
+
+    process.env.PROXMOX_HERMES_TEMPLATE = "local:vztmpl/nora-hermes.tar.zst";
+    process.env.PROXMOX_NEMOCLAW_TEMPLATE = "local:vztmpl/nora-nemoclaw.tar.zst";
+
+    expect(
+      getRuntimeSelectionStatus({
+        runtime_family: "hermes",
+        deploy_target: "proxmox",
+        sandbox_profile: "standard",
+      }),
+    ).toEqual(expect.objectContaining({ enabled: true, available: true }));
+    expect(
+      getRuntimeSelectionStatus({
+        runtime_family: "openclaw",
+        deploy_target: "proxmox",
+        sandbox_profile: "nemoclaw",
+      }),
+    ).toEqual(expect.objectContaining({ enabled: true, available: true }));
   });
 });

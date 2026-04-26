@@ -29,7 +29,7 @@ flowchart LR
     end
 
     subgraph RuntimeInfra["Runtime execution layer"]
-        Worker --> Adapters["Backend adapters<br/>Docker / Kubernetes / Proxmox / NemoClaw / Hermes"]
+        Worker --> Adapters["Backend adapters<br/>Docker / Kubernetes / Proxmox"]
         Adapters --> Runtime["Provisioned agent runtime"]
         API <--> Runtime
     end
@@ -145,9 +145,9 @@ The worker resolves the final backend through shared metadata in `agent-runtime/
 |---|---|---|---|
 | OpenClaw + Docker | `openclaw` | GA | Recommended default path for most self-hosted installs. |
 | OpenClaw + Kubernetes | `openclaw` | Beta | Uses Kubernetes workloads instead of the local Docker host. |
-| OpenClaw + Proxmox | `openclaw` | Blocked | Visible in the catalog, but intentionally not treated as release-ready in the current build. |
-| NemoClaw + OpenClaw | `openclaw` | Experimental | Uses NVIDIA secure sandboxing with a stronger isolation profile. |
-| Hermes + Docker | `hermes` | Experimental | Docker-managed path with a narrower runtime contract and its own dashboard surface. |
+| OpenClaw + Proxmox | `openclaw` | Beta | Provisions LXC runtimes through the Proxmox API and pct bootstrap. |
+| OpenClaw + Docker/Kubernetes/Proxmox + NemoClaw | `openclaw` | Experimental | Uses NVIDIA secure sandboxing as a sandbox profile on supported OpenClaw execution targets. |
+| Hermes + Docker/Proxmox | `hermes` | Experimental | Narrower runtime contract with its own dashboard surface; Proxmox uses a ready-made Hermes LXC template. |
 
 ### Provisioning Lifecycle
 
@@ -230,15 +230,11 @@ flowchart TB
         Docker["Local Docker host"]
         K8s["Kubernetes cluster"]
         Proxmox["Proxmox API path"]
-        Nemo["NemoClaw secure sandbox path"]
-        Hermes["Hermes Docker path"]
     end
 
     Worker --> Docker
     Worker --> K8s
     Worker --> Proxmox
-    Worker --> Nemo
-    Worker --> Hermes
 ```
 
 The clearest public path today is still one host running the control plane, with agent runtimes launched locally through Docker by default. Public-domain setups can either let Nora own public ingress directly or put an external reverse proxy in front of Nora's internal nginx.
@@ -257,6 +253,6 @@ The clearest public path today is still one host running the control plane, with
 - The public OSS path is primarily a single-host control plane. The repo does not currently claim a first-class HA or distributed control-plane deployment story.
 - OpenClaw is the default runtime family. Hermes is available as a narrower, deployment-first runtime path with a different operator contract.
 - Migration recreates runtimes under Nora control; it does not adopt a legacy runtime in place.
-- Hermes remains Docker-only in the current public runtime catalog, and Hermes import applies only the supported Nora-managed/runtime state described above.
+- Hermes is a runtime family, not a backend id. Docker and Proxmox are the current Hermes execution targets, and Hermes import applies only the supported Nora-managed/runtime state described above.
 - Kubernetes, Proxmox, and NemoClaw are execution-target options for agents, not separate control-plane products.
 - Public architecture docs should describe current repo behavior and supported paths honestly, without inventing private-only operating procedures or future guarantees.

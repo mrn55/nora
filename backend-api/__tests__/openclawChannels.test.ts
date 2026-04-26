@@ -276,9 +276,13 @@ describe("openclaw channel catalog compatibility", () => {
     });
     expect(mockRunContainerCommand).toHaveBeenCalledWith(
       agent,
-      expect.stringContaining("plugins install @openclaw/whatsapp --force"),
+      expect.stringContaining('plugins install "$spec" --force'),
       { timeout: 240000 },
     );
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain(
+      "install_openclaw_plugin '@openclaw/whatsapp' 'whatsapp'",
+    );
+    expect(mockRunContainerCommand.mock.calls[0][1]).toContain("OPENCLAW_PLUGIN_INSTALL_MAX_OLD_SPACE_MB:-256");
     expect(mockRunContainerCommand.mock.calls[0][1]).toContain("gateway restart");
     expect(mockRpcCall).toHaveBeenNthCalledWith(
       5,
@@ -291,6 +295,38 @@ describe("openclaw channel catalog compatibility", () => {
       },
       undefined,
     );
+  });
+
+  it("explains code 137 WhatsApp provider install failures as likely memory pressure", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [{ id: "whatsapp", label: "WhatsApp" }],
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-connect-oom",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        restart: "requested",
+      })
+      .mockRejectedValueOnce(
+        Object.assign(new Error("web login provider is not available"), {
+          code: "INVALID_REQUEST",
+        }),
+      );
+    const killed = new Error("Container command exited with code 137");
+    killed.exitCode = 137;
+    mockRunContainerCommand.mockRejectedValueOnce(killed);
+
+    await expect(
+      connectOpenClawChannel(agent, "whatsapp", {
+        force: true,
+        timeoutMs: 30000,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 502,
+      message: expect.stringContaining("ran out of memory"),
+    });
   });
 
   it("lists channel types from the config schema when runtime status exposes no catalog", async () => {

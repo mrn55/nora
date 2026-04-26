@@ -15,11 +15,16 @@ class mockFakeWebSocket extends EventEmitter {
     this.readyState = mockFakeWebSocket.OPEN;
     setImmediate(() => {
       if (this.readyState !== mockFakeWebSocket.OPEN) return;
-      this.emit("message", Buffer.from(JSON.stringify({
-        type: "event",
-        event: "connect.challenge",
-        payload: { nonce: "nonce-1" },
-      })));
+      this.emit(
+        "message",
+        Buffer.from(
+          JSON.stringify({
+            type: "event",
+            event: "connect.challenge",
+            payload: { nonce: "nonce-1" },
+          }),
+        ),
+      );
     });
   }
 
@@ -27,72 +32,107 @@ class mockFakeWebSocket extends EventEmitter {
     const msg = JSON.parse(payload);
     if (msg.method === "connect") {
       return setImmediate(() => {
-        this.emit("message", Buffer.from(JSON.stringify({
-          id: "__connect__",
-          ok: true,
-          result: { connected: true },
-        })));
+        this.emit(
+          "message",
+          Buffer.from(
+            JSON.stringify({
+              id: "__connect__",
+              ok: true,
+              result: { connected: true },
+            }),
+          ),
+        );
       });
     }
 
     if (msg.method === "health") {
       if (mockFakeWebSocket.healthMode === "error") {
         return setImmediate(() => {
-          this.emit("message", Buffer.from(JSON.stringify({
-            id: msg.id,
-            ok: false,
-            error: { message: "health failed" },
-          })));
+          this.emit(
+            "message",
+            Buffer.from(
+              JSON.stringify({
+                id: msg.id,
+                ok: false,
+                error: { message: "health failed" },
+              }),
+            ),
+          );
         });
       }
       return setImmediate(() => {
-        this.emit("message", Buffer.from(JSON.stringify({
-          id: msg.id,
-          ok: true,
-          result: { status: "ok" },
-        })));
+        this.emit(
+          "message",
+          Buffer.from(
+            JSON.stringify({
+              id: msg.id,
+              ok: true,
+              result: { status: "ok" },
+            }),
+          ),
+        );
       });
     }
 
     if (msg.method === "status") {
       if (mockFakeWebSocket.statusMode === "error") {
         return setImmediate(() => {
-          this.emit("message", Buffer.from(JSON.stringify({
-            id: msg.id,
-            ok: false,
-            error: { message: "status failed" },
-          })));
+          this.emit(
+            "message",
+            Buffer.from(
+              JSON.stringify({
+                id: msg.id,
+                ok: false,
+                error: { message: "status failed" },
+              }),
+            ),
+          );
         });
       }
       return setImmediate(() => {
-        this.emit("message", Buffer.from(JSON.stringify({
-          id: msg.id,
-          ok: true,
-          result: { state: "idle" },
-        })));
+        this.emit(
+          "message",
+          Buffer.from(
+            JSON.stringify({
+              id: msg.id,
+              ok: true,
+              result: { state: "idle" },
+            }),
+          ),
+        );
       });
     }
 
     if (msg.method === "chat.send") {
       return setImmediate(() => {
-        this.emit("message", Buffer.from(JSON.stringify({
-          id: msg.id,
-          ok: true,
-          result: {
-            content: "pong",
-            usage: { total_tokens: 42 },
-          },
-        })));
+        this.emit(
+          "message",
+          Buffer.from(
+            JSON.stringify({
+              id: msg.id,
+              ok: true,
+              result: {
+                content: "pong",
+                usage: { total_tokens: 42 },
+              },
+            }),
+          ),
+        );
       });
     }
 
     if (msg.method === "tools.catalog") {
       return setImmediate(() => {
-        this.emit("message", Buffer.from(JSON.stringify({
-          id: msg.id,
-          ok: true,
-          result: mockFakeWebSocket.toolsCatalogResult || { tools: [] },
-        })));
+        this.emit(
+          "message",
+          Buffer.from(
+            JSON.stringify({
+              id: msg.id,
+              ok: true,
+              result: mockFakeWebSocket.toolsCatalogResult || { tools: [] },
+            }),
+          ),
+        );
       });
     }
   }
@@ -163,19 +203,19 @@ describe("gateway proxy control-plane routes", () => {
 
   it("sends non-streaming chat through the gateway and records usage metrics", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        id: "agent-1",
-        user_id: "user-1",
-        status: "running",
-        host: "10.0.0.10",
-        gateway_token: "gateway-token",
-        gateway_host_port: null,
-      }],
+      rows: [
+        {
+          id: "agent-1",
+          user_id: "user-1",
+          status: "running",
+          host: "10.0.0.10",
+          gateway_token: "gateway-token",
+          gateway_host_port: null,
+        },
+      ],
     });
 
-    const res = await request(app)
-      .post("/agents/agent-1/gateway/chat")
-      .send({ message: "ping" });
+    const res = await request(app).post("/agents/agent-1/gateway/chat").send({ message: "ping" });
 
     expect(res.status).toBe(200);
     expect(res.body.content).toBe("pong");
@@ -185,14 +225,16 @@ describe("gateway proxy control-plane routes", () => {
 
   it("returns 502 when gateway health and status both fail", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        id: "agent-1",
-        user_id: "user-1",
-        status: "running",
-        host: "10.0.0.10",
-        gateway_token: "gateway-token",
-        gateway_host_port: null,
-      }],
+      rows: [
+        {
+          id: "agent-1",
+          user_id: "user-1",
+          status: "running",
+          host: "10.0.0.10",
+          gateway_token: "gateway-token",
+          gateway_host_port: null,
+        },
+      ],
     });
     mockFakeWebSocket.healthMode = "error";
     mockFakeWebSocket.statusMode = "error";
@@ -203,22 +245,24 @@ describe("gateway proxy control-plane routes", () => {
     expect(res.body).toEqual(
       expect.objectContaining({
         error: "Gateway unreachable",
-      })
+      }),
     );
   });
 
   it("returns 409 for Hermes runtimes", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        id: "agent-hermes-1",
-        user_id: "user-1",
-        status: "running",
-        host: "10.0.0.30",
-        backend_type: "hermes",
-        runtime_family: "hermes",
-        gateway_token: null,
-        gateway_host_port: null,
-      }],
+      rows: [
+        {
+          id: "agent-hermes-1",
+          user_id: "user-1",
+          status: "running",
+          host: "10.0.0.30",
+          backend_type: "docker",
+          runtime_family: "hermes",
+          gateway_token: null,
+          gateway_host_port: null,
+        },
+      ],
     });
 
     const res = await request(app).get("/agents/agent-hermes-1/gateway/status");
@@ -227,20 +271,22 @@ describe("gateway proxy control-plane routes", () => {
     expect(res.body).toEqual(
       expect.objectContaining({
         error: "This runtime family does not expose an OpenClaw gateway",
-      })
+      }),
     );
   });
 
   it("merges gateway-native tools with integration manifest tools", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        id: "agent-2",
-        user_id: "user-1",
-        status: "running",
-        host: "10.0.0.20",
-        gateway_token: "gateway-token",
-        gateway_host_port: null,
-      }],
+      rows: [
+        {
+          id: "agent-2",
+          user_id: "user-1",
+          status: "running",
+          host: "10.0.0.20",
+          gateway_token: "gateway-token",
+          gateway_host_port: null,
+        },
+      ],
     });
     mockFakeWebSocket.toolsCatalogResult = {
       tools: [
@@ -278,7 +324,7 @@ describe("gateway proxy control-plane routes", () => {
     expect(mockGetIntegrationsForSync).toHaveBeenCalledWith("agent-2");
     expect(mockBuildIntegrationToolCatalogEntries).toHaveBeenCalledWith(
       [{ id: "int-gh", provider: "github", toolSpecs: [{ name: "github_list_repositories" }] }],
-      { reservedNames: new Set(["gateway_native_tool"]) }
+      { reservedNames: new Set(["gateway_native_tool"]) },
     );
   });
 });

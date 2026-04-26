@@ -1,15 +1,18 @@
 // @ts-nocheck
 const {
-  deployTargetForBackend,
-  getDefaultBackend,
   getDefaultDeployTarget,
-  isKnownSandboxProfile,
-  normalizeBackendName,
-  runtimeFamilyForBackend,
+  getDefaultRuntimeFamily,
+  getDefaultSandboxProfile,
+  normalizeDeployTargetName,
+  normalizeRuntimeFamilyName,
+  normalizeSandboxProfileName,
 } = require("./backendCatalog");
 
 function getProvisionerBackendName() {
-  return getDefaultBackend(process.env, { sandbox: "standard" });
+  return getDefaultDeployTarget(process.env, {
+    runtimeFamily: getDefaultRuntimeFamily(process.env),
+    sandbox: getDefaultSandboxProfile(process.env),
+  });
 }
 
 function getStandardDockerAgentImage() {
@@ -31,69 +34,53 @@ function getNemoClawAgentImage() {
   );
 }
 
-function normalizeRequestedSandboxProfile(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return null;
-  if (isKnownSandboxProfile(normalized)) return normalized;
-  return null;
-}
-
-function resolveProvisionerBackend({ backend, deployTarget, sandboxProfile }) {
-  const normalizedBackend = String(backend || "").trim().toLowerCase();
-  if (normalizedBackend) {
-    return normalizeBackendName(normalizedBackend);
-  }
-
-  const normalizedDeployTarget = String(deployTarget || "").trim().toLowerCase();
-  if (normalizedDeployTarget === "nemoclaw") {
-    return "nemoclaw";
-  }
-  if (sandboxProfile === "nemoclaw") {
-    return "nemoclaw";
-  }
-
-  return getDefaultBackend(process.env, { sandbox: sandboxProfile || "standard" });
-}
-
 function getDefaultAgentImage({
+  runtime_family,
+  runtimeFamily,
   sandbox = "standard",
-  backend = getProvisionerBackendName(),
   sandbox_profile,
   sandboxProfile,
   deploy_target,
   deployTarget,
+  backend,
 } = {}) {
-  const resolvedBackend = resolveProvisionerBackend({
-    backend,
-    deployTarget: deploy_target ?? deployTarget,
-    sandboxProfile:
-      normalizeRequestedSandboxProfile(
-        sandbox_profile ?? sandboxProfile ?? sandbox
-      ) || "standard",
-  });
-  const resolvedRuntimeFamily = runtimeFamilyForBackend(resolvedBackend);
-  const resolvedSandboxProfile =
-    normalizeRequestedSandboxProfile(
-      sandbox_profile ?? sandboxProfile ?? sandbox
-    ) ||
-    (resolvedBackend === "nemoclaw" ? "nemoclaw" : "standard");
+  const resolvedRuntimeFamily = normalizeRuntimeFamilyName(
+    runtime_family ?? runtimeFamily ?? getDefaultRuntimeFamily(process.env)
+  );
+  const resolvedSandboxProfile = normalizeSandboxProfileName(
+    sandbox_profile ??
+      sandboxProfile ??
+      sandbox ??
+      getDefaultSandboxProfile(process.env, { runtimeFamily: resolvedRuntimeFamily })
+  );
+  const resolvedDeployTarget = normalizeDeployTargetName(
+    deploy_target ??
+      deployTarget ??
+      backend ??
+      getDefaultDeployTarget(process.env, {
+        runtimeFamily: resolvedRuntimeFamily,
+        sandbox: resolvedSandboxProfile,
+      })
+  );
 
   if (resolvedRuntimeFamily === "hermes") {
-    return getHermesDockerAgentImage();
+    return resolvedDeployTarget === "proxmox"
+      ? process.env.PROXMOX_HERMES_TEMPLATE || getHermesDockerAgentImage()
+      : getHermesDockerAgentImage();
   }
 
   if (resolvedSandboxProfile === "nemoclaw") {
-    return getNemoClawAgentImage();
+    return resolvedDeployTarget === "proxmox"
+      ? process.env.PROXMOX_NEMOCLAW_TEMPLATE || getNemoClawAgentImage()
+      : getNemoClawAgentImage();
   }
 
-  const resolvedDeployTarget =
-    deploy_target ??
-    deployTarget ??
-    deployTargetForBackend(resolvedBackend) ??
-    getDefaultDeployTarget(process.env, { sandbox: resolvedSandboxProfile });
-
-  if (normalizeBackendName(resolvedDeployTarget) === "docker") {
+  if (resolvedDeployTarget === "docker") {
     return getStandardDockerAgentImage();
+  }
+
+  if (resolvedDeployTarget === "proxmox") {
+    return process.env.PROXMOX_TEMPLATE || "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst";
   }
 
   return process.env.OPENCLAW_STANDARD_IMAGE || "node:24-slim";
@@ -106,5 +93,5 @@ module.exports = {
   getProvisionerBackendName,
   getStandardDockerAgentImage,
   getStandardDockerPackageSpec,
-  normalizeBackendName,
+  normalizeBackendName: normalizeDeployTargetName,
 };

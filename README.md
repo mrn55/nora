@@ -270,7 +270,8 @@ CORS_ORIGINS=http://localhost:8080
 
 # Runtime families and deploy backends
 ENABLED_RUNTIME_FAMILIES=openclaw,hermes
-ENABLED_BACKENDS=docker,hermes
+ENABLED_BACKENDS=docker
+ENABLED_SANDBOX_PROFILES=standard
 
 # Optional bootstrap admin
 DEFAULT_ADMIN_EMAIL=admin@example.com
@@ -420,7 +421,7 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 - `admin-dashboard/` — admin surfaces for fleet, queue, audit, users, and Agent Hub moderation
 - `backend-api/` — auth, provisioning, migration draft import/export, live filesystem routes, key management, monitoring, Agent Hub logic, runtime coordination, and proxy routes
 - `agent-runtime/` — shared runtime contracts, endpoint conventions, bootstrap files, and backend catalog metadata
-- `workers/provisioner/` — deployment workers for Docker, Kubernetes, Proxmox, NemoClaw, and Hermes-backed paths
+- `workers/provisioner/` — deployment workers for Docker, Kubernetes, and Proxmox execution targets, with runtime-specific Docker adapters where needed
 - `e2e/` — Playwright end-to-end and smoke coverage
 - `infra/` — TLS, backup, and deployment-adjacent helpers
 
@@ -452,7 +453,8 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 | `NGINX_HTTP_PORT` | No | Host port for nginx in HTTP mode |
 | `PLATFORM_MODE` | No | `selfhosted` or `paas` |
 | `ENABLED_RUNTIME_FAMILIES` | No | Comma-separated runtime families. Supported values: `openclaw`, `hermes` |
-| `ENABLED_BACKENDS` | No | Comma-separated backend ids. Supported values: `docker`, `k8s`, `proxmox`, `nemoclaw`, `hermes` |
+| `ENABLED_BACKENDS` | No | Comma-separated execution target ids. Supported values: `docker`, `k8s`, `proxmox` |
+| `ENABLED_SANDBOX_PROFILES` | No | Comma-separated sandbox profile ids. Supported values: `standard`, `nemoclaw` |
 | `CORS_ORIGINS` | No | Comma-separated allowed browser origins |
 | `DEFAULT_ADMIN_EMAIL` | No | Bootstrap admin seeded on first boot when paired with a strong password |
 | `DEFAULT_ADMIN_PASSWORD` | No | Bootstrap admin password used on first boot only |
@@ -464,10 +466,12 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 | `K8S_EXPOSURE_MODE` | `cluster-ip` by default, or `node-port` for local kind verification |
 | `K8S_NAMESPACE` | Kubernetes namespace for OpenClaw workloads |
 | `PROXMOX_API_URL` / `PROXMOX_TOKEN_ID` / `PROXMOX_TOKEN_SECRET` | Proxmox API configuration |
-| `NVIDIA_API_KEY` | Required when `ENABLED_BACKENDS` includes `nemoclaw` |
+| `PROXMOX_SSH_HOST` / `PROXMOX_SSH_USER` / `PROXMOX_SSH_PRIVATE_KEY_PATH` | Proxmox SSH configuration for LXC bootstrap |
+| `PROXMOX_HERMES_TEMPLATE` / `PROXMOX_NEMOCLAW_TEMPLATE` | Required for Hermes or NemoClaw on Proxmox |
+| `NVIDIA_API_KEY` | Required when `ENABLED_SANDBOX_PROFILES` includes `nemoclaw` |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE` | Optional Stripe settings for operator-run `PLATFORM_MODE=paas` deployments |
 
-If you only want the Hermes runtime family, `ENABLED_RUNTIME_FAMILIES=hermes` is enough. If you want both families on Docker-backed paths, `ENABLED_RUNTIME_FAMILIES=openclaw,hermes` with `ENABLED_BACKENDS=docker,hermes` is the clearest explicit setup.
+If you want both families on Docker-backed paths, use `ENABLED_RUNTIME_FAMILIES=openclaw,hermes` with `ENABLED_BACKENDS=docker`. To expose NemoClaw as an OpenClaw sandbox choice, add `ENABLED_SANDBOX_PROFILES=standard,nemoclaw`.
 
 ## Development
 

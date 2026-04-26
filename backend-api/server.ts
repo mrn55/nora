@@ -33,7 +33,6 @@ const {
 } = require("../agent-runtime/lib/agentEndpoints");
 const {
   getBackendCatalog,
-  getBackendStatus,
   getDefaultBackend,
   getDefaultDeployTarget,
   getDefaultRuntimeFamily,
@@ -585,15 +584,18 @@ app.get("/config/backends", (_req, res) => {
 });
 
 app.get("/config/nemoclaw", (req, res) => {
-  const nemoclaw = getBackendStatus("nemoclaw");
+  const nemoclaw =
+    getSandboxProfileCatalog(process.env, { runtimeFamily: "openclaw" }).find(
+      (profile) => profile.id === "nemoclaw",
+    ) || {};
   res.json({
-    enabled: nemoclaw.enabled,
-    configured: nemoclaw.configured,
-    available: nemoclaw.available,
-    issue: nemoclaw.issue,
-    defaultModel: nemoclaw.defaultModel,
-    sandboxImage: nemoclaw.sandboxImage,
-    models: nemoclaw.models,
+    enabled: Boolean(nemoclaw.enabled),
+    configured: Boolean(nemoclaw.configured),
+    available: Boolean(nemoclaw.available),
+    issue: nemoclaw.issue || null,
+    defaultModel: nemoclaw.defaultModel || null,
+    sandboxImage: nemoclaw.sandboxImage || null,
+    models: nemoclaw.models || [],
   });
 });
 
@@ -975,8 +977,6 @@ async function migrateDB() {
     `ALTER TABLE agents ALTER COLUMN sandbox_profile SET DEFAULT 'standard'`,
     `UPDATE agents
         SET backend_type = CASE
-          WHEN runtime_family = 'hermes' THEN 'hermes'
-          WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
           WHEN deploy_target = 'kubernetes' THEN 'k8s'
           WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target
           ELSE 'docker'
@@ -985,8 +985,6 @@ async function migrateDB() {
         AND deploy_target IS NOT NULL
         AND sandbox_profile IS NOT NULL
         AND backend_type IS DISTINCT FROM CASE
-          WHEN runtime_family = 'hermes' THEN 'hermes'
-          WHEN sandbox_profile = 'nemoclaw' THEN 'nemoclaw'
           WHEN deploy_target = 'kubernetes' THEN 'k8s'
           WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target
           ELSE 'docker'

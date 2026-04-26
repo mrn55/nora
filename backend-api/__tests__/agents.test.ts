@@ -326,6 +326,7 @@ beforeEach(() => {
   });
   delete process.env.ENABLED_BACKENDS;
   delete process.env.ENABLED_RUNTIME_FAMILIES;
+  delete process.env.ENABLED_SANDBOX_PROFILES;
   delete process.env.KUBECONFIG;
   delete process.env.KUBERNETES_SERVICE_HOST;
   require("../billing").IS_PAAS = false;
@@ -621,7 +622,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           container_id: "hermes-container",
           runtime_host: "10.0.0.40",
           runtime_port: 8642,
@@ -748,7 +749,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           container_id: "hermes-container",
           runtime_host: "10.0.0.41",
           runtime_port: 8642,
@@ -824,7 +825,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           container_id: "hermes-container",
           runtime_host: "10.0.0.42",
           runtime_port: 8642,
@@ -910,7 +911,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           container_id: "hermes-container",
           runtime_host: "10.0.0.41",
           runtime_port: 8642,
@@ -1018,7 +1019,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           container_id: "hermes-container",
           runtime_host: "10.0.0.42",
           runtime_port: 8642,
@@ -1057,7 +1058,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           container_id: "hermes-container",
           runtime_host: "10.0.0.43",
           runtime_port: 8642,
@@ -1108,7 +1109,7 @@ describe("Hermes WebUI routes", () => {
           user_id: "user-1",
           status: "running",
           runtime_family: "hermes",
-          backend_type: "hermes",
+          backend_type: "docker",
           container_id: "hermes-container",
           runtime_host: "10.0.0.44",
           runtime_port: 8642,
@@ -1540,7 +1541,7 @@ describe("GET /agents/:id/stats", () => {
     });
 
     mockStats.mockResolvedValueOnce({
-      backend_type: "nemoclaw",
+      backend_type: "docker",
       capabilities: { cpu: true, memory: true, network: true, disk: true, pids: true },
       current: {
         recorded_at: "2026-04-08T00:00:05.000Z",
@@ -1565,8 +1566,11 @@ describe("GET /agents/:id/stats", () => {
             id: "a-nemo",
             user_id: "user-1",
             container_id: "container-nemo",
-            backend_type: "nemoclaw",
+            backend_type: "docker",
             sandbox_type: "nemoclaw",
+            runtime_family: "openclaw",
+            deploy_target: "docker",
+            sandbox_profile: "nemoclaw",
             status: "running",
             host: "127.0.0.1",
             runtime_host: "127.0.0.1",
@@ -1855,7 +1859,8 @@ describe("POST /agents/deploy", () => {
   });
 
   it("uses a Hermes-specific container prefix for Hermes runtime deploys", async () => {
-    process.env.ENABLED_BACKENDS = "docker,hermes";
+    process.env.ENABLED_RUNTIME_FAMILIES = "openclaw,hermes";
+    process.env.ENABLED_BACKENDS = "docker";
 
     mockDb.query
       .mockResolvedValueOnce({
@@ -1866,7 +1871,7 @@ describe("POST /agents/deploy", () => {
             status: "queued",
             user_id: "user-1",
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             deploy_target: "docker",
             sandbox_profile: "standard",
           },
@@ -1887,7 +1892,7 @@ describe("POST /agents/deploy", () => {
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "a-hermes-deploy",
-        backend: "hermes",
+        backend: "docker",
         container_name: expect.stringMatching(/^hermes-agent-desk-bot-/),
       }),
     );
@@ -1966,7 +1971,8 @@ describe("POST /agents/deploy", () => {
   });
 
   it("uses deploy-target plus sandbox-profile aliases for NemoClaw deploys", async () => {
-    process.env.ENABLED_BACKENDS = "docker,nemoclaw";
+    process.env.ENABLED_BACKENDS = "docker";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
 
     mockDb.query
       .mockResolvedValueOnce({
@@ -1976,8 +1982,11 @@ describe("POST /agents/deploy", () => {
             name: "Nemo Target Agent",
             status: "queued",
             user_id: "user-1",
-            backend_type: "nemoclaw",
+            backend_type: "docker",
             sandbox_type: "nemoclaw",
+            runtime_family: "openclaw",
+            deploy_target: "docker",
+            sandbox_profile: "nemoclaw",
           },
         ],
       })
@@ -1997,7 +2006,7 @@ describe("POST /agents/deploy", () => {
         runtime_family: "openclaw",
         deploy_target: "docker",
         sandbox_profile: "nemoclaw",
-        backend_type: "nemoclaw",
+        backend_type: "docker",
       }),
     );
     const insertParams = mockDb.query.mock.calls[0][1];
@@ -2005,28 +2014,51 @@ describe("POST /agents/deploy", () => {
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "a-nemo-target",
-        backend: "nemoclaw",
+        backend: "docker",
         sandbox: "nemoclaw",
       }),
     );
   });
 
-  it("rejects NemoClaw sandbox requests on non-Docker execution targets", async () => {
-    process.env.ENABLED_BACKENDS = "docker,nemoclaw,k8s";
+  it("queues NemoClaw sandbox requests on Kubernetes execution targets", async () => {
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
     process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "a-nemo-k8s",
+            name: "BadSelection",
+            status: "queued",
+            user_id: "user-1",
+            backend_type: "k8s",
+            sandbox_type: "nemoclaw",
+            runtime_family: "openclaw",
+            deploy_target: "k8s",
+            sandbox_profile: "nemoclaw",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
 
     const res = await auth(
       request(app).post("/agents/deploy").send({
-        name: "BadSelection",
+        name: "Nemo K8s",
         deploy_target: "k8s",
         sandbox_profile: "nemoclaw",
       }),
     );
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/docker execution target/i);
-    expect(mockDb.query).not.toHaveBeenCalled();
-    expect(mockAddDeploymentJob).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-nemo-k8s",
+        backend: "k8s",
+        sandbox: "nemoclaw",
+      }),
+    );
   });
 
   it("rejects unsupported runtime-family aliases", async () => {
@@ -2606,7 +2638,8 @@ describe("POST /agents/:id/duplicate", () => {
   });
 
   it("uses a Hermes-specific container prefix when duplicating into Hermes", async () => {
-    process.env.ENABLED_BACKENDS = "docker,hermes";
+    process.env.ENABLED_RUNTIME_FAMILIES = "openclaw,hermes";
+    process.env.ENABLED_BACKENDS = "docker";
 
     mockDb.query
       .mockResolvedValueOnce({
@@ -2639,7 +2672,7 @@ describe("POST /agents/:id/duplicate", () => {
             status: "queued",
             user_id: "user-1",
             runtime_family: "hermes",
-            backend_type: "hermes",
+            backend_type: "docker",
             deploy_target: "docker",
             sandbox_profile: "standard",
           },
@@ -2661,7 +2694,7 @@ describe("POST /agents/:id/duplicate", () => {
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "a-duplicate-hermes",
-        backend: "hermes",
+        backend: "docker",
         container_name: expect.stringMatching(/^hermes-agent-desk-bot-hermes-/),
       }),
     );
@@ -2760,7 +2793,10 @@ describe("POST /agent-hub/install", () => {
     );
   });
 
-  it("rejects NemoClaw sandbox installs on non-Docker execution targets", async () => {
+  it("installs NemoClaw sandbox templates on Kubernetes execution targets", async () => {
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
     const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
@@ -2781,6 +2817,24 @@ describe("POST /agent-hub/install", () => {
         },
       },
     });
+    mockDb.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "a-market-nemo-k8s",
+            name: "COS Agent",
+            status: "queued",
+            user_id: "user-1",
+            backend_type: "k8s",
+            sandbox_type: "nemoclaw",
+            runtime_family: "openclaw",
+            deploy_target: "k8s",
+            sandbox_profile: "nemoclaw",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
 
     const res = await auth(
       request(app).post("/agent-hub/install").send({
@@ -2791,10 +2845,14 @@ describe("POST /agent-hub/install", () => {
       }),
     );
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/docker execution target/i);
-    expect(mockDb.query).not.toHaveBeenCalled();
-    expect(mockAddDeploymentJob).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(mockAddDeploymentJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "a-market-nemo-k8s",
+        backend: "k8s",
+        sandbox: "nemoclaw",
+      }),
+    );
   });
 
   it("recomputes the default image when installing onto a different execution target", async () => {
@@ -3482,7 +3540,8 @@ describe("POST /agents/:id/redeploy", () => {
   });
 
   it("accepts deploy-target overrides during redeploy and resets the sandbox when needed", async () => {
-    process.env.ENABLED_BACKENDS = "docker,nemoclaw,k8s";
+    process.env.ENABLED_BACKENDS = "docker,k8s";
+    process.env.ENABLED_SANDBOX_PROFILES = "standard,nemoclaw";
     process.env.KUBECONFIG = "/tmp/test-kubeconfig";
 
     mockDb.query
@@ -3587,7 +3646,8 @@ describe("POST /agents/:id/redeploy", () => {
   });
 
   it("regenerates auto-generated container names when redeploying into Hermes", async () => {
-    process.env.ENABLED_BACKENDS = "docker,hermes";
+    process.env.ENABLED_RUNTIME_FAMILIES = "openclaw,hermes";
+    process.env.ENABLED_BACKENDS = "docker";
 
     mockDb.query
       .mockResolvedValueOnce({
@@ -3622,7 +3682,7 @@ describe("POST /agents/:id/redeploy", () => {
       expect.stringContaining("container_name = $7"),
       [
         "a-hermes-redeploy",
-        "hermes",
+        "docker",
         "standard",
         "hermes",
         "docker",
@@ -3634,7 +3694,7 @@ describe("POST /agents/:id/redeploy", () => {
     expect(mockAddDeploymentJob).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "a-hermes-redeploy",
-        backend: "hermes",
+        backend: "docker",
         container_name: expect.stringMatching(/^hermes-agent-desk-bot-/),
         image: "nousresearch/hermes-agent:latest",
       }),

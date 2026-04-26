@@ -10,7 +10,7 @@ const DockerBackend = require("../../workers/provisioner/backends/docker");
 const tar = require(
   require.resolve("tar-stream", {
     paths: [path.resolve(__dirname, "../../workers/provisioner")],
-  })
+  }),
 );
 
 async function extractTarEntries(archiveBuffer) {
@@ -60,7 +60,9 @@ describe("OpenClaw bootstrap helpers", () => {
     expect(cmd).toContain('"$OPENCLAW_BIN" --version >/dev/null 2>&1');
     expect(cmd).toContain('"$OPENCLAW_TSX_BIN" --version >/dev/null 2>&1');
     expect(cmd).toContain("npm uninstall -g openclaw tsx >/dev/null 2>&1 || true");
-    expect(cmd).toContain("npm install -g openclaw@latest tsx@4.21.0 >/tmp/openclaw-install.log 2>&1");
+    expect(cmd).toContain(
+      "npm install -g openclaw@latest tsx@4.21.0 >/tmp/openclaw-install.log 2>&1",
+    );
     expect(cmd).toContain("hash -r 2>/dev/null || true");
     expect(cmd).toContain('export OPENCLAW_CLI_PATH="$OPENCLAW_BIN"');
     expect(cmd).toContain('export OPENCLAW_TSX_BIN="$OPENCLAW_TSX_BIN"');
@@ -80,7 +82,7 @@ describe("OpenClaw bootstrap helpers", () => {
         expect.objectContaining({
           name: "root/.openclaw/agents/main/agent/AGENTS.md",
         }),
-      ])
+      ]),
     );
   });
 });
@@ -103,14 +105,20 @@ describe("Provisioner backends", () => {
         "opt/openclaw-runtime/lib/agent.ts",
         "opt/openclaw-runtime/lib/build-auth.js",
         "opt/openclaw-runtime/start.sh",
-      ])
+      ]),
     );
     expect(startupScript).toBeTruthy();
     expect(startupScript.mode).toBe(0o755);
-    expect(startupScript.content).toContain('DETECTED_OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || true)"');
+    expect(startupScript.content).toContain(
+      'DETECTED_OPENCLAW_BIN="$(command -v openclaw 2>/dev/null || true)"',
+    );
     expect(startupScript.content).toContain('export OPENCLAW_CLI_PATH="$OPENCLAW_BIN"');
-    expect(startupScript.content).toContain("mkdir -p /var/log /root/.openclaw/workspace /root/.openclaw/agents/main/agent");
-    expect(startupScript.content).toContain('"$OPENCLAW_TSX_BIN" /opt/openclaw-runtime/lib/agent.ts >> /var/log/openclaw-agent.log 2>&1 &');
+    expect(startupScript.content).toContain(
+      "mkdir -p /var/log /root/.openclaw/workspace /root/.openclaw/agents/main/agent",
+    );
+    expect(startupScript.content).toContain(
+      '"$OPENCLAW_TSX_BIN" /opt/openclaw-runtime/lib/agent.ts >> /var/log/openclaw-agent.log 2>&1 &',
+    );
     expect(startupScript.content).toContain('exec "$OPENCLAW_BIN" gateway --port 18789');
   });
 
@@ -150,7 +158,7 @@ describe("Provisioner backends", () => {
         "opt/openclaw-runtime/lib/agent.ts",
         "opt/openclaw-runtime/lib/build-auth.js",
         "opt/openclaw-runtime/start.sh",
-      ])
+      ]),
     );
     expect(startupScript).toBeTruthy();
     expect(startupScript.mode).toBe(0o755);
@@ -160,14 +168,16 @@ describe("Provisioner backends", () => {
   it("wire the executable guard into every inline OpenClaw startup path", () => {
     const k8sSource = fs.readFileSync(
       path.resolve(__dirname, "../../workers/provisioner/backends/k8s.ts"),
-      "utf8"
+      "utf8",
     );
     const nemoclawSource = fs.readFileSync(
       path.resolve(__dirname, "../../workers/provisioner/backends/nemoclaw.ts"),
-      "utf8"
+      "utf8",
     );
 
-    expect(k8sSource).toContain('buildOpenClawInstallCommand(["openclaw@latest"])');
+    expect(k8sSource).toContain("buildOpenClawInstallCommand(");
+    expect(k8sSource).toContain('["openclaw@latest"]');
+    expect(k8sSource).toContain('"nemoclaw@latest"');
     expect(nemoclawSource).toContain("buildOpenClawInstallCommand([");
 
     expect(k8sSource).toContain("ensureOpenClawCmd +");
