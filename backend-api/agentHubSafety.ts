@@ -6,17 +6,14 @@ const SENSITIVE_PATH_RE =
 const PRIVATE_KEY_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const HIGH_CONFIDENCE_TOKEN_RE =
   /\b(sk-[A-Za-z0-9]{10,}|gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/;
-const JWT_RE =
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}\b/;
+const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}\b/;
 const ASSIGNMENT_RE =
   /\b(api[_-]?key|access[_-]?token|token|secret|password|private[_-]?key)\b\s*[:=]\s*["']?([^\s"'`]{8,})/i;
 const PLACEHOLDER_RE = /^(your_|example|sample|placeholder|changeme|replace-me|test-|demo-)/i;
 
 function decodeEntryContent(entry) {
   try {
-    return Buffer.from(String(entry?.contentBase64 || ""), "base64").toString(
-      "utf8"
-    );
+    return Buffer.from(String(entry?.contentBase64 || ""), "base64").toString("utf8");
   } catch {
     return "";
   }
@@ -38,7 +35,8 @@ function scanTemplatePayloadForSecrets(rawPayload = {}) {
       pushIssue(issues, {
         path,
         type: "sensitive_path",
-        message: "Remove secret-bearing files such as .env, key, or credential files before publishing.",
+        message:
+          "Remove secret-bearing files such as .env, key, or credential files before publishing.",
       });
     }
 

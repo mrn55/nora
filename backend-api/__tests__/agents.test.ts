@@ -76,7 +76,7 @@ jest.mock("../containerManager", () => ({
   status: jest.fn().mockResolvedValue({ running: true }),
   stats: mockStats,
 }));
-jest.mock("../marketplace", () => ({
+jest.mock("../agentHubStore", () => ({
   LISTING_SOURCE_COMMUNITY: "community",
   LISTING_SOURCE_PLATFORM: "platform",
   LISTING_STATUS_PENDING_REVIEW: "pending_review",
@@ -93,7 +93,6 @@ jest.mock("../marketplace", () => ({
   CENTRAL_SHARE_STATUS_QUEUED: "queued",
   CENTRAL_SHARE_STATUS_SUBMITTED: "submitted",
   CENTRAL_SHARE_STATUS_FAILED: "failed",
-  listMarketplace: jest.fn().mockResolvedValue([]),
   listAgentHubLocalListings: jest.fn().mockResolvedValue([]),
   listUserListings: jest.fn().mockResolvedValue([]),
   listCommunityCatalog: jest.fn().mockResolvedValue([]),
@@ -2671,10 +2670,10 @@ describe("POST /agents/:id/duplicate", () => {
 
 describe("POST /agent-hub/install", () => {
   it("installs a starter template into a queued agent using the provided name", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       snapshot_id: "snap-1",
       name: "Chief-of-Staff Claw",
@@ -2762,10 +2761,10 @@ describe("POST /agent-hub/install", () => {
   });
 
   it("rejects NemoClaw sandbox installs on non-Docker execution targets", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       snapshot_id: "snap-1",
       name: "Chief-of-Staff Claw",
@@ -2802,10 +2801,10 @@ describe("POST /agent-hub/install", () => {
     process.env.ENABLED_BACKENDS = "docker,k8s";
     process.env.KUBECONFIG = "/tmp/test-kubeconfig";
 
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       snapshot_id: "snap-1",
       name: "Chief-of-Staff Claw",
@@ -2868,10 +2867,10 @@ describe("POST /agent-hub/install", () => {
   });
 
   it("rejects unsupported runtime families for Agent Hub installs", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       snapshot_id: "snap-1",
       name: "Chief-of-Staff Claw",
@@ -2906,8 +2905,8 @@ describe("POST /agent-hub/install", () => {
 
 describe("Agent Hub browse, share, download, and report", () => {
   it("exposes the public Agent Hub community catalog", async () => {
-    const marketplaceModule = require("../marketplace");
-    marketplaceModule.listCommunityCatalog.mockResolvedValueOnce([
+    const agentHubStoreModule = require("../agentHubStore");
+    agentHubStoreModule.listCommunityCatalog.mockResolvedValueOnce([
       {
         id: "listing-community-1",
         name: "Community Template",
@@ -2930,8 +2929,8 @@ describe("Agent Hub browse, share, download, and report", () => {
   });
 
   it("does not expose internal-only shares through the public Agent Hub detail route", async () => {
-    const marketplaceModule = require("../marketplace");
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    const agentHubStoreModule = require("../agentHubStore");
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-internal-1",
       name: "Internal Template",
       source_type: "community",
@@ -2945,8 +2944,8 @@ describe("Agent Hub browse, share, download, and report", () => {
   });
 
   it("lists published Agent Hub entries for authenticated users", async () => {
-    const marketplaceModule = require("../marketplace");
-    marketplaceModule.listAgentHubLocalListings.mockResolvedValueOnce([
+    const agentHubStoreModule = require("../agentHubStore");
+    agentHubStoreModule.listAgentHubLocalListings.mockResolvedValueOnce([
       { id: "listing-1", name: "Preset" },
     ]);
 
@@ -2957,25 +2956,25 @@ describe("Agent Hub browse, share, download, and report", () => {
   });
 
   it("lists the current user's Agent Hub listings", async () => {
-    const marketplaceModule = require("../marketplace");
-    marketplaceModule.listUserListings.mockResolvedValueOnce([
+    const agentHubStoreModule = require("../agentHubStore");
+    agentHubStoreModule.listUserListings.mockResolvedValueOnce([
       { id: "listing-1", name: "My Listing", status: "pending_review" },
     ]);
 
     const res = await auth(request(app).get("/agent-hub/mine"));
 
     expect(res.status).toBe(200);
-    expect(marketplaceModule.listUserListings).toHaveBeenCalledWith("user-1");
+    expect(agentHubStoreModule.listUserListings).toHaveBeenCalledWith("user-1");
     expect(res.body[0]).toEqual(
       expect.objectContaining({ id: "listing-1", status: "pending_review" }),
     );
   });
 
   it("returns detailed Agent Hub template data", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       snapshot_id: "snap-1",
       name: "Preset",
@@ -3028,7 +3027,7 @@ describe("Agent Hub browse, share, download, and report", () => {
   });
 
   it("lets community owners edit and resubmit their Agent Hub listing", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
     const listing = {
@@ -3063,7 +3062,7 @@ describe("Agent Hub browse, share, download, and report", () => {
       },
     };
 
-    marketplaceModule.getListing.mockResolvedValueOnce(listing).mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce(listing).mockResolvedValueOnce({
       ...listing,
       name: "Updated Preset",
       status: "published",
@@ -3092,7 +3091,7 @@ describe("Agent Hub browse, share, download, and report", () => {
       ...snapshot,
       name: "Updated Preset",
     });
-    marketplaceModule.upsertListing.mockResolvedValueOnce({
+    agentHubStoreModule.upsertListing.mockResolvedValueOnce({
       ...listing,
       name: "Updated Preset",
       status: "published",
@@ -3142,7 +3141,7 @@ describe("Agent Hub browse, share, download, and report", () => {
         }),
       }),
     );
-    expect(marketplaceModule.upsertListing).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.upsertListing).toHaveBeenCalledWith(
       expect.objectContaining({
         listingId: "listing-1",
         status: "published",
@@ -3161,7 +3160,7 @@ describe("Agent Hub browse, share, download, and report", () => {
   });
 
   it("shares an owned agent as an Agent Hub listing", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
     mockDb.query.mockResolvedValueOnce({
@@ -3188,11 +3187,11 @@ describe("Agent Hub browse, share, download, and report", () => {
       name: "Ops Agent Template",
       description: "Shared operations template",
     });
-    marketplaceModule.upsertListing.mockResolvedValueOnce({
+    agentHubStoreModule.upsertListing.mockResolvedValueOnce({
       id: "listing-community-1",
       name: "Ops Agent Template",
     });
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-community-1",
       name: "Ops Agent Template",
       status: "published",
@@ -3242,7 +3241,7 @@ describe("Agent Hub browse, share, download, and report", () => {
       }),
       expect.objectContaining({ kind: "community-template", builtIn: false }),
     );
-    expect(marketplaceModule.upsertListing).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.upsertListing).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerUserId: "user-1",
         price: "Free",
@@ -3254,7 +3253,7 @@ describe("Agent Hub browse, share, download, and report", () => {
         centralShareStatus: "queued",
       }),
     );
-    expect(marketplaceModule.updateCentralShareStatus).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.updateCentralShareStatus).toHaveBeenCalledWith(
       "listing-community-1",
       expect.objectContaining({
         status: "submitted",
@@ -3308,10 +3307,10 @@ describe("Agent Hub browse, share, download, and report", () => {
   });
 
   it("downloads an Agent Hub template package", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       slug: "chief-of-staff-claw",
       name: "Chief-of-Staff Claw",
@@ -3347,7 +3346,7 @@ describe("Agent Hub browse, share, download, and report", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers["content-disposition"]).toContain("chief-of-staff-claw.nora-template.json");
-    expect(marketplaceModule.recordDownload).toHaveBeenCalledWith("listing-1");
+    expect(agentHubStoreModule.recordDownload).toHaveBeenCalledWith("listing-1");
     expect(res.body).toEqual(
       expect.objectContaining({
         listing: expect.objectContaining({ id: "listing-1" }),
@@ -3368,10 +3367,10 @@ describe("Agent Hub browse, share, download, and report", () => {
   });
 
   it("reports a published community listing", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const monitoringModule = require("../monitoring");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       name: "Community Template",
       status: "published",
@@ -3379,7 +3378,7 @@ describe("Agent Hub browse, share, download, and report", () => {
       local_visibility: "internal",
       owner_user_id: "someone-else",
     });
-    marketplaceModule.createReport.mockResolvedValueOnce({
+    agentHubStoreModule.createReport.mockResolvedValueOnce({
       id: "report-1",
       listing_id: "listing-1",
     });
@@ -3392,7 +3391,7 @@ describe("Agent Hub browse, share, download, and report", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(marketplaceModule.createReport).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.createReport).toHaveBeenCalledWith(
       expect.objectContaining({
         listingId: "listing-1",
         reporterUserId: "user-1",

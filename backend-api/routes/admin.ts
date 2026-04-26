@@ -3,9 +3,9 @@ const express = require("express");
 const db = require("../db");
 const billing = require("../billing");
 const monitoring = require("../monitoring");
-const marketplace = require("../marketplace");
-const { scanTemplatePayloadForSecrets } = require("../marketplaceSafety");
-const { buildMarketplaceTemplateUpdate } = require("../marketplaceTemplateEdits");
+const agentHubStore = require("../agentHubStore");
+const { scanTemplatePayloadForSecrets } = require("../agentHubSafety");
+const { buildAgentHubTemplateUpdate } = require("../agentHubTemplateEdits");
 const snapshots = require("../snapshots");
 const containerManager = require("../containerManager");
 const { addDeploymentJob, getDLQJobs, retryDLQJob } = require("../redisQueue");
@@ -1131,9 +1131,9 @@ router.delete(
 router.delete(
   "/agent-hub/:id",
   asyncHandler(async (req, res) => {
-    const listing = await marketplace.getListing(req.params.id);
+    const listing = await agentHubStore.getListing(req.params.id);
     res.locals.auditContext = buildListingContext(listing || { id: req.params.id });
-    await marketplace.deleteListing(req.params.id);
+    await agentHubStore.deleteListing(req.params.id);
     await monitoring.logEvent(
       "admin_agent_hub_listing_deleted",
       `Admin removed Agent Hub listing "${listing?.name || req.params.id}"`,
@@ -1148,7 +1148,7 @@ router.delete(
 router.get(
   "/agent-hub",
   asyncHandler(async (_req, res) => {
-    const listings = await marketplace.listAdminListings();
+    const listings = await agentHubStore.listAdminListings();
     res.json(await Promise.all(listings.map((listing) => buildAdminListingDetail(listing))));
   }),
 );
@@ -1156,7 +1156,7 @@ router.get(
 router.get(
   "/agent-hub/reports",
   asyncHandler(async (_req, res) => {
-    res.json(await marketplace.listReports());
+    res.json(await agentHubStore.listReports());
   }),
 );
 
@@ -1164,7 +1164,7 @@ router.patch(
   "/agent-hub/reports/:id",
   asyncHandler(async (req, res) => {
     const nextStatus = typeof req.body?.status === "string" ? req.body.status.trim() : "";
-    const report = await marketplace.resolveReport(req.params.id, req.user.id, nextStatus);
+    const report = await agentHubStore.resolveReport(req.params.id, req.user.id, nextStatus);
     if (!report) return res.status(404).json({ error: "Report not found" });
 
     await monitoring.logEvent(
@@ -1196,7 +1196,7 @@ router.patch(
       return res.status(400).json({ error: "status is required" });
     }
 
-    const listing = await marketplace.setListingStatus(
+    const listing = await agentHubStore.setListingStatus(
       req.params.id,
       nextStatus,
       req.user.id,
@@ -1204,7 +1204,7 @@ router.patch(
     );
     if (!listing) return res.status(404).json({ error: "Listing not found" });
 
-    const refreshed = await marketplace.getListing(listing.id);
+    const refreshed = await agentHubStore.getListing(listing.id);
     await monitoring.logEvent(
       "agent_hub_reviewed",
       `Agent Hub listing "${refreshed?.name || listing.name}" marked ${listing.status}`,
@@ -1237,7 +1237,7 @@ router.post(
       },
     };
 
-    const listing = await marketplace.upsertListing({
+    const listing = await agentHubStore.upsertListing({
       snapshotId: snapshot.id,
       name: (typeof req.body.name === "string" && req.body.name.trim()) || snapshot.name,
       description:
@@ -1246,9 +1246,9 @@ router.post(
       price: "Free",
       category: (typeof req.body.category === "string" && req.body.category.trim()) || "General",
       builtIn: req.body.builtIn === true,
-      sourceType: marketplace.LISTING_SOURCE_PLATFORM,
-      status: marketplace.LISTING_STATUS_PUBLISHED,
-      visibility: marketplace.LISTING_VISIBILITY_PUBLIC,
+      sourceType: agentHubStore.LISTING_SOURCE_PLATFORM,
+      status: agentHubStore.LISTING_STATUS_PUBLISHED,
+      visibility: agentHubStore.LISTING_VISIBILITY_PUBLIC,
       slug:
         (typeof req.body.slug === "string" && req.body.slug.trim()) ||
         snapshot.template_key ||
@@ -1274,13 +1274,13 @@ router.post(
 router.patch(
   "/agent-hub/:id",
   asyncHandler(async (req, res) => {
-    const listing = await marketplace.getListing(req.params.id);
+    const listing = await agentHubStore.getListing(req.params.id);
     if (!listing) return res.status(404).json({ error: "Listing not found" });
 
     const snapshot = await snapshots.getSnapshot(listing.snapshot_id);
     if (!snapshot) return res.status(404).json({ error: "Snapshot not found" });
 
-    const update = buildMarketplaceTemplateUpdate(snapshot, listing, req.body, {
+    const update = buildAgentHubTemplateUpdate(snapshot, listing, req.body, {
       sourceType: listing.source_type,
       builtIn: listing.built_in === true,
       allowTemplateKeyChange: true,
@@ -1295,7 +1295,7 @@ router.patch(
     }
 
     await snapshots.updateSnapshot(snapshot.id, update.snapshot);
-    await marketplace.upsertListing({
+    await agentHubStore.upsertListing({
       listingId: listing.id,
       snapshotId: snapshot.id,
       ownerUserId: listing.owner_user_id,
@@ -1341,8 +1341,8 @@ router.patch(
       }),
     );
 
-    const refreshed = await marketplace.getListing(listing.id);
-    const reports = (await marketplace.listReports()).filter(
+    const refreshed = await agentHubStore.getListing(listing.id);
+    const reports = (await agentHubStore.listReports()).filter(
       (report) => report.listing_id === listing.id,
     );
     res.json(
@@ -1356,10 +1356,10 @@ router.patch(
 router.get(
   "/agent-hub/:id",
   asyncHandler(async (req, res) => {
-    const listing = await marketplace.getListing(req.params.id);
+    const listing = await agentHubStore.getListing(req.params.id);
     if (!listing) return res.status(404).json({ error: "Listing not found" });
 
-    const reports = (await marketplace.listReports()).filter(
+    const reports = (await agentHubStore.listReports()).filter(
       (report) => report.listing_id === listing.id,
     );
     res.json(await buildAdminListingDetail(listing, reports, { includeContent: true }));

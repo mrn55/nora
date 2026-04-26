@@ -27,8 +27,8 @@ jest.mock("../containerManager", () => ({
   destroy: jest.fn(),
   status: jest.fn().mockResolvedValue({ running: true }),
 }));
-jest.mock("../marketplace", () => ({
-  listMarketplace: jest.fn().mockResolvedValue([]),
+jest.mock("../agentHubStore", () => ({
+  listAgentHubLocalListings: jest.fn().mockResolvedValue([]),
   publishSnapshot: jest.fn(),
   getListing: jest.fn(),
   deleteListing: jest.fn(),
@@ -278,9 +278,7 @@ describe("Cookie-based authentication", () => {
       ],
     });
 
-    const res = await request(app)
-      .get("/auth/me")
-      .set("Cookie", `nora_auth=${token}`);
+    const res = await request(app).get("/auth/me").set("Cookie", `nora_auth=${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("id", "user-1");

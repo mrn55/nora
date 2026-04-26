@@ -8,7 +8,7 @@ const crypto = require("crypto");
 const db = require("./db");
 const billing = require("./billing");
 const channels = require("./channels");
-const marketplace = require("./marketplace");
+const agentHubStore = require("./agentHubStore");
 const integrations = require("./integrations");
 const snapshots = require("./snapshots");
 const { getDeploymentDefaults, getSystemBanner } = require("./platformSettings");
@@ -1031,6 +1031,47 @@ async function migrateDB() {
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_message TEXT NOT NULL DEFAULT ''; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN agent_hub_default_share_target TEXT NOT NULL DEFAULT 'both'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN agent_hub_url TEXT NOT NULL DEFAULT 'https://nora.solomontsao.com'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `CREATE TABLE IF NOT EXISTS snapshots (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       agent_id UUID,
+       name TEXT NOT NULL,
+       description TEXT,
+       kind TEXT DEFAULT 'snapshot',
+       template_key TEXT,
+       built_in BOOLEAN DEFAULT false,
+       config JSONB DEFAULT '{}',
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
+    `CREATE TABLE IF NOT EXISTS agent_hub_listings (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       snapshot_id UUID REFERENCES snapshots(id) ON DELETE CASCADE,
+       owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+       name TEXT NOT NULL,
+       description TEXT,
+       price TEXT DEFAULT 'Free',
+       category TEXT DEFAULT 'General',
+       rating NUMERIC DEFAULT 0,
+       installs INTEGER DEFAULT 0,
+       downloads INTEGER DEFAULT 0,
+       built_in BOOLEAN DEFAULT false,
+       source_type TEXT DEFAULT 'platform',
+       status TEXT DEFAULT 'published',
+       visibility TEXT DEFAULT 'public',
+       share_target TEXT DEFAULT 'internal',
+       local_visibility TEXT DEFAULT 'internal',
+       central_share_status TEXT DEFAULT 'not_shared',
+       central_listing_id TEXT,
+       central_last_synced_at TIMESTAMP,
+       central_error TEXT,
+       slug TEXT,
+       current_version INTEGER DEFAULT 1,
+       published_at TIMESTAMP,
+       updated_at TIMESTAMP DEFAULT NOW(),
+       reviewed_at TIMESTAMP,
+       reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+       review_notes TEXT,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
     `CREATE TABLE IF NOT EXISTS usage_metrics (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
        agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
@@ -1114,60 +1155,60 @@ async function migrateDB() {
     `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN kind TEXT DEFAULT 'snapshot'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN template_key TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE snapshots ADD COLUMN built_in BOOLEAN DEFAULT false; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN built_in BOOLEAN DEFAULT false; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN downloads INTEGER DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN source_type TEXT DEFAULT 'platform'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN status TEXT DEFAULT 'published'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN visibility TEXT DEFAULT 'public'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN share_target TEXT DEFAULT 'internal'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN local_visibility TEXT DEFAULT 'internal'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_share_status TEXT DEFAULT 'not_shared'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_listing_id TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_last_synced_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN central_error TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN slug TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN current_version INTEGER DEFAULT 1; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN published_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(); EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN reviewed_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `DO $$ BEGIN ALTER TABLE marketplace_listings ADD COLUMN review_notes TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
-    `UPDATE marketplace_listings
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN built_in BOOLEAN DEFAULT false; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN downloads INTEGER DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN source_type TEXT DEFAULT 'platform'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN status TEXT DEFAULT 'published'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN visibility TEXT DEFAULT 'public'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN share_target TEXT DEFAULT 'internal'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN local_visibility TEXT DEFAULT 'internal'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN central_share_status TEXT DEFAULT 'not_shared'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN central_listing_id TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN central_last_synced_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN central_error TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN slug TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN current_version INTEGER DEFAULT 1; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN published_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(); EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN reviewed_at TIMESTAMP; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE agent_hub_listings ADD COLUMN review_notes TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `UPDATE agent_hub_listings
         SET source_type = CASE WHEN COALESCE(built_in, false) THEN 'platform' ELSE 'community' END
       WHERE source_type IS NULL`,
-    `UPDATE marketplace_listings
+    `UPDATE agent_hub_listings
         SET status = CASE WHEN COALESCE(built_in, false) THEN 'published' ELSE 'pending_review' END
       WHERE status IS NULL`,
-    `UPDATE marketplace_listings SET visibility = 'public' WHERE visibility IS NULL`,
-    `UPDATE marketplace_listings
+    `UPDATE agent_hub_listings SET visibility = 'public' WHERE visibility IS NULL`,
+    `UPDATE agent_hub_listings
         SET share_target = CASE
           WHEN source_type = 'platform' THEN 'internal'
           ELSE 'internal'
         END
       WHERE share_target IS NULL`,
-    `UPDATE marketplace_listings
+    `UPDATE agent_hub_listings
         SET local_visibility = CASE
           WHEN source_type = 'platform' OR status = 'published' THEN 'internal'
           ELSE 'owner'
         END
       WHERE local_visibility IS NULL`,
-    `UPDATE marketplace_listings
+    `UPDATE agent_hub_listings
         SET central_share_status = 'not_shared'
       WHERE central_share_status IS NULL`,
-    `UPDATE marketplace_listings SET price = 'Free' WHERE price IS DISTINCT FROM 'Free'`,
-    `UPDATE marketplace_listings SET downloads = 0 WHERE downloads IS NULL`,
-    `UPDATE marketplace_listings SET current_version = 1 WHERE current_version IS NULL`,
-    `UPDATE marketplace_listings SET updated_at = COALESCE(updated_at, created_at, NOW()) WHERE updated_at IS NULL`,
-    `UPDATE marketplace_listings
+    `UPDATE agent_hub_listings SET price = 'Free' WHERE price IS DISTINCT FROM 'Free'`,
+    `UPDATE agent_hub_listings SET downloads = 0 WHERE downloads IS NULL`,
+    `UPDATE agent_hub_listings SET current_version = 1 WHERE current_version IS NULL`,
+    `UPDATE agent_hub_listings SET updated_at = COALESCE(updated_at, created_at, NOW()) WHERE updated_at IS NULL`,
+    `UPDATE agent_hub_listings
         SET published_at = COALESCE(published_at, created_at, NOW())
       WHERE status = 'published' AND published_at IS NULL`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_listings_slug_unique ON marketplace_listings(slug) WHERE slug IS NOT NULL`,
-    `CREATE INDEX IF NOT EXISTS idx_marketplace_listings_owner ON marketplace_listings(owner_user_id, created_at DESC)`,
-    `CREATE INDEX IF NOT EXISTS idx_marketplace_listings_source_status ON marketplace_listings(source_type, status, published_at DESC)`,
-    `CREATE TABLE IF NOT EXISTS marketplace_listing_versions (
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_hub_listings_slug_unique ON agent_hub_listings(slug) WHERE slug IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_owner ON agent_hub_listings(owner_user_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_source_status ON agent_hub_listings(source_type, status, published_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS agent_hub_listing_versions (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-       listing_id UUID REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+       listing_id UUID REFERENCES agent_hub_listings(id) ON DELETE CASCADE,
        snapshot_id UUID REFERENCES snapshots(id) ON DELETE CASCADE,
        version_number INTEGER NOT NULL,
        clone_mode TEXT DEFAULT 'files_only',
@@ -1175,10 +1216,10 @@ async function migrateDB() {
        UNIQUE(listing_id, version_number),
        UNIQUE(listing_id, snapshot_id)
      )`,
-    `CREATE INDEX IF NOT EXISTS idx_marketplace_listing_versions_listing ON marketplace_listing_versions(listing_id, version_number DESC)`,
-    `CREATE TABLE IF NOT EXISTS marketplace_reports (
+    `CREATE INDEX IF NOT EXISTS idx_agent_hub_listing_versions_listing ON agent_hub_listing_versions(listing_id, version_number DESC)`,
+    `CREATE TABLE IF NOT EXISTS agent_hub_reports (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-       listing_id UUID REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+       listing_id UUID REFERENCES agent_hub_listings(id) ON DELETE CASCADE,
        reporter_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
        reason TEXT NOT NULL,
        details TEXT,
@@ -1187,16 +1228,16 @@ async function migrateDB() {
        reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
        created_at TIMESTAMP DEFAULT NOW()
      )`,
-    `CREATE INDEX IF NOT EXISTS idx_marketplace_reports_listing_status ON marketplace_reports(listing_id, status, created_at DESC)`,
-    `INSERT INTO marketplace_listing_versions(listing_id, snapshot_id, version_number, clone_mode)
+    `CREATE INDEX IF NOT EXISTS idx_agent_hub_reports_listing_status ON agent_hub_reports(listing_id, status, created_at DESC)`,
+    `INSERT INTO agent_hub_listing_versions(listing_id, snapshot_id, version_number, clone_mode)
        SELECT ml.id, ml.snapshot_id, COALESCE(ml.current_version, 1), 'files_only'
-         FROM marketplace_listings ml
-         LEFT JOIN marketplace_listing_versions v
+         FROM agent_hub_listings ml
+         LEFT JOIN agent_hub_listing_versions v
            ON v.listing_id = ml.id AND v.snapshot_id = ml.snapshot_id
         WHERE ml.snapshot_id IS NOT NULL
           AND v.id IS NULL`,
     `CREATE INDEX IF NOT EXISTS idx_snapshots_template_key ON snapshots(template_key)`,
-    `CREATE INDEX IF NOT EXISTS idx_marketplace_listings_snapshot_id ON marketplace_listings(snapshot_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_snapshot_id ON agent_hub_listings(snapshot_id)`,
   ];
 
   for (const sql of migrations) {
@@ -1224,7 +1265,9 @@ function stableStringify(value) {
 
 async function seedStarterAgentHub() {
   for (const template of STARTER_TEMPLATES) {
-    const existingListing = await marketplace.getPlatformListingByTemplateKey(template.templateKey);
+    const existingListing = await agentHubStore.getPlatformListingByTemplateKey(
+      template.templateKey,
+    );
 
     let snapshotId = existingListing?.snapshot_id || null;
     let shouldCreateSnapshot = !snapshotId;
@@ -1257,7 +1300,7 @@ async function seedStarterAgentHub() {
       snapshotId = snapshot.id;
     }
 
-    await marketplace.upsertListing({
+    await agentHubStore.upsertListing({
       listingId: existingListing?.id || null,
       snapshotId,
       name: template.name,
@@ -1265,9 +1308,9 @@ async function seedStarterAgentHub() {
       price: template.price,
       category: template.category,
       builtIn: true,
-      sourceType: marketplace.LISTING_SOURCE_PLATFORM,
-      status: marketplace.LISTING_STATUS_PUBLISHED,
-      visibility: marketplace.LISTING_VISIBILITY_PUBLIC,
+      sourceType: agentHubStore.LISTING_SOURCE_PLATFORM,
+      status: agentHubStore.LISTING_STATUS_PUBLISHED,
+      visibility: agentHubStore.LISTING_VISIBILITY_PUBLIC,
       slug: template.templateKey,
     });
   }

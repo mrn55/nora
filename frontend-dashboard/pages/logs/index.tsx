@@ -34,10 +34,6 @@ const EVENT_ICONS = {
     icon: UserCog,
     color: "text-violet-600 bg-violet-50",
   },
-  marketplace_install: {
-    icon: ShoppingBag,
-    color: "text-violet-600 bg-violet-50",
-  },
   agent_hub_install: {
     icon: ShoppingBag,
     color: "text-violet-600 bg-violet-50",
@@ -46,17 +42,9 @@ const EVENT_ICONS = {
     icon: Download,
     color: "text-violet-600 bg-violet-50",
   },
-  marketplace_submitted: {
-    icon: ShoppingBag,
-    color: "text-amber-600 bg-amber-50",
-  },
   agent_hub_shared: {
     icon: ShoppingBag,
     color: "text-amber-600 bg-amber-50",
-  },
-  marketplace_reported: {
-    icon: AlertCircle,
-    color: "text-rose-600 bg-rose-50",
   },
   agent_hub_reported: {
     icon: AlertCircle,
@@ -64,10 +52,6 @@ const EVENT_ICONS = {
   },
   admin_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
   agent_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
-  marketplace_action_failed: {
-    icon: AlertCircle,
-    color: "text-red-600 bg-red-50",
-  },
   agent_hub_action_failed: {
     icon: AlertCircle,
     color: "text-red-600 bg-red-50",

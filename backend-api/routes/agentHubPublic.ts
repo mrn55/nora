@@ -1,8 +1,8 @@
 // @ts-nocheck
 const express = require("express");
-const marketplace = require("../marketplace");
+const agentHubStore = require("../agentHubStore");
 const snapshots = require("../snapshots");
-const { scanTemplatePayloadForSecrets } = require("../marketplaceSafety");
+const { scanTemplatePayloadForSecrets } = require("../agentHubSafety");
 const {
   extractTemplateDefaultsFromSnapshot,
   extractTemplatePayloadFromSnapshot,
@@ -94,7 +94,7 @@ async function buildCatalogDetail(listing, { includeContent = false } = {}) {
 
 router.get("/catalog", async (_req, res, next) => {
   try {
-    const listings = await marketplace.listCommunityCatalog();
+    const listings = await agentHubStore.listCommunityCatalog();
     const items = await Promise.all(listings.map((listing) => buildCatalogDetail(listing)));
     res.json({
       hub: {
@@ -109,14 +109,15 @@ router.get("/catalog", async (_req, res, next) => {
 
 router.get("/catalog/:id", async (req, res, next) => {
   try {
-    const listing = await marketplace.getListing(req.params.id);
+    const listing = await agentHubStore.getListing(req.params.id);
     if (
       !listing ||
-      listing.source_type !== marketplace.LISTING_SOURCE_COMMUNITY ||
-      listing.status !== marketplace.LISTING_STATUS_PUBLISHED ||
-      ![marketplace.LISTING_SHARE_TARGET_COMMUNITY, marketplace.LISTING_SHARE_TARGET_BOTH].includes(
-        listing.share_target,
-      )
+      listing.source_type !== agentHubStore.LISTING_SOURCE_COMMUNITY ||
+      listing.status !== agentHubStore.LISTING_STATUS_PUBLISHED ||
+      ![
+        agentHubStore.LISTING_SHARE_TARGET_COMMUNITY,
+        agentHubStore.LISTING_SHARE_TARGET_BOTH,
+      ].includes(listing.share_target)
     ) {
       return res.status(404).json({ error: "Listing not found" });
     }
@@ -157,7 +158,7 @@ router.post("/submissions", async (req, res, next) => {
         templateKey: payload.snapshot?.templateKey || payload.snapshot?.template_key || null,
       },
     );
-    const listing = await marketplace.upsertListing({
+    const listing = await agentHubStore.upsertListing({
       snapshotId: snapshot.id,
       ownerUserId: null,
       name,
@@ -165,12 +166,12 @@ router.post("/submissions", async (req, res, next) => {
       price: "Free",
       category,
       builtIn: false,
-      sourceType: marketplace.LISTING_SOURCE_COMMUNITY,
-      status: marketplace.LISTING_STATUS_PENDING_REVIEW,
-      visibility: marketplace.LISTING_VISIBILITY_PUBLIC,
-      shareTarget: marketplace.LISTING_SHARE_TARGET_COMMUNITY,
-      localVisibility: marketplace.LISTING_LOCAL_VISIBILITY_OWNER,
-      centralShareStatus: marketplace.CENTRAL_SHARE_STATUS_SUBMITTED,
+      sourceType: agentHubStore.LISTING_SOURCE_COMMUNITY,
+      status: agentHubStore.LISTING_STATUS_PENDING_REVIEW,
+      visibility: agentHubStore.LISTING_VISIBILITY_PUBLIC,
+      shareTarget: agentHubStore.LISTING_SHARE_TARGET_COMMUNITY,
+      localVisibility: agentHubStore.LISTING_LOCAL_VISIBILITY_OWNER,
+      centralShareStatus: agentHubStore.CENTRAL_SHARE_STATUS_SUBMITTED,
       cloneMode: "files_only",
     });
 

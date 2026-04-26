@@ -40,10 +40,6 @@ const EVENT_ICONS = {
     color: "text-violet-600 bg-violet-50",
   },
   admin_user_deleted: { icon: Trash2, color: "text-red-600 bg-red-50" },
-  marketplace_install: {
-    icon: ShoppingBag,
-    color: "text-violet-600 bg-violet-50",
-  },
   agent_hub_install: {
     icon: ShoppingBag,
     color: "text-violet-600 bg-violet-50",
@@ -58,10 +54,6 @@ const EVENT_ICONS = {
   },
   admin_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
   agent_action_failed: { icon: AlertCircle, color: "text-red-600 bg-red-50" },
-  marketplace_action_failed: {
-    icon: AlertCircle,
-    color: "text-red-600 bg-red-50",
-  },
   agent_hub_action_failed: {
     icon: AlertCircle,
     color: "text-red-600 bg-red-50",

@@ -1787,14 +1787,14 @@ UPDATE users SET name = ${sqlLiteral(ACCOUNTS.operator.name)}, role = 'user' WHE
 UPDATE users SET name = ${sqlLiteral(ACCOUNTS.admin.name)}, role = 'admin' WHERE id = ${sqlLiteral(adminId)};
 UPDATE users SET name = ${sqlLiteral(ACCOUNTS.community.name)}, role = 'user' WHERE id = ${sqlLiteral(communityId)};
 
-DELETE FROM marketplace_reports
+DELETE FROM agent_hub_reports
  WHERE listing_id IN (${listingIds.map(sqlLiteral).join(", ")})
     OR reporter_user_id IN (${sqlLiteral(operatorId)}, ${sqlLiteral(communityId)});
 
-DELETE FROM marketplace_listing_versions
+DELETE FROM agent_hub_listing_versions
  WHERE listing_id IN (${listingIds.map(sqlLiteral).join(", ")});
 
-DELETE FROM marketplace_listings
+DELETE FROM agent_hub_listings
  WHERE id IN (${listingIds.map(sqlLiteral).join(", ")})
     OR owner_user_id IN (${sqlLiteral(operatorId)}, ${sqlLiteral(communityId)})
     OR slug IN (
@@ -1961,7 +1961,7 @@ ${snapshots
 
 ${templates
   .map(
-    (template) => `INSERT INTO marketplace_listings (
+    (template) => `INSERT INTO agent_hub_listings (
   id,
   snapshot_id,
   owner_user_id,
@@ -2015,7 +2015,7 @@ ${templates
 
 ${templates
   .map(
-    (template) => `INSERT INTO marketplace_listing_versions (
+    (template) => `INSERT INTO agent_hub_listing_versions (
   listing_id,
   snapshot_id,
   version_number,
@@ -2031,7 +2031,7 @@ ${templates
   )
   .join("\n\n")}
 
-INSERT INTO marketplace_reports (
+INSERT INTO agent_hub_reports (
   id,
   listing_id,
   reporter_user_id,

@@ -1,14 +1,11 @@
 // @ts-nocheck
 const fs = require("fs");
 const path = require("path");
-const {
-  encodeContentBase64,
-  normalizeTemplatePayload,
-} = require("./agentPayloads");
+const { encodeContentBase64, normalizeTemplatePayload } = require("./agentPayloads");
 const { getDefaultAgentImage } = require("../agent-runtime/lib/agentImages");
 const { getDefaultBackend } = require("../agent-runtime/lib/backendCatalog");
 
-const TEMPLATES_DIR = path.join(__dirname, "marketplace-templates");
+const TEMPLATES_DIR = path.join(__dirname, "agent-hub-templates");
 const CORE_FILES = [
   "AGENTS.md",
   "SOUL.md",
@@ -36,9 +33,7 @@ function normalizeManifestFileList(value = []) {
   for (const entry of Array.isArray(value) ? value : []) {
     if (typeof entry !== "string") continue;
 
-    const normalized = path.posix
-      .normalize(entry.trim().replace(/\\/g, "/"))
-      .replace(/^\/+/, "");
+    const normalized = path.posix.normalize(entry.trim().replace(/\\/g, "/")).replace(/^\/+/, "");
 
     if (
       !normalized ||

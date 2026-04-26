@@ -116,7 +116,7 @@ function normalizeEditableFiles(value, fallbackFiles = []) {
     .filter((entry) => entry.path.trim());
 }
 
-function buildMarketplaceTemplateUpdate(snapshot, listing, input = {}, options = {}) {
+function buildAgentHubTemplateUpdate(snapshot, listing, input = {}, options = {}) {
   const config = decodeMaybeString(snapshot?.config);
   const currentPayload = extractTemplatePayloadFromSnapshot(snapshot, {
     includeBootstrap: true,
@@ -233,7 +233,7 @@ function buildMarketplaceTemplateUpdate(snapshot, listing, input = {}, options =
 }
 
 module.exports = {
-  buildMarketplaceTemplateUpdate,
+  buildAgentHubTemplateUpdate,
   normalizeSlug,
   normalizeText,
 };

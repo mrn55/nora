@@ -24,7 +24,7 @@ const {
 const { connectIntegration } = require("./integrations");
 const { createChannel, revealChannelConfig } = require("./channels");
 const { decrypt, encrypt, ensureEncryptionConfigured } = require("./crypto");
-const { scanTemplatePayloadForSecrets } = require("./marketplaceSafety");
+const { scanTemplatePayloadForSecrets } = require("./agentHubSafety");
 const {
   NORA_INTEGRATIONS_CONTEXT_FILE,
   OPENCLAW_LEGACY_AGENT_TEMPLATE_ROOT,

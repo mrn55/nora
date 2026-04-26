@@ -10,14 +10,23 @@ process.env.JWT_SECRET = JWT_SECRET;
 
 const mockDb = { query: jest.fn() };
 jest.mock("../db", () => mockDb);
-jest.mock("../redisQueue", () => ({ addDeploymentJob: jest.fn(), getDLQJobs: jest.fn(), retryDLQJob: jest.fn() }));
-jest.mock("../scheduler", () => ({ selectNode: jest.fn().mockResolvedValue({ name: "worker-01" }) }));
+jest.mock("../redisQueue", () => ({
+  addDeploymentJob: jest.fn(),
+  getDLQJobs: jest.fn(),
+  retryDLQJob: jest.fn(),
+}));
+jest.mock("../scheduler", () => ({
+  selectNode: jest.fn().mockResolvedValue({ name: "worker-01" }),
+}));
 jest.mock("../containerManager", () => ({
-  start: jest.fn(), stop: jest.fn(), restart: jest.fn(), destroy: jest.fn(),
+  start: jest.fn(),
+  stop: jest.fn(),
+  restart: jest.fn(),
+  destroy: jest.fn(),
   status: jest.fn().mockResolvedValue({ running: true }),
 }));
-jest.mock("../marketplace", () => ({
-  listMarketplace: jest.fn().mockResolvedValue([]),
+jest.mock("../agentHubStore", () => ({
+  listAgentHubLocalListings: jest.fn().mockResolvedValue([]),
   publishSnapshot: jest.fn(),
   getListing: jest.fn(),
   deleteListing: jest.fn(),
@@ -125,7 +134,9 @@ describe("POST /workspaces", () => {
 
   it("rejects name over 100 chars", async () => {
     const res = await auth(
-      request(app).post("/workspaces").send({ name: "X".repeat(101) })
+      request(app)
+        .post("/workspaces")
+        .send({ name: "X".repeat(101) }),
     );
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/1-100/);
@@ -138,9 +149,7 @@ describe("POST /workspaces", () => {
       user_id: "user-1",
     });
 
-    const res = await auth(
-      request(app).post("/workspaces").send({ name: "Production" })
-    );
+    const res = await auth(request(app).post("/workspaces").send({ name: "Production" }));
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("name", "Production");
   });
@@ -157,8 +166,8 @@ describe("DELETE /workspaces/:id", () => {
   it("deletes owned workspace", async () => {
     mockDb.query
       .mockResolvedValueOnce({ rows: [{ id: "ws-1" }] }) // ownership OK
-      .mockResolvedValueOnce({ rows: [] })               // delete workspace_agents
-      .mockResolvedValueOnce({ rows: [] });              // delete workspace
+      .mockResolvedValueOnce({ rows: [] }) // delete workspace_agents
+      .mockResolvedValueOnce({ rows: [] }); // delete workspace
 
     const res = await auth(request(app).delete("/workspaces/ws-1"));
     expect(res.status).toBe(200);
@@ -176,7 +185,9 @@ describe("GET /workspaces/:id/agents", () => {
 
   it("returns workspace agents for owned workspace", async () => {
     mockDb.query.mockResolvedValueOnce({ rows: [{ id: "ws-1", user_id: "user-1" }] });
-    mockWorkspaces.getWorkspaceAgents.mockResolvedValueOnce([{ agent_id: "a1", agent_name: "Agent 1" }]);
+    mockWorkspaces.getWorkspaceAgents.mockResolvedValueOnce([
+      { agent_id: "a1", agent_name: "Agent 1" },
+    ]);
 
     const res = await auth(request(app).get("/workspaces/ws-1/agents"));
     expect(res.status).toBe(200);
@@ -189,9 +200,7 @@ describe("POST /workspaces/:id/agents", () => {
   it("rejects if not workspace owner", async () => {
     mockDb.query.mockResolvedValueOnce({ rows: [] }); // ownership check fails
 
-    const res = await auth(
-      request(app).post("/workspaces/ws-1/agents").send({ agentId: "a1" })
-    );
+    const res = await auth(request(app).post("/workspaces/ws-1/agents").send({ agentId: "a1" }));
     expect(res.status).toBe(404);
   });
 
@@ -201,7 +210,7 @@ describe("POST /workspaces/:id/agents", () => {
       .mockResolvedValueOnce({ rows: [] });
 
     const res = await auth(
-      request(app).post("/workspaces/ws-1/agents").send({ agentId: "a-foreign" })
+      request(app).post("/workspaces/ws-1/agents").send({ agentId: "a-foreign" }),
     );
     expect(res.status).toBe(404);
   });

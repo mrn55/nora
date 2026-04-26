@@ -1,6 +1,5 @@
 // @ts-nocheck
-// Agent Hub registry backed by PostgreSQL. The table names still use the
-// historical marketplace prefix so existing installations can migrate in place.
+// Agent Hub registry backed by PostgreSQL.
 
 const db = require("./db");
 
@@ -65,12 +64,12 @@ const LISTING_SELECT = `
     owner.name AS owner_name,
     owner.email AS owner_email,
     COALESCE(report_counts.open_report_count, 0)::int AS open_report_count
-  FROM marketplace_listings ml
+  FROM agent_hub_listings ml
   LEFT JOIN snapshots s ON s.id = ml.snapshot_id
   LEFT JOIN users owner ON owner.id = ml.owner_user_id
   LEFT JOIN (
     SELECT listing_id, COUNT(*)::int AS open_report_count
-    FROM marketplace_reports
+    FROM agent_hub_reports
     WHERE status = '${REPORT_STATUS_OPEN}'
     GROUP BY listing_id
   ) report_counts ON report_counts.listing_id = ml.id
@@ -146,8 +145,8 @@ async function createUniqueSlug(seed, { listingId = null } = {}) {
     const params = listingId ? [candidate, listingId] : [candidate];
     const result = await db.query(
       listingId
-        ? "SELECT id FROM marketplace_listings WHERE slug = $1 AND id <> $2 LIMIT 1"
-        : "SELECT id FROM marketplace_listings WHERE slug = $1 LIMIT 1",
+        ? "SELECT id FROM agent_hub_listings WHERE slug = $1 AND id <> $2 LIMIT 1"
+        : "SELECT id FROM agent_hub_listings WHERE slug = $1 LIMIT 1",
       params,
     );
     if (!result.rows[0]) return candidate;
@@ -165,13 +164,13 @@ async function ensureListingVersion({
   if (!listingId || !snapshotId) return;
 
   const existing = await db.query(
-    "SELECT id FROM marketplace_listing_versions WHERE listing_id = $1 AND snapshot_id = $2 LIMIT 1",
+    "SELECT id FROM agent_hub_listing_versions WHERE listing_id = $1 AND snapshot_id = $2 LIMIT 1",
     [listingId, snapshotId],
   );
   if (existing.rows[0]) return;
 
   await db.query(
-    `INSERT INTO marketplace_listing_versions(listing_id, snapshot_id, version_number, clone_mode)
+    `INSERT INTO agent_hub_listing_versions(listing_id, snapshot_id, version_number, clone_mode)
      VALUES($1, $2, $3, $4)`,
     [listingId, snapshotId, versionNumber, cloneMode],
   );
@@ -228,11 +227,11 @@ async function upsertListing({
 } = {}) {
   let existing = null;
   if (listingId) {
-    const result = await db.query("SELECT * FROM marketplace_listings WHERE id = $1", [listingId]);
+    const result = await db.query("SELECT * FROM agent_hub_listings WHERE id = $1", [listingId]);
     existing = result.rows[0] || null;
   } else if (snapshotId) {
     const result = await db.query(
-      "SELECT * FROM marketplace_listings WHERE snapshot_id = $1 ORDER BY created_at ASC LIMIT 1",
+      "SELECT * FROM agent_hub_listings WHERE snapshot_id = $1 ORDER BY created_at ASC LIMIT 1",
       [snapshotId],
     );
     existing = result.rows[0] || null;
@@ -291,7 +290,7 @@ async function upsertListing({
           ? (existing.current_version || 1) + 1
           : existing.current_version || 1;
     const result = await db.query(
-      `UPDATE marketplace_listings
+      `UPDATE agent_hub_listings
           SET snapshot_id = COALESCE($1, snapshot_id),
               owner_user_id = COALESCE($2, owner_user_id),
               name = $3,
@@ -357,7 +356,7 @@ async function upsertListing({
 
   const initialVersion = normalizeCurrentVersion(currentVersion, 1);
   const result = await db.query(
-    `INSERT INTO marketplace_listings(
+    `INSERT INTO agent_hub_listings(
        snapshot_id,
        owner_user_id,
        name,
@@ -414,7 +413,7 @@ async function upsertListing({
   return result.rows[0];
 }
 
-async function listMarketplace() {
+async function listAgentHubLocalListings() {
   const result = await db.query(
     `${LISTING_SELECT}
       WHERE ml.status = $1
@@ -430,10 +429,6 @@ async function listMarketplace() {
     [LISTING_STATUS_PUBLISHED, LISTING_VISIBILITY_PUBLIC],
   );
   return result.rows;
-}
-
-async function listAgentHubLocalListings() {
-  return listMarketplace();
 }
 
 async function listUserListings(userId) {
@@ -505,14 +500,14 @@ async function getPlatformListingByTemplateKey(templateKey) {
 
 async function recordInstall(id) {
   await db.query(
-    "UPDATE marketplace_listings SET installs = COALESCE(installs, 0) + 1, updated_at = NOW() WHERE id = $1",
+    "UPDATE agent_hub_listings SET installs = COALESCE(installs, 0) + 1, updated_at = NOW() WHERE id = $1",
     [id],
   );
 }
 
 async function recordDownload(id) {
   await db.query(
-    "UPDATE marketplace_listings SET downloads = COALESCE(downloads, 0) + 1, updated_at = NOW() WHERE id = $1",
+    "UPDATE agent_hub_listings SET downloads = COALESCE(downloads, 0) + 1, updated_at = NOW() WHERE id = $1",
     [id],
   );
 }
@@ -520,7 +515,7 @@ async function recordDownload(id) {
 async function createReport({ listingId, reporterUserId, reason, details = "" } = {}) {
   const existing = await db.query(
     `SELECT id
-       FROM marketplace_reports
+       FROM agent_hub_reports
       WHERE listing_id = $1
         AND reporter_user_id = $2
         AND status = $3
@@ -534,7 +529,7 @@ async function createReport({ listingId, reporterUserId, reason, details = "" } 
   }
 
   const result = await db.query(
-    `INSERT INTO marketplace_reports(listing_id, reporter_user_id, reason, details)
+    `INSERT INTO agent_hub_reports(listing_id, reporter_user_id, reason, details)
      VALUES($1, $2, $3, $4)
      RETURNING *`,
     [
@@ -564,8 +559,8 @@ async function listReports() {
        owner.name AS owner_name,
        owner.email AS owner_email,
        reporter.email AS reporter_email
-     FROM marketplace_reports mr
-     LEFT JOIN marketplace_listings ml ON ml.id = mr.listing_id
+     FROM agent_hub_reports mr
+     LEFT JOIN agent_hub_listings ml ON ml.id = mr.listing_id
      LEFT JOIN users owner ON owner.id = ml.owner_user_id
      LEFT JOIN users reporter ON reporter.id = mr.reporter_user_id
      ORDER BY
@@ -579,7 +574,7 @@ async function resolveReport(reportId, reviewerUserId, status = REPORT_STATUS_RE
   const normalizedStatus =
     status === REPORT_STATUS_DISMISSED ? REPORT_STATUS_DISMISSED : REPORT_STATUS_RESOLVED;
   const result = await db.query(
-    `UPDATE marketplace_reports
+    `UPDATE agent_hub_reports
         SET status = $1,
             reviewed_at = NOW(),
             reviewed_by = $2
@@ -600,7 +595,7 @@ async function setListingStatus(id, status, reviewerUserId = null, reviewNotes =
     ? status
     : LISTING_STATUS_PENDING_REVIEW;
   const result = await db.query(
-    `UPDATE marketplace_listings
+    `UPDATE agent_hub_listings
         SET status = $1,
             reviewed_at = NOW(),
             reviewed_by = $2,
@@ -618,7 +613,7 @@ async function setListingStatus(id, status, reviewerUserId = null, reviewNotes =
   if (!result.rows[0]) return null;
 
   await db.query(
-    `UPDATE marketplace_reports
+    `UPDATE agent_hub_reports
         SET status = $1,
             reviewed_at = NOW(),
             reviewed_by = $2
@@ -641,7 +636,7 @@ async function updateCentralShareStatus(
 ) {
   const normalizedStatus = normalizeCentralShareStatus(status);
   const result = await db.query(
-    `UPDATE marketplace_listings
+    `UPDATE agent_hub_listings
         SET central_share_status = $1,
             central_listing_id = $2,
             central_last_synced_at = $3,
@@ -661,7 +656,7 @@ async function updateCentralShareStatus(
 }
 
 async function deleteListing(id) {
-  await db.query("DELETE FROM marketplace_listings WHERE id = $1", [id]);
+  await db.query("DELETE FROM agent_hub_listings WHERE id = $1", [id]);
 }
 
 module.exports = {
@@ -691,7 +686,6 @@ module.exports = {
   listAgentHubLocalListings,
   listAdminListings,
   listCommunityCatalog,
-  listMarketplace,
   listReports,
   listUserListings,
   publishSnapshot,

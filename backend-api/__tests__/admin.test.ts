@@ -64,7 +64,7 @@ jest.mock("../containerManager", () => ({
   status: jest.fn().mockResolvedValue({ running: true }),
   stats: jest.fn(),
 }));
-jest.mock("../marketplace", () => ({
+jest.mock("../agentHubStore", () => ({
   LISTING_SOURCE_COMMUNITY: "community",
   LISTING_SOURCE_PLATFORM: "platform",
   LISTING_STATUS_PENDING_REVIEW: "pending_review",
@@ -81,7 +81,6 @@ jest.mock("../marketplace", () => ({
   CENTRAL_SHARE_STATUS_QUEUED: "queued",
   CENTRAL_SHARE_STATUS_SUBMITTED: "submitted",
   CENTRAL_SHARE_STATUS_FAILED: "failed",
-  listMarketplace: jest.fn().mockResolvedValue([]),
   listAgentHubLocalListings: jest.fn().mockResolvedValue([]),
   listUserListings: jest.fn().mockResolvedValue([]),
   listCommunityCatalog: jest.fn().mockResolvedValue([]),
@@ -497,8 +496,8 @@ describe("admin routes", () => {
   });
 
   it("returns Agent Hub listings for moderation", async () => {
-    const marketplaceModule = require("../marketplace");
-    marketplaceModule.listAdminListings.mockResolvedValueOnce([
+    const agentHubStoreModule = require("../agentHubStore");
+    agentHubStoreModule.listAdminListings.mockResolvedValueOnce([
       { id: "listing-1", name: "Community Template", status: "pending_review" },
     ]);
 
@@ -511,10 +510,10 @@ describe("admin routes", () => {
   });
 
   it("returns detailed Agent Hub listing data for admins", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       snapshot_id: "snapshot-1",
       name: "Community Template",
@@ -522,7 +521,7 @@ describe("admin routes", () => {
       source_type: "community",
       category: "Operations",
     });
-    marketplaceModule.listReports.mockResolvedValueOnce([
+    agentHubStoreModule.listReports.mockResolvedValueOnce([
       {
         id: "report-1",
         listing_id: "listing-1",
@@ -572,7 +571,7 @@ describe("admin routes", () => {
   });
 
   it("updates Agent Hub template metadata and files for admins", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
     const listing = {
@@ -610,7 +609,7 @@ describe("admin routes", () => {
       },
     };
 
-    marketplaceModule.getListing.mockResolvedValueOnce(listing).mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce(listing).mockResolvedValueOnce({
       ...listing,
       name: "Updated Template",
       description: "Updated description",
@@ -640,12 +639,12 @@ describe("admin routes", () => {
       ...snapshot,
       name: "Updated Template",
     });
-    marketplaceModule.upsertListing.mockResolvedValueOnce({
+    agentHubStoreModule.upsertListing.mockResolvedValueOnce({
       ...listing,
       name: "Updated Template",
       current_version: 3,
     });
-    marketplaceModule.listReports.mockResolvedValueOnce([]);
+    agentHubStoreModule.listReports.mockResolvedValueOnce([]);
 
     const res = await withToken(
       request(app)
@@ -697,7 +696,7 @@ describe("admin routes", () => {
         }),
       }),
     );
-    expect(marketplaceModule.upsertListing).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.upsertListing).toHaveBeenCalledWith(
       expect.objectContaining({
         listingId: "listing-1",
         category: "Support",
@@ -718,14 +717,14 @@ describe("admin routes", () => {
   });
 
   it("updates an Agent Hub listing status", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const monitoringModule = require("../monitoring");
-    marketplaceModule.setListingStatus.mockResolvedValueOnce({
+    agentHubStoreModule.setListingStatus.mockResolvedValueOnce({
       id: "listing-1",
       name: "Community Template",
       status: "published",
     });
-    marketplaceModule.getListing.mockResolvedValueOnce({
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-1",
       name: "Community Template",
       status: "published",
@@ -740,7 +739,7 @@ describe("admin routes", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(marketplaceModule.setListingStatus).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.setListingStatus).toHaveBeenCalledWith(
       "listing-1",
       "published",
       "admin-1",
@@ -763,7 +762,7 @@ describe("admin routes", () => {
   });
 
   it("publishes platform Agent Hub listings as free", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
     snapshotsModule.getSnapshot.mockResolvedValueOnce({
@@ -772,7 +771,7 @@ describe("admin routes", () => {
       description: "Preset description",
       template_key: "platform-template",
     });
-    marketplaceModule.upsertListing.mockResolvedValueOnce({
+    agentHubStoreModule.upsertListing.mockResolvedValueOnce({
       id: "listing-1",
       name: "Platform Template",
       price: "Free",
@@ -788,7 +787,7 @@ describe("admin routes", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(marketplaceModule.upsertListing).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.upsertListing).toHaveBeenCalledWith(
       expect.objectContaining({
         snapshotId: "snapshot-1",
         price: "Free",
@@ -800,8 +799,8 @@ describe("admin routes", () => {
   });
 
   it("returns Agent Hub reports for admins", async () => {
-    const marketplaceModule = require("../marketplace");
-    marketplaceModule.listReports.mockResolvedValueOnce([
+    const agentHubStoreModule = require("../agentHubStore");
+    agentHubStoreModule.listReports.mockResolvedValueOnce([
       { id: "report-1", listing_id: "listing-1", status: "open" },
     ]);
 
@@ -812,9 +811,9 @@ describe("admin routes", () => {
   });
 
   it("resolves Agent Hub reports", async () => {
-    const marketplaceModule = require("../marketplace");
+    const agentHubStoreModule = require("../agentHubStore");
     const monitoringModule = require("../monitoring");
-    marketplaceModule.resolveReport.mockResolvedValueOnce({
+    agentHubStoreModule.resolveReport.mockResolvedValueOnce({
       id: "report-1",
       listing_id: "listing-1",
       status: "dismissed",
@@ -828,7 +827,7 @@ describe("admin routes", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(marketplaceModule.resolveReport).toHaveBeenCalledWith(
+    expect(agentHubStoreModule.resolveReport).toHaveBeenCalledWith(
       "report-1",
       "admin-1",
       "dismissed",

@@ -38,15 +38,17 @@ const RELEASE_ENV_KEYS = [
   "NORA_MANUAL_UPGRADE_COMMAND",
   "NORA_MANUAL_UPGRADE_STEPS",
 ];
-const CATALOG_ENV_KEYS = [
-  "ENABLED_BACKENDS",
-  "ENABLED_RUNTIME_FAMILIES",
-  "KUBECONFIG",
-];
+const CATALOG_ENV_KEYS = ["ENABLED_BACKENDS", "ENABLED_RUNTIME_FAMILIES", "KUBECONFIG"];
 
 jest.mock("../db", () => mockDb);
-jest.mock("../redisQueue", () => ({ addDeploymentJob: jest.fn(), getDLQJobs: jest.fn(), retryDLQJob: jest.fn() }));
-jest.mock("../scheduler", () => ({ selectNode: jest.fn().mockResolvedValue({ name: "worker-01" }) }));
+jest.mock("../redisQueue", () => ({
+  addDeploymentJob: jest.fn(),
+  getDLQJobs: jest.fn(),
+  retryDLQJob: jest.fn(),
+}));
+jest.mock("../scheduler", () => ({
+  selectNode: jest.fn().mockResolvedValue({ name: "worker-01" }),
+}));
 jest.mock("../containerManager", () => ({
   start: jest.fn().mockResolvedValue({}),
   stop: jest.fn().mockResolvedValue({}),
@@ -54,8 +56,8 @@ jest.mock("../containerManager", () => ({
   destroy: jest.fn().mockResolvedValue({}),
   status: jest.fn().mockResolvedValue({ running: true }),
 }));
-jest.mock("../marketplace", () => ({
-  listMarketplace: jest.fn().mockResolvedValue([]),
+jest.mock("../agentHubStore", () => ({
+  listAgentHubLocalListings: jest.fn().mockResolvedValue([]),
   publishSnapshot: jest.fn(),
   getListing: jest.fn(),
   deleteListing: jest.fn(),
@@ -177,7 +179,7 @@ describe("public platform config", () => {
           featureEnabled: false,
           active: false,
         },
-      })
+      }),
     );
   });
 
@@ -278,7 +280,7 @@ describe("public platform config", () => {
             maturityTier: "experimental",
           }),
         ]),
-      })
+      }),
     );
     expect(res.body.legacyBackends).toEqual(res.body.backends);
   });
@@ -302,7 +304,7 @@ describe("public platform config", () => {
         maturityTier: "ga",
         supportsSandboxSelection: true,
         enabledSandboxProfiles: expect.arrayContaining(["standard", "nemoclaw"]),
-      })
+      }),
     );
     expect(dockerTarget.sandboxProfiles).toEqual(
       expect.arrayContaining([
@@ -318,7 +320,7 @@ describe("public platform config", () => {
           available: true,
           maturityTier: "experimental",
         }),
-      ])
+      ]),
     );
 
     expect(k8sTarget).toEqual(
@@ -327,7 +329,7 @@ describe("public platform config", () => {
         available: true,
         maturityTier: "beta",
         supportsSandboxSelection: false,
-      })
+      }),
     );
 
     expect(proxmoxTarget).toEqual(
@@ -336,7 +338,7 @@ describe("public platform config", () => {
         available: false,
         maturityTier: "blocked",
         availableForOnboarding: false,
-      })
+      }),
     );
   });
 
@@ -351,14 +353,14 @@ describe("public platform config", () => {
         defaultRuntimeFamily: "hermes",
         defaultDeployTarget: "docker",
         defaultSandboxProfile: "standard",
-      })
+      }),
     );
     expect(res.body.runtimeFamily).toEqual(
       expect.objectContaining({
         id: "hermes",
         label: "Hermes",
         contractStatusLabel: "Deployment-first contract",
-      })
+      }),
     );
     expect(res.body.executionTargets).toEqual(
       expect.arrayContaining([
@@ -367,7 +369,7 @@ describe("public platform config", () => {
           runtimeFamily: "hermes",
           defaultSandboxProfile: "standard",
         }),
-      ])
+      ]),
     );
     expect(res.body.backends).toEqual(
       expect.arrayContaining([
@@ -378,7 +380,7 @@ describe("public platform config", () => {
           deployTarget: "docker",
           sandboxProfile: "standard",
         }),
-      ])
+      ]),
     );
   });
 
@@ -395,7 +397,7 @@ describe("public platform config", () => {
           id: "hermes",
           runtimeFamily: "hermes",
         }),
-      ])
+      ]),
     );
   });
 
@@ -412,7 +414,7 @@ describe("public platform config", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: "openclaw" }),
         expect.objectContaining({ id: "hermes" }),
-      ])
+      ]),
     );
     expect(res.body.backends).toEqual(
       expect.arrayContaining([
@@ -428,7 +430,7 @@ describe("public platform config", () => {
           id: "docker",
           enabled: false,
         }),
-      ])
+      ]),
     );
   });
 
@@ -459,11 +461,9 @@ describe("public platform config", () => {
         installMethod: "source",
         manualUpgrade: expect.objectContaining({
           command: "git pull --ff-only && docker compose up -d --build",
-          steps: expect.arrayContaining([
-            expect.stringContaining("repo root"),
-          ]),
+          steps: expect.arrayContaining([expect.stringContaining("repo root")]),
         }),
-      })
+      }),
     );
   });
 
@@ -491,19 +491,18 @@ describe("public platform config", () => {
           Accept: "application/vnd.github+json",
           "User-Agent": "nora-release-checker",
         }),
-      })
+      }),
     );
     expect(res.body.release).toEqual(
       expect.objectContaining({
         currentVersion: "1.2.3",
         latestVersion: "v1.3.0",
         publishedAt: "2026-04-11T08:30:00.000Z",
-        releaseNotesUrl:
-          "https://github.com/solomon2773/nora/releases/tag/v1.3.0",
+        releaseNotesUrl: "https://github.com/solomon2773/nora/releases/tag/v1.3.0",
         latestSource: "github",
         latestRepo: "solomon2773/nora",
         updateAvailable: true,
-      })
+      }),
     );
   });
 });
@@ -524,12 +523,14 @@ describe("gateway control-plane embed", () => {
 
   it("proxies the gateway UI, sets an embed session cookie, and injects the bootstrap script", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: null,
-        status: "running",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: null,
+          status: "running",
+        },
+      ],
     });
     global.fetch.mockResolvedValueOnce({
       ok: true,
@@ -548,15 +549,19 @@ describe("gateway control-plane embed", () => {
       "http://10.0.0.10:18789",
       expect.objectContaining({
         headers: expect.objectContaining({ Accept: "text/html", "Accept-Encoding": "identity" }),
-      })
+      }),
     );
     expect(res.text).toContain('<base href="/api/agents/agent-1/gateway/embed/">');
-    expect(res.text).toContain('<script src="/api/agents/agent-1/gateway/embed/bootstrap.js"></script>');
+    expect(res.text).toContain(
+      '<script src="/api/agents/agent-1/gateway/embed/bootstrap.js"></script>',
+    );
     expect(res.text).not.toContain("window.__NORA_EMBED_AUTO_LOGIN__ = true");
-    expect(res.headers["set-cookie"]).toEqual(expect.arrayContaining([
-      expect.stringContaining("__nora_gateway_embed_agent-1="),
-    ]));
-    expect(res.headers["content-security-policy"]).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(res.headers["set-cookie"]).toEqual(
+      expect.arrayContaining([expect.stringContaining("__nora_gateway_embed_agent-1=")]),
+    );
+    expect(res.headers["content-security-policy"]).toContain(
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    );
     expect(res.headers["content-security-policy"]).toContain("connect-src 'self' ws: wss:");
     expect(res.headers["content-security-policy"]).toContain("frame-ancestors 'self'");
     expect(res.headers["referrer-policy"]).toBe("no-referrer");
@@ -566,12 +571,14 @@ describe("gateway control-plane embed", () => {
 
   it("serves the bootstrap script from an embed session cookie and uses wss behind HTTPS proxies", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: null,
-        status: "running",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: null,
+          status: "running",
+        },
+      ],
     });
 
     const res = await request(app)
@@ -595,12 +602,14 @@ describe("gateway control-plane embed", () => {
   it("uses the published gateway host port when one is recorded", async () => {
     process.env.GATEWAY_HOST = "gateway.internal";
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: 19123,
-        status: "running",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: 19123,
+          status: "running",
+        },
+      ],
     });
     global.fetch.mockResolvedValue({
       ok: true,
@@ -615,22 +624,21 @@ describe("gateway control-plane embed", () => {
       .set("Accept", "text/html");
 
     expect(res.status).toBe(200);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "http://gateway.internal:19123",
-      expect.any(Object)
-    );
+    expect(global.fetch).toHaveBeenCalledWith("http://gateway.internal:19123", expect.any(Object));
   });
 
   it("prefers explicit gateway host and port when the backend provides them", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: 19123,
-        gateway_host: "gateway.service.internal",
-        gateway_port: 28789,
-        status: "running",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: 19123,
+          gateway_host: "gateway.service.internal",
+          gateway_port: 28789,
+          status: "running",
+        },
+      ],
     });
     global.fetch.mockResolvedValue({
       ok: true,
@@ -647,19 +655,21 @@ describe("gateway control-plane embed", () => {
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
       "http://gateway.service.internal:28789",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("prefers an explicit gateway host even when the backend exposes the gateway via a published port", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: 19123,
-        gateway_host: "nora-kind-control-plane",
-        status: "running",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: 19123,
+          gateway_host: "nora-kind-control-plane",
+          status: "running",
+        },
+      ],
     });
     global.fetch.mockResolvedValue({
       ok: true,
@@ -676,18 +686,20 @@ describe("gateway control-plane embed", () => {
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
       "http://nora-kind-control-plane:19123",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("allows embed for warning agents so degraded control-plane recovery still works", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: 19123,
-        status: "warning",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: 19123,
+          status: "warning",
+        },
+      ],
     });
     global.fetch.mockResolvedValue({
       ok: true,
@@ -704,18 +716,20 @@ describe("gateway control-plane embed", () => {
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
       "http://host.docker.internal:19123",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("rejects embed for stopped agents so stale control-plane state stays closed", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: 19123,
-        status: "stopped",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: 19123,
+          status: "stopped",
+        },
+      ],
     });
 
     const res = await request(app)
@@ -728,12 +742,14 @@ describe("gateway control-plane embed", () => {
 
   it("rejects embed for error agents so failed control-plane state stays closed", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_token: "gateway-password",
-        gateway_host_port: 19123,
-        status: "error",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_token: "gateway-password",
+          gateway_host_port: 19123,
+          status: "error",
+        },
+      ],
     });
 
     const res = await request(app)
@@ -746,11 +762,13 @@ describe("gateway control-plane embed", () => {
 
   it("allows asset proxy access for warning agents so degraded control-plane recovery still works", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_host_port: 19123,
-        status: "warning",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_host_port: 19123,
+          status: "warning",
+        },
+      ],
     });
     global.fetch.mockResolvedValue({
       ok: true,
@@ -766,18 +784,20 @@ describe("gateway control-plane embed", () => {
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
       "http://host.docker.internal:19123/assets/app.js",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("uses GATEWAY_HOST for asset proxy access when a published gateway port is recorded", async () => {
     process.env.GATEWAY_HOST = "gateway.external";
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_host_port: 19123,
-        status: "running",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_host_port: 19123,
+          status: "running",
+        },
+      ],
     });
     global.fetch.mockResolvedValue({
       ok: true,
@@ -793,17 +813,19 @@ describe("gateway control-plane embed", () => {
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
       "http://gateway.external:19123/assets/app.js",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("uses the default 18789 gateway contract for asset proxy access when no host port is published", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_host_port: null,
-        status: "running",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_host_port: null,
+          status: "running",
+        },
+      ],
     });
     global.fetch.mockResolvedValue({
       ok: true,
@@ -819,17 +841,19 @@ describe("gateway control-plane embed", () => {
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
       "http://10.0.0.10:18789/assets/app.js",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("rejects asset proxy access for stopped agents so stale control-plane state stays closed", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_host_port: 19123,
-        status: "stopped",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_host_port: 19123,
+          status: "stopped",
+        },
+      ],
     });
 
     const res = await request(app)
@@ -842,11 +866,13 @@ describe("gateway control-plane embed", () => {
 
   it("rejects asset proxy access for error agents so failed control-plane state stays closed", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.10",
-        gateway_host_port: 19123,
-        status: "error",
-      }],
+      rows: [
+        {
+          host: "10.0.0.10",
+          gateway_host_port: 19123,
+          status: "error",
+        },
+      ],
     });
 
     const res = await request(app)
@@ -861,28 +887,34 @@ describe("gateway control-plane embed", () => {
     const agentClient = request.agent(app);
     mockDb.query
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.10",
-          gateway_token: "gateway-password",
-          gateway_host_port: null,
-          status: "running",
-        }],
+        rows: [
+          {
+            host: "10.0.0.10",
+            gateway_token: "gateway-password",
+            gateway_host_port: null,
+            status: "running",
+          },
+        ],
       })
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.10",
-          gateway_token: "gateway-password",
-          gateway_host_port: null,
-          status: "running",
-        }],
+        rows: [
+          {
+            host: "10.0.0.10",
+            gateway_token: "gateway-password",
+            gateway_host_port: null,
+            status: "running",
+          },
+        ],
       })
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.10",
-          gateway_token: "gateway-password",
-          gateway_host_port: null,
-          status: "running",
-        }],
+        rows: [
+          {
+            host: "10.0.0.10",
+            gateway_token: "gateway-password",
+            gateway_host_port: null,
+            status: "running",
+          },
+        ],
       });
     global.fetch
       .mockResolvedValueOnce({
@@ -919,7 +951,7 @@ describe("gateway control-plane embed", () => {
     expect(global.fetch).toHaveBeenNthCalledWith(
       2,
       "http://10.0.0.10:18789/__openclaw__/control-ui-config.json",
-      expect.any(Object)
+      expect.any(Object),
     );
 
     const chatRes = await agentClient
@@ -927,12 +959,16 @@ describe("gateway control-plane embed", () => {
       .set("Host", "nora.test");
 
     expect(chatRes.status).toBe(200);
-    expect(chatRes.text).toContain('<script src="/api/agents/agent-1/gateway/embed/bootstrap.js"></script>');
-    expect(chatRes.headers["content-security-policy"]).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'");
+    expect(chatRes.text).toContain(
+      '<script src="/api/agents/agent-1/gateway/embed/bootstrap.js"></script>',
+    );
+    expect(chatRes.headers["content-security-policy"]).toContain(
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    );
     expect(global.fetch).toHaveBeenNthCalledWith(
       3,
       "http://10.0.0.10:18789/chat?session=main",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -964,44 +1000,52 @@ describe("Hermes dashboard embed", () => {
     const agentClient = request.agent(app);
     mockDb.query
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.40",
-          runtime_host: "10.0.0.40",
-          runtime_port: 8642,
-          runtime_family: "hermes",
-          backend_type: "hermes",
-          status: "warning",
-        }],
+        rows: [
+          {
+            host: "10.0.0.40",
+            runtime_host: "10.0.0.40",
+            runtime_port: 8642,
+            runtime_family: "hermes",
+            backend_type: "hermes",
+            status: "warning",
+          },
+        ],
       })
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.40",
-          runtime_host: "10.0.0.40",
-          runtime_port: 8642,
-          runtime_family: "hermes",
-          backend_type: "hermes",
-          status: "warning",
-        }],
+        rows: [
+          {
+            host: "10.0.0.40",
+            runtime_host: "10.0.0.40",
+            runtime_port: 8642,
+            runtime_family: "hermes",
+            backend_type: "hermes",
+            status: "warning",
+          },
+        ],
       })
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.40",
-          runtime_host: "10.0.0.40",
-          runtime_port: 8642,
-          runtime_family: "hermes",
-          backend_type: "hermes",
-          status: "warning",
-        }],
+        rows: [
+          {
+            host: "10.0.0.40",
+            runtime_host: "10.0.0.40",
+            runtime_port: 8642,
+            runtime_family: "hermes",
+            backend_type: "hermes",
+            status: "warning",
+          },
+        ],
       })
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.40",
-          runtime_host: "10.0.0.40",
-          runtime_port: 8642,
-          runtime_family: "hermes",
-          backend_type: "hermes",
-          status: "warning",
-        }],
+        rows: [
+          {
+            host: "10.0.0.40",
+            runtime_host: "10.0.0.40",
+            runtime_port: 8642,
+            runtime_family: "hermes",
+            backend_type: "hermes",
+            status: "warning",
+          },
+        ],
       });
     global.fetch
       .mockResolvedValueOnce({
@@ -1022,7 +1066,7 @@ describe("Hermes dashboard embed", () => {
         ok: true,
         status: 200,
         headers: new Headers({ "content-type": "text/css" }),
-        text: async () => '@font-face{src:url(/fonts/Mondwest.woff2)}',
+        text: async () => "@font-face{src:url(/fonts/Mondwest.woff2)}",
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -1037,25 +1081,15 @@ describe("Hermes dashboard embed", () => {
       .set("Accept", "text/html");
 
     expect(htmlRes.status).toBe(200);
-    expect(htmlRes.text).toContain(
-      'src="/api/agents/agent-1/hermes-ui/embed/assets/index.js"'
-    );
-    expect(htmlRes.text).toContain(
-      'href="/api/agents/agent-1/hermes-ui/embed/assets/index.css"'
-    );
-    expect(htmlRes.text).toContain(
-      'href="/api/agents/agent-1/hermes-ui/embed/favicon.ico"'
-    );
-    expect(htmlRes.text).toContain(
-      'window.__HERMES_SESSION_TOKEN__="dash-session"'
-    );
+    expect(htmlRes.text).toContain('src="/api/agents/agent-1/hermes-ui/embed/assets/index.js"');
+    expect(htmlRes.text).toContain('href="/api/agents/agent-1/hermes-ui/embed/assets/index.css"');
+    expect(htmlRes.text).toContain('href="/api/agents/agent-1/hermes-ui/embed/favicon.ico"');
+    expect(htmlRes.text).toContain('window.__HERMES_SESSION_TOKEN__="dash-session"');
     expect(htmlRes.headers["set-cookie"]).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("__nora_hermes_embed_agent-1="),
-      ])
+      expect.arrayContaining([expect.stringContaining("__nora_hermes_embed_agent-1=")]),
     );
     expect(htmlRes.headers["content-security-policy"]).toContain(
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     );
     expect(global.fetch).toHaveBeenNthCalledWith(
       1,
@@ -1065,7 +1099,7 @@ describe("Hermes dashboard embed", () => {
           Accept: "text/html",
           "Accept-Encoding": "identity",
         }),
-      })
+      }),
     );
 
     const jsRes = await agentClient
@@ -1073,16 +1107,12 @@ describe("Hermes dashboard embed", () => {
       .set("Host", "nora.test");
 
     expect(jsRes.status).toBe(200);
-    expect(jsRes.text).toContain(
-      '"/api/agents/agent-1/hermes-ui/embed/api/status"'
-    );
-    expect(jsRes.text).toContain(
-      'basename:"/api/agents/agent-1/hermes-ui/embed"'
-    );
+    expect(jsRes.text).toContain('"/api/agents/agent-1/hermes-ui/embed/api/status"');
+    expect(jsRes.text).toContain('basename:"/api/agents/agent-1/hermes-ui/embed"');
     expect(global.fetch).toHaveBeenNthCalledWith(
       2,
       "http://10.0.0.40:9119/assets/index.js",
-      expect.any(Object)
+      expect.any(Object),
     );
 
     const cssRes = await agentClient
@@ -1090,13 +1120,11 @@ describe("Hermes dashboard embed", () => {
       .set("Host", "nora.test");
 
     expect(cssRes.status).toBe(200);
-    expect(cssRes.text).toContain(
-      "url(/api/agents/agent-1/hermes-ui/embed/fonts/Mondwest.woff2)"
-    );
+    expect(cssRes.text).toContain("url(/api/agents/agent-1/hermes-ui/embed/fonts/Mondwest.woff2)");
     expect(global.fetch).toHaveBeenNthCalledWith(
       3,
       "http://10.0.0.40:9119/assets/index.css",
-      expect.any(Object)
+      expect.any(Object),
     );
 
     const apiRes = await agentClient
@@ -1119,24 +1147,28 @@ describe("Hermes dashboard embed", () => {
     const agentClient = request.agent(app);
     mockDb.query
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.41",
-          runtime_host: "10.0.0.41",
-          runtime_port: 8642,
-          runtime_family: "hermes",
-          backend_type: "hermes",
-          status: "running",
-        }],
+        rows: [
+          {
+            host: "10.0.0.41",
+            runtime_host: "10.0.0.41",
+            runtime_port: 8642,
+            runtime_family: "hermes",
+            backend_type: "hermes",
+            status: "running",
+          },
+        ],
       })
       .mockResolvedValueOnce({
-        rows: [{
-          host: "10.0.0.41",
-          runtime_host: "10.0.0.41",
-          runtime_port: 8642,
-          runtime_family: "hermes",
-          backend_type: "hermes",
-          status: "running",
-        }],
+        rows: [
+          {
+            host: "10.0.0.41",
+            runtime_host: "10.0.0.41",
+            runtime_port: 8642,
+            runtime_family: "hermes",
+            backend_type: "hermes",
+            status: "running",
+          },
+        ],
       });
     global.fetch
       .mockResolvedValueOnce({
@@ -1180,14 +1212,16 @@ describe("Hermes dashboard embed", () => {
 
   it("rejects embed requests for stopped Hermes agents", async () => {
     mockDb.query.mockResolvedValueOnce({
-      rows: [{
-        host: "10.0.0.40",
-        runtime_host: "10.0.0.40",
-        runtime_port: 8642,
-        runtime_family: "hermes",
-        backend_type: "hermes",
-        status: "stopped",
-      }],
+      rows: [
+        {
+          host: "10.0.0.40",
+          runtime_host: "10.0.0.40",
+          runtime_port: 8642,
+          runtime_family: "hermes",
+          backend_type: "hermes",
+          status: "stopped",
+        },
+      ],
     });
 
     const res = await request(app)

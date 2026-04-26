@@ -6,14 +6,23 @@ const request = require("supertest");
 
 // Mock all DB-dependent modules before requiring server
 jest.mock("../db", () => ({ query: jest.fn() }));
-jest.mock("../redisQueue", () => ({ addDeploymentJob: jest.fn(), getDLQJobs: jest.fn(), retryDLQJob: jest.fn() }));
-jest.mock("../scheduler", () => ({ selectNode: jest.fn().mockResolvedValue({ name: "worker-01" }) }));
+jest.mock("../redisQueue", () => ({
+  addDeploymentJob: jest.fn(),
+  getDLQJobs: jest.fn(),
+  retryDLQJob: jest.fn(),
+}));
+jest.mock("../scheduler", () => ({
+  selectNode: jest.fn().mockResolvedValue({ name: "worker-01" }),
+}));
 jest.mock("../containerManager", () => ({
-  start: jest.fn(), stop: jest.fn(), restart: jest.fn(), destroy: jest.fn(),
+  start: jest.fn(),
+  stop: jest.fn(),
+  restart: jest.fn(),
+  destroy: jest.fn(),
   status: jest.fn().mockResolvedValue({ running: true }),
 }));
-jest.mock("../marketplace", () => ({
-  listMarketplace: jest.fn().mockResolvedValue([]),
+jest.mock("../agentHubStore", () => ({
+  listAgentHubLocalListings: jest.fn().mockResolvedValue([]),
   publishSnapshot: jest.fn(),
   getListing: jest.fn(),
   deleteListing: jest.fn(),

@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS marketplace_listings (
+CREATE TABLE IF NOT EXISTS agent_hub_listings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   snapshot_id UUID REFERENCES snapshots(id) ON DELETE CASCADE,
   owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
@@ -157,22 +157,22 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
 CREATE INDEX IF NOT EXISTS idx_snapshots_template_key
   ON snapshots(template_key);
 
-CREATE INDEX IF NOT EXISTS idx_marketplace_listings_snapshot_id
-  ON marketplace_listings(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_snapshot_id
+  ON agent_hub_listings(snapshot_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_listings_slug_unique
-  ON marketplace_listings(slug)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_hub_listings_slug_unique
+  ON agent_hub_listings(slug)
   WHERE slug IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_marketplace_listings_owner
-  ON marketplace_listings(owner_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_owner
+  ON agent_hub_listings(owner_user_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_marketplace_listings_source_status
-  ON marketplace_listings(source_type, status, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_source_status
+  ON agent_hub_listings(source_type, status, published_at DESC);
 
-CREATE TABLE IF NOT EXISTS marketplace_listing_versions (
+CREATE TABLE IF NOT EXISTS agent_hub_listing_versions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  listing_id UUID REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+  listing_id UUID REFERENCES agent_hub_listings(id) ON DELETE CASCADE,
   snapshot_id UUID REFERENCES snapshots(id) ON DELETE CASCADE,
   version_number INTEGER NOT NULL,
   clone_mode TEXT DEFAULT 'files_only',
@@ -181,12 +181,12 @@ CREATE TABLE IF NOT EXISTS marketplace_listing_versions (
   UNIQUE(listing_id, snapshot_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_marketplace_listing_versions_listing
-  ON marketplace_listing_versions(listing_id, version_number DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_hub_listing_versions_listing
+  ON agent_hub_listing_versions(listing_id, version_number DESC);
 
-CREATE TABLE IF NOT EXISTS marketplace_reports (
+CREATE TABLE IF NOT EXISTS agent_hub_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  listing_id UUID REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+  listing_id UUID REFERENCES agent_hub_listings(id) ON DELETE CASCADE,
   reporter_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   reason TEXT NOT NULL,
   details TEXT,
@@ -196,8 +196,8 @@ CREATE TABLE IF NOT EXISTS marketplace_reports (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_marketplace_reports_listing_status
-  ON marketplace_reports(listing_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_hub_reports_listing_status
+  ON agent_hub_reports(listing_id, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

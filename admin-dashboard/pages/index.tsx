@@ -18,10 +18,6 @@ import { formatCount, formatDateTime } from "../lib/format";
 const EVENT_STYLES = {
   agent_deployed: { icon: Activity, tone: "text-emerald-600 bg-emerald-50" },
   agent_redeployed: { icon: RefreshCw, tone: "text-blue-600 bg-blue-50" },
-  marketplace_published: {
-    icon: FileText,
-    tone: "text-violet-600 bg-violet-50",
-  },
   agent_hub_published: {
     icon: FileText,
     tone: "text-violet-600 bg-violet-50",
