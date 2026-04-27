@@ -89,7 +89,13 @@ jobs:
             version="$exact_tag"
           fi
           if [ -z "$version" ]; then
-            version="$(git rev-parse --short=12 HEAD)"
+            latest_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+            if [ -n "$latest_tag" ] && git merge-base --is-ancestor "$latest_tag" HEAD; then
+              version="$latest_tag"
+            fi
+          fi
+          if [ -z "$version" ]; then
+            version=""
           fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -146,8 +152,9 @@ jobs:
 
           cd "$DEPLOY_PATH"
 
-          if [ -n "$(git status --porcelain)" ]; then
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
             echo "Remote repo has uncommitted changes; refusing to deploy over a dirty worktree." >&2
+            git status --short --untracked-files=no >&2
             exit 1
           fi
 

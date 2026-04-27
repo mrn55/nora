@@ -4,6 +4,9 @@ on:
   pull_request:
     paths: &compose_paths
       - ".github/workflows/ci-compose.yml"
+      - ".github/workflows/deploy-production.yml"
+      - ".github/workflows/release-docker.yml"
+      - ".github/workflows/scripts/require-workflow-success.mjs"
       - "docker-compose.yml"
       - "docker-compose.e2e.yml"
       - "nginx.e2e.conf"

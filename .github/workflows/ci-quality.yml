@@ -4,6 +4,8 @@ on:
   pull_request:
     paths: &quality_paths
       - ".github/workflows/ci-quality.yml"
+      - ".github/workflows/deploy-production.yml"
+      - ".github/workflows/release-docker.yml"
       - ".github/workflows/scripts/**"
       - ".prettierignore"
       - ".prettierrc.json"

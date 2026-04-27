@@ -8,6 +8,7 @@ on:
       - "v*.*.*"
     paths:
       - ".github/workflows/release-docker.yml"
+      - ".github/workflows/deploy-production.yml"
       - ".github/workflows/scripts/require-workflow-success.mjs"
       - "tsconfig.base.json"
       - "admin-dashboard/**"
