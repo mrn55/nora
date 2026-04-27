@@ -7,6 +7,8 @@ on:
     tags:
       - "v*.*.*"
     paths:
+      - ".github/workflows/release-docker.yml"
+      - ".github/workflows/scripts/require-workflow-success.mjs"
       - "tsconfig.base.json"
       - "admin-dashboard/**"
       - "frontend-dashboard/**"
