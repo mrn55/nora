@@ -73,6 +73,78 @@ describe("openclaw channel catalog compatibility", () => {
     ]);
   });
 
+  it("merges schema channel types when runtime status only reports active providers", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelOrder: ["qqbot"],
+        channelMeta: [{ id: "qqbot", label: "QQ Bot" }],
+        channels: {
+          qqbot: {
+            configured: false,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-partial",
+        config: { channels: {} },
+      })
+      .mockResolvedValueOnce({
+        children: [
+          {
+            key: "telegram",
+            path: "channels.telegram",
+            hint: { label: "Telegram", help: "Telegram bot API." },
+          },
+          {
+            key: "whatsapp",
+            path: "channels.whatsapp",
+            hint: { label: "WhatsApp", help: "QR login." },
+          },
+        ],
+      });
+
+    const payload = await listOpenClawChannels(agent);
+
+    expect(payload.availableTypes.map((entry) => entry.type)).toEqual([
+      "qqbot",
+      "telegram",
+      "whatsapp",
+    ]);
+    expect(payload.availableTypes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "telegram",
+          label: "Telegram (Bot API)",
+        }),
+        expect.objectContaining({
+          type: "whatsapp",
+          label: "WhatsApp (QR link)",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps runtime channel types when schema lookup is unavailable", async () => {
+    mockRpcCall
+      .mockResolvedValueOnce({
+        channelMeta: [{ id: "qqbot", label: "QQ Bot" }],
+      })
+      .mockResolvedValueOnce({
+        hash: "cfg-schema-unavailable",
+        config: { channels: {} },
+      })
+      .mockRejectedValueOnce(new Error("schema lookup unavailable"));
+
+    const payload = await listOpenClawChannels(agent);
+
+    expect(payload.availableTypes).toEqual([
+      expect.objectContaining({
+        type: "qqbot",
+        label: "QQ Bot",
+      }),
+    ]);
+  });
+
   it("allows creating a metadata-only OpenClaw channel", async () => {
     mockRpcCall
       .mockResolvedValueOnce({

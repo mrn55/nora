@@ -634,9 +634,16 @@ async function safeLookup(agent, path) {
   }
 }
 
-async function loadSchemaChannelEntries(agent) {
-  const lookup = await safeLookup(agent, "channels");
-  return extractSchemaChannelEntries(lookup);
+async function loadSchemaChannelEntries(agent, { tolerateErrors = false } = {}) {
+  try {
+    const lookup = await safeLookup(agent, "channels");
+    return extractSchemaChannelEntries(lookup);
+  } catch (error) {
+    if (tolerateErrors) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 function relativeFieldKey(basePath, fullPath) {
@@ -862,12 +869,10 @@ async function listOpenClawChannels(agent) {
   const { status, configSnapshot } = await readChannelSnapshot(agent);
   const typeMetaById = buildTypeMetaById(status);
   let channelIds = buildAvailableChannelIds(status, configSnapshot);
+  const schemaEntries = await loadSchemaChannelEntries(agent, { tolerateErrors: true });
 
-  if (channelIds.length === 0) {
-    const schemaEntries = await loadSchemaChannelEntries(agent);
-    mergeSchemaEntriesIntoTypeMeta(typeMetaById, schemaEntries);
-    channelIds = Array.from(new Set(schemaEntries.map((entry) => entry.id)));
-  }
+  mergeSchemaEntriesIntoTypeMeta(typeMetaById, schemaEntries);
+  channelIds = Array.from(new Set([...channelIds, ...schemaEntries.map((entry) => entry.id)]));
 
   const availableTypes = channelIds.map((channelId) =>
     serializeTypeMeta(channelId, typeMetaById.get(channelId)),
