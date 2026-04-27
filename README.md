@@ -227,6 +227,8 @@ Use update mode for normal code updates. It preserves `.env`, the Compose Postgr
 .\setup.ps1 -Update
 ```
 
+Admin Settings can also start a direct GitHub upgrade in the background when `NORA_AUTO_UPGRADE_ENABLED=true` and `NORA_HOST_REPO_DIR` points at the absolute Linux host path for this Nora checkout. The one-click path starts a temporary Docker runner, fetches from `NORA_UPGRADE_REPO`, rebuilds with Docker Compose, and preserves volumes and provisioned instances. The manual host command remains available for installs that do not enable one-click upgrades.
+
 Do not use `docker compose down -v` for routine updates; `-v` removes named volumes such as the PostgreSQL data volume. When you intentionally want a clean local reset, use the clean reinstall mode instead:
 
 ```bash
@@ -470,6 +472,8 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 | `PROXMOX_HERMES_TEMPLATE` / `PROXMOX_NEMOCLAW_TEMPLATE` | Required for Hermes or NemoClaw on Proxmox |
 | `NVIDIA_API_KEY` | Required when `ENABLED_SANDBOX_PROFILES` includes `nemoclaw` |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE` | Optional Stripe settings for operator-run `PLATFORM_MODE=paas` deployments |
+| `NORA_AUTO_UPGRADE_ENABLED` / `NORA_HOST_REPO_DIR` | Optional one-click Admin Settings GitHub upgrade controls |
+| `NORA_UPGRADE_REPO` / `NORA_UPGRADE_REF` / `NORA_UPGRADE_RUNNER_IMAGE` | Direct GitHub upgrade source and temporary Docker runner settings |
 
 If you want both families on Docker-backed paths, use `ENABLED_RUNTIME_FAMILIES=openclaw,hermes` with `ENABLED_BACKENDS=docker`. To expose NemoClaw as an OpenClaw sandbox choice, add `ENABLED_SANDBOX_PROFILES=standard,nemoclaw`.
 

@@ -63,6 +63,7 @@ services:
       - ./agent-runtime:/agent-runtime:ro
       - ./tsconfig.base.json:/tsconfig.base.json:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - nora_upgrade_state:/var/lib/nora-upgrade
     command: sh -c "npm install && npm start"
     ports:
       - "127.0.0.1:${BACKEND_API_PORT:-4100}:4000"
@@ -176,3 +177,5 @@ services:
 volumes:
   pgdata:
   backups:
+  nora_upgrade_state:
+    name: ${NORA_UPGRADE_STATE_VOLUME:-nora_upgrade_state}

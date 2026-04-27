@@ -231,7 +231,7 @@ export default function AdminLayout({ children }) {
                             formatShortCommit(release.currentCommit)
                               ? ` (${formatShortCommit(release.currentCommit)})`
                               : ""
-                          }. Review the upgrade guidance and use the host-side command to move to the latest release.`
+                          }. Review the upgrade guidance to choose one-click or manual upgrade.`
                         : "This instance is not reporting its current version yet. Review the upgrade guidance and verify the host-side build before you upgrade."}
                       {release?.publishedAt
                         ? ` Latest release announced ${formatDateTime(release.publishedAt)}.`

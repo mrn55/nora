@@ -96,6 +96,30 @@ function formatCommitLabel(commit) {
   return normalized ? normalized.slice(0, 8) : "Not reported";
 }
 
+function isUpgradeRunning(job) {
+  return job?.phase === "queued" || job?.phase === "running";
+}
+
+function formatUpgradePhase(job) {
+  if (!job?.phase) return "No upgrade job";
+  if (job.phase === "queued") return "Queued";
+  if (job.phase === "running") return "Running";
+  if (job.phase === "succeeded") return "Succeeded";
+  if (job.phase === "failed") return "Failed";
+  return String(job.phase)
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getUpgradePhaseClassName(job) {
+  if (job?.phase === "succeeded") return "bg-emerald-100 text-emerald-700";
+  if (job?.phase === "failed") return "bg-red-100 text-red-700";
+  if (isUpgradeRunning(job)) return "bg-amber-100 text-amber-800";
+  return "bg-slate-100 text-slate-700";
+}
+
 function getReleaseStatus(release) {
   if (release?.upgradeRequired) {
     return {
@@ -163,19 +187,44 @@ export default function AdminSettingsPage() {
   const [agentHubSettings, setAgentHubSettings] = useState(null);
   const [agentHubForm, setAgentHubForm] = useState(DEFAULT_AGENT_HUB_FORM);
   const [platformConfig, setPlatformConfig] = useState(null);
+  const [upgradeStatus, setUpgradeStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bannerSaving, setBannerSaving] = useState(false);
   const [agentHubSaving, setAgentHubSaving] = useState(false);
+  const [upgradeStarting, setUpgradeStarting] = useState(false);
+
+  const loadUpgradeStatus = useCallback(
+    async ({ silent = false } = {}) => {
+      try {
+        const response = await fetchWithAuth("/api/admin/release-upgrade");
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to load release upgrade status");
+        }
+
+        setUpgradeStatus(payload);
+        return payload;
+      } catch (error) {
+        console.error("Failed to load release upgrade status:", error);
+        if (!silent) {
+          toast.error(error.message || "Failed to load release upgrade status");
+        }
+        return null;
+      }
+    },
+    [toast],
+  );
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const [defaultsRes, platformRes, bannerRes, agentHubRes] = await Promise.all([
+      const [defaultsRes, platformRes, bannerRes, agentHubRes, upgradeRes] = await Promise.all([
         fetchWithAuth("/api/admin/settings/deployment-defaults"),
         fetch("/api/config/platform"),
         fetchWithAuth("/api/admin/settings/system-banner"),
         fetchWithAuth("/api/admin/settings/agent-hub"),
+        fetchWithAuth("/api/admin/release-upgrade"),
       ]);
 
       const defaultsPayload = await defaultsRes.json().catch(() => ({}));
@@ -205,12 +254,19 @@ export default function AdminSettingsPage() {
       if (platformRes.ok) {
         setPlatformConfig(await platformRes.json());
       }
+
+      const upgradePayload = await upgradeRes.json().catch(() => ({}));
+      if (!upgradeRes.ok) {
+        throw new Error(upgradePayload.error || "Failed to load release upgrade status");
+      }
+      setUpgradeStatus(upgradePayload);
     } catch (error) {
       console.error("Failed to load platform settings:", error);
       toast.error(error.message || "Failed to load platform settings");
       setDefaults(null);
       setSystemBanner(null);
       setAgentHubSettings(null);
+      setUpgradeStatus(null);
     } finally {
       setLoading(false);
     }
@@ -219,6 +275,16 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    if (!isUpgradeRunning(upgradeStatus?.job)) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      loadUpgradeStatus({ silent: true });
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadUpgradeStatus, upgradeStatus?.job?.phase]);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -318,7 +384,27 @@ export default function AdminSettingsPage() {
 
   const modeLabel =
     platformConfig?.mode === "paas" ? "PaaS plan defaults" : "Self-hosted deploy defaults";
-  const release = platformConfig?.release || null;
+  const release = upgradeStatus?.release || platformConfig?.release || null;
+  const autoUpgrade = upgradeStatus?.autoUpgrade || release?.autoUpgrade || null;
+  const upgradeJob = upgradeStatus?.job || null;
+  const upgradeLogTail = Array.isArray(upgradeStatus?.logTail) ? upgradeStatus.logTail : [];
+  const upgradeRunning = isUpgradeRunning(upgradeJob);
+  const oneClickEnabled = Boolean(autoUpgrade?.available);
+  const runnerReachable = upgradeStatus?.runnerReachable;
+  const oneClickBlockedReason = !oneClickEnabled
+    ? autoUpgrade?.disabledReason || "Direct GitHub upgrade is not enabled for this install."
+    : runnerReachable === false
+      ? "The GitHub upgrade runner could not be started."
+      : !release?.updateAvailable
+        ? "This control plane is already on the latest announced release."
+        : null;
+  const canStartOneClickUpgrade = Boolean(
+    oneClickEnabled &&
+      runnerReachable !== false &&
+      release?.updateAvailable &&
+      !upgradeRunning &&
+      !upgradeStarting,
+  );
   const releaseStatus = getReleaseStatus(release);
   const bannerFeatureEnabled = Boolean(systemBanner?.featureEnabled);
   const bannerPreviewTone = getBannerTone(bannerForm.severity);
@@ -342,6 +428,33 @@ export default function AdminSettingsPage() {
     } catch (error) {
       console.error("Failed to copy upgrade command:", error);
       toast.error("Failed to copy upgrade command");
+    }
+  }
+
+  async function handleStartOneClickUpgrade() {
+    if (!canStartOneClickUpgrade) {
+      toast.error(oneClickBlockedReason || "One-click upgrade is not available");
+      return;
+    }
+
+    setUpgradeStarting(true);
+    try {
+      const response = await fetchWithAuth("/api/admin/release-upgrade", {
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to start upgrade");
+      }
+
+      setUpgradeStatus(payload);
+      toast.success("Upgrade started in the background");
+    } catch (error) {
+      console.error("Failed to start one-click upgrade:", error);
+      toast.error(error.message || "Failed to start upgrade");
+      loadUpgradeStatus({ silent: true });
+    } finally {
+      setUpgradeStarting(false);
     }
   }
 
@@ -405,12 +518,11 @@ export default function AdminSettingsPage() {
                         <Rocket size={20} />
                       )}
                     </span>
-                    Upgrade status and manual path
+                    Upgrade status and paths
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm font-medium leading-relaxed text-slate-500">
-                    Track the running Nora build, review the latest announced release, and copy the
-                    current host-side upgrade command. Auto-upgrade is intentionally not enabled
-                    yet.
+                    Track the running Nora build, review the latest announced release, start an
+                    opt-in background upgrade when configured, or copy the host-side manual command.
                   </p>
                 </div>
 
@@ -462,21 +574,124 @@ export default function AdminSettingsPage() {
                     Upgrade path
                   </p>
                   <p className="mt-2 text-xl font-black text-slate-950">
-                    {release?.canAutoUpgrade ? "Automatic" : "Manual"}
+                    {oneClickEnabled ? "Manual + one-click" : "Manual"}
                   </p>
                   <p className="mt-2 text-sm font-medium text-slate-500">
                     {formatInstallMethod(release?.installMethod)}{" "}
-                    {release?.canAutoUpgrade ? "with auto-upgrade" : "with host command"}
+                    {oneClickEnabled ? "from GitHub" : "with host command"}
                   </p>
                 </div>
               </div>
 
               <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr,0.95fr]">
+                <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                        Direct GitHub Upgrade
+                      </p>
+                      <p className="mt-2 text-sm font-medium leading-relaxed text-slate-600">
+                        Starts a temporary Docker runner that fetches Nora from GitHub and keeps
+                        progress visible while the stack rebuilds in the background.
+                      </p>
+                    </div>
+
+                    {upgradeJob ? (
+                      <span
+                        className={`inline-flex items-center gap-2 self-start rounded-full px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] ${getUpgradePhaseClassName(
+                          upgradeJob,
+                        )}`}
+                      >
+                        {isUpgradeRunning(upgradeJob) ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : upgradeJob.phase === "succeeded" ? (
+                          <CheckCircle2 size={13} />
+                        ) : (
+                          <TriangleAlert size={13} />
+                        )}
+                        {formatUpgradePhase(upgradeJob)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                      onClick={handleStartOneClickUpgrade}
+                      disabled={!canStartOneClickUpgrade}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:hover:translate-y-0"
+                    >
+                      {upgradeStarting || upgradeRunning ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Rocket size={16} />
+                      )}
+                      {upgradeRunning ? "Upgrade running" : "Upgrade now"}
+                    </button>
+
+                    <button
+                      onClick={() => loadUpgradeStatus({ silent: false })}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-50"
+                    >
+                      <RefreshCw size={15} />
+                      Check status
+                    </button>
+                  </div>
+
+                  {oneClickBlockedReason ? (
+                    <div className="mt-5 rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Direct GitHub upgrade is not ready.
+                      </p>
+                      <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                        {oneClickBlockedReason}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {upgradeJob ? (
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-[1.25rem] bg-white px-4 py-4">
+                        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                          Target
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {upgradeJob.targetVersion
+                            ? formatVersionLabel(upgradeJob.targetVersion)
+                            : "Latest release"}
+                        </p>
+                      </div>
+                      <div className="rounded-[1.25rem] bg-white px-4 py-4">
+                        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                          Started
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {upgradeJob.startedAt ? formatDateTime(upgradeJob.startedAt) : "Pending"}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-5 rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Recent upgrade logs
+                    </p>
+                    {upgradeLogTail.length ? (
+                      <pre className="mt-3 max-h-56 overflow-auto rounded-2xl bg-slate-950 p-4 text-xs font-semibold leading-relaxed text-slate-100">
+                        <code>{upgradeLogTail.join("\n")}</code>
+                      </pre>
+                    ) : (
+                      <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
+                        No upgrade logs have been recorded yet.
+                      </p>
+                    )}
+                  </div>
+                </section>
+
                 <section className="rounded-[1.5rem] bg-slate-950 px-5 py-5 text-slate-100">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                        Host Command
+                        Manual Host Command
                       </p>
                       <p className="mt-2 text-sm font-medium text-slate-300">
                         Run this from the Nora repo root on the host machine.
@@ -498,7 +713,9 @@ export default function AdminSettingsPage() {
                     </code>
                   </pre>
                 </section>
+              </div>
 
+              <div className="mt-6">
                 <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5">
                   <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
                     What To Expect
@@ -521,13 +738,16 @@ export default function AdminSettingsPage() {
                     className={`mt-5 rounded-[1.25rem] border px-4 py-4 ${releaseStatus.panelClassName}`}
                   >
                     <p className={`text-sm font-semibold ${releaseStatus.titleClassName}`}>
-                      Auto-upgrade is not enabled yet.
+                      {oneClickEnabled
+                        ? "Direct GitHub upgrade is enabled for this install."
+                        : "Manual upgrade remains available."}
                     </p>
                     <p
                       className={`mt-1 text-sm font-medium leading-relaxed ${releaseStatus.bodyClassName}`}
                     >
-                      Use the host command above until a dedicated updater service exists for this
-                      install path.
+                      {oneClickEnabled
+                        ? "Use the button above to start the temporary GitHub runner, or copy the host command when you want to run the same update yourself."
+                        : "Set NORA_AUTO_UPGRADE_ENABLED=true and NORA_HOST_REPO_DIR to show the background GitHub upgrade action."}
                     </p>
                   </div>
 

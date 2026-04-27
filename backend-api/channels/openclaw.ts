@@ -9,8 +9,8 @@ const OPENCLAW_QR_LOGIN_CHANNELS = new Set(["whatsapp"]);
 const OPENCLAW_LOGOUT_CHANNELS = new Set(["telegram", "qqbot", "whatsapp"]);
 const OPENCLAW_QR_LOGIN_PROVIDER_INSTALLS = Object.freeze({
   whatsapp: Object.freeze({
-    installSpec: "@openclaw/whatsapp",
-    fallbackSpec: "whatsapp",
+    installSpec: "whatsapp",
+    fallbackSpec: "@openclaw/whatsapp",
     packageSpec: "@openclaw/whatsapp",
   }),
 });
@@ -277,7 +277,7 @@ function buildOpenClawPluginInstallCommand(channelId) {
     '    rm -f "$log_file"',
     '    return "$exit_code"',
     "  fi",
-    '  if [ -n "${2:-}" ] && grep -Eiq "not found|not in this registry|package unavailable|plugin unavailable|no npm install source" "$log_file"; then',
+    '  if [ -n "${2:-}" ] && grep -Eiq "not found|not in this registry|package unavailable|plugin unavailable|no npm install source|unknown plugin|could not resolve|cannot find" "$log_file"; then',
     '    rm -f "$log_file"',
     "    return 2",
     "  fi",
@@ -303,7 +303,7 @@ function formatOpenClawPluginInstallError(channelId, install, error) {
   const installSpec = install.installSpec || install.packageSpec;
   const fallbackSpec =
     install.fallbackSpec && install.fallbackSpec !== installSpec
-      ? `; bundled fallback ${install.fallbackSpec}`
+      ? `; fallback ${install.fallbackSpec}`
       : "";
   const detail = error?.message || "plugin install failed";
   const exitCode = Number(error?.exitCode || 0);
@@ -311,7 +311,7 @@ function formatOpenClawPluginInstallError(channelId, install, error) {
   if (exitCode === 137 || /code 137|sigkill|oom|out of memory/i.test(detail)) {
     return (
       `OpenClaw could not install the ${label} plugin using ${installSpec}${fallbackSpec}: ` +
-      "the install process was killed with exit code 137. This usually means the agent container ran out of memory while installing WhatsApp dependencies. " +
+      "the install process was killed with exit code 137. This usually means the agent container or host ran out of memory while installing WhatsApp dependencies. " +
       `Increase the agent RAM to at least 2048 MB and retry. Underlying error: ${detail}`
     );
   }

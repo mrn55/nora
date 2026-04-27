@@ -1,7 +1,9 @@
 // @ts-nocheck
-const DEFAULT_MANUAL_UPGRADE_COMMAND =
-  "git pull --ff-only && docker compose up -d --build";
+const DEFAULT_MANUAL_UPGRADE_COMMAND = "git pull --ff-only && docker compose up -d --build";
 const DEFAULT_RELEASE_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_UPGRADE_REPO = "https://github.com/solomon2773/nora.git";
+const DEFAULT_UPGRADE_REF = "master";
+const DEFAULT_UPGRADE_RUNNER_IMAGE = "docker:29-cli";
 
 const DEFAULT_MANUAL_UPGRADE_STEPS = Object.freeze([
   "Run the upgrade command from the Nora repo root on the host machine.",
@@ -25,6 +27,46 @@ function parseBooleanEnv(value, defaultValue = false) {
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   return defaultValue;
+}
+
+function buildAutoUpgrade(env = process.env, options = {}) {
+  const enabled = parseBooleanEnv(env.NORA_AUTO_UPGRADE_ENABLED);
+  const hostRepoDir = readString(env.NORA_HOST_REPO_DIR);
+  const hostRepoDirIsUsable = hostRepoDir.startsWith("/");
+  const sourceRepo = readString(env.NORA_UPGRADE_REPO) || DEFAULT_UPGRADE_REPO;
+  const sourceRef = readString(env.NORA_UPGRADE_REF) || DEFAULT_UPGRADE_REF;
+  const runnerImage = readString(env.NORA_UPGRADE_RUNNER_IMAGE) || DEFAULT_UPGRADE_RUNNER_IMAGE;
+  const stateVolume = readString(env.NORA_UPGRADE_STATE_VOLUME) || "nora_upgrade_state";
+  const stateDir = readString(env.NORA_UPGRADE_STATE_DIR) || "/var/lib/nora-upgrade";
+
+  let disabledReason = null;
+  if (!enabled) {
+    disabledReason =
+      "Auto-upgrade is disabled. Set NORA_AUTO_UPGRADE_ENABLED=true to allow direct GitHub upgrades.";
+  } else if (!hostRepoDir) {
+    disabledReason =
+      "Direct GitHub upgrade requires NORA_HOST_REPO_DIR to point at the host Nora repo checkout.";
+  } else if (!hostRepoDirIsUsable) {
+    disabledReason =
+      "Direct GitHub upgrade requires NORA_HOST_REPO_DIR to be an absolute Linux host path visible to Docker.";
+  }
+
+  return {
+    enabled,
+    available: enabled && Boolean(hostRepoDir) && hostRepoDirIsUsable,
+    mode: "github_direct",
+    sourceRepo,
+    sourceRef,
+    disabledReason,
+    ...(options.includeInternal
+      ? {
+          hostRepoDir,
+          runnerImage,
+          stateVolume,
+          stateDir,
+        }
+      : {}),
+  };
 }
 
 function normalizeSeverity(value, fallback = "warning") {
@@ -73,7 +115,7 @@ function parseSemver(value) {
   if (!normalized) return null;
 
   const match = normalized.match(
-    /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
+    /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/,
   );
   if (!match) return null;
 
@@ -82,9 +124,9 @@ function parseSemver(value) {
     minor: Number.parseInt(match[2], 10),
     patch: Number.parseInt(match[3], 10),
     prerelease: match[4]
-      ? match[4].split(".").map((part) =>
-          /^\d+$/.test(part) ? Number.parseInt(part, 10) : part.toLowerCase()
-        )
+      ? match[4]
+          .split(".")
+          .map((part) => (/^\d+$/.test(part) ? Number.parseInt(part, 10) : part.toLowerCase()))
       : [],
   };
 }
@@ -142,10 +184,7 @@ function compareVersions(currentVersion, latestVersion) {
     if (currentSemver.patch !== latestSemver.patch) {
       return currentSemver.patch > latestSemver.patch ? 1 : -1;
     }
-    return comparePrerelease(
-      currentSemver.prerelease,
-      latestSemver.prerelease
-    );
+    return comparePrerelease(currentSemver.prerelease, latestSemver.prerelease);
   }
 
   return current.localeCompare(latest, undefined, {
@@ -155,9 +194,7 @@ function compareVersions(currentVersion, latestVersion) {
 }
 
 function buildManualUpgrade(env = process.env) {
-  const command =
-    readString(env.NORA_MANUAL_UPGRADE_COMMAND) ||
-    DEFAULT_MANUAL_UPGRADE_COMMAND;
+  const command = readString(env.NORA_MANUAL_UPGRADE_COMMAND) || DEFAULT_MANUAL_UPGRADE_COMMAND;
   const steps = readString(env.NORA_MANUAL_UPGRADE_STEPS)
     .split("\n")
     .map((step) => step.trim())
@@ -188,19 +225,16 @@ function resolveConfiguredLatestRelease(env = process.env) {
 
 async function fetchGithubLatestRelease(env = process.env) {
   const repo = normalizeGithubRepo(
-    env.NORA_GITHUB_REPO || env.NORA_RELEASE_REPO || env.GITHUB_REPOSITORY
+    env.NORA_GITHUB_REPO || env.NORA_RELEASE_REPO || env.GITHUB_REPOSITORY,
   );
   if (!repo || typeof fetch !== "function") {
     return null;
   }
 
-  const token =
-    readString(env.NORA_GITHUB_TOKEN) ||
-    readString(env.GITHUB_TOKEN) ||
-    null;
+  const token = readString(env.NORA_GITHUB_TOKEN) || readString(env.GITHUB_TOKEN) || null;
   const cacheTtlMs = parsePositiveInteger(
     env.NORA_RELEASE_CACHE_TTL_MS,
-    DEFAULT_RELEASE_CACHE_TTL_MS
+    DEFAULT_RELEASE_CACHE_TTL_MS,
   );
   const cacheKey = `${repo}:${token ? "auth" : "anon"}`;
 
@@ -221,16 +255,13 @@ async function fetchGithubLatestRelease(env = process.env) {
   }
 
   const requestOptions = { headers };
-  if (
-    typeof AbortSignal !== "undefined" &&
-    typeof AbortSignal.timeout === "function"
-  ) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
     requestOptions.signal = AbortSignal.timeout(4000);
   }
 
   const response = await fetch(
     `https://api.github.com/repos/${repo}/releases/latest`,
-    requestOptions
+    requestOptions,
   );
 
   if (response.status === 404) {
@@ -273,9 +304,7 @@ async function fetchGithubLatestRelease(env = process.env) {
     publishedAt: normalizeDate(payload?.published_at),
     releaseNotesUrl:
       readString(payload?.html_url) ||
-      `https://github.com/${repo}/releases/tag/${encodeURIComponent(
-        latestVersion
-      )}`,
+      `https://github.com/${repo}/releases/tag/${encodeURIComponent(latestVersion)}`,
     source: "github",
     repo,
   };
@@ -300,10 +329,7 @@ async function resolveLatestRelease(env = process.env) {
   try {
     return await fetchGithubLatestRelease(env);
   } catch (error) {
-    console.error(
-      "Failed to fetch GitHub release metadata:",
-      error?.message || error
-    );
+    console.error("Failed to fetch GitHub release metadata:", error?.message || error);
     return null;
   }
 }
@@ -319,14 +345,13 @@ async function buildReleaseInfo(env = process.env) {
   const latestVersion = latestRelease?.latestVersion || null;
   const installMethod = readString(env.NORA_INSTALL_METHOD) || "source";
   const updateAvailable =
-    Boolean(latestVersion) &&
-    compareVersions(currentVersion, latestVersion) < 0;
+    Boolean(latestVersion) && compareVersions(currentVersion, latestVersion) < 0;
   const severity = updateAvailable
     ? normalizeSeverity(env.NORA_LATEST_SEVERITY, "warning")
     : "info";
   const upgradeRequired =
-    updateAvailable &&
-    (parseBooleanEnv(env.NORA_UPGRADE_REQUIRED) || severity === "critical");
+    updateAvailable && (parseBooleanEnv(env.NORA_UPGRADE_REQUIRED) || severity === "critical");
+  const autoUpgrade = buildAutoUpgrade(env);
 
   return {
     currentVersion,
@@ -338,7 +363,8 @@ async function buildReleaseInfo(env = process.env) {
     updateAvailable,
     upgradeRequired,
     trackingConfigured: Boolean(currentVersion || currentCommit),
-    canAutoUpgrade: parseBooleanEnv(env.NORA_AUTO_UPGRADE_ENABLED),
+    canAutoUpgrade: autoUpgrade.available,
+    autoUpgrade,
     installMethod,
     latestSource: latestRelease?.source || null,
     latestRepo: latestRelease?.repo || null,
@@ -347,6 +373,7 @@ async function buildReleaseInfo(env = process.env) {
 }
 
 module.exports = {
+  buildAutoUpgrade,
   buildReleaseInfo,
   compareVersions,
 };

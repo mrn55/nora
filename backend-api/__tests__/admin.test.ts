@@ -1,4 +1,7 @@
 // @ts-nocheck
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const request = require("supertest");
 const jwt = require("jsonwebtoken");
 
@@ -46,6 +49,11 @@ const mockUpdateAgentHubSettings = jest.fn().mockResolvedValue({
   defaultShareTarget: "internal",
   url: "https://hub.nora.test",
 });
+const mockDockerCreateVolume = jest.fn();
+const mockDockerPull = jest.fn();
+const mockDockerFollowProgress = jest.fn();
+const mockDockerCreateContainer = jest.fn();
+const mockDockerContainerStart = jest.fn();
 
 jest.mock("../db", () => mockDb);
 jest.mock("../redisQueue", () => ({
@@ -209,6 +217,16 @@ jest.mock("../platformSettings", () => {
     updateAgentHubSettings: mockUpdateAgentHubSettings,
   };
 });
+jest.mock("dockerode", () =>
+  jest.fn().mockImplementation(() => ({
+    createVolume: mockDockerCreateVolume,
+    pull: mockDockerPull,
+    modem: {
+      followProgress: mockDockerFollowProgress,
+    },
+    createContainer: mockDockerCreateContainer,
+  })),
+);
 
 const app = require("../server");
 
@@ -223,6 +241,33 @@ const userToken = jwt.sign({ id: "user-1", email: "user@nora.test", role: "user"
   expiresIn: "1h",
 });
 
+const RELEASE_ENV_KEYS = [
+  "NORA_CURRENT_VERSION",
+  "NORA_CURRENT_COMMIT",
+  "NORA_BUILD_COMMIT",
+  "GIT_SHA",
+  "NORA_GITHUB_REPO",
+  "NORA_RELEASE_REPO",
+  "NORA_GITHUB_TOKEN",
+  "NORA_RELEASE_CACHE_TTL_MS",
+  "NORA_LATEST_VERSION",
+  "NORA_LATEST_PUBLISHED_AT",
+  "NORA_RELEASE_NOTES_URL",
+  "NORA_LATEST_SEVERITY",
+  "NORA_UPGRADE_REQUIRED",
+  "NORA_AUTO_UPGRADE_ENABLED",
+  "NORA_HOST_REPO_DIR",
+  "NORA_UPGRADE_REPO",
+  "NORA_UPGRADE_REF",
+  "NORA_UPGRADE_RUNNER_IMAGE",
+  "NORA_UPGRADE_STATE_VOLUME",
+  "NORA_UPGRADE_STATE_DIR",
+  "NORA_UPGRADE_LOG_TAIL_LINES",
+  "NORA_INSTALL_METHOD",
+  "NORA_MANUAL_UPGRADE_COMMAND",
+  "NORA_MANUAL_UPGRADE_STEPS",
+];
+
 function withToken(req, token) {
   return req.set("Authorization", `Bearer ${token}`);
 }
@@ -235,6 +280,14 @@ beforeEach(() => {
   mockRetryDLQJob.mockReset();
   mockBuildAgentStatsResponse.mockReset();
   mockBuildAgentHistoryResponse.mockReset();
+  mockDockerCreateVolume.mockReset().mockResolvedValue({});
+  mockDockerPull.mockReset().mockImplementation((_image, callback) => callback(null, {}));
+  mockDockerFollowProgress.mockReset().mockImplementation((_stream, callback) => callback(null));
+  mockDockerContainerStart.mockReset().mockResolvedValue({});
+  mockDockerCreateContainer.mockReset().mockResolvedValue({
+    id: "runner-1",
+    start: mockDockerContainerStart,
+  });
   mockGetDeploymentDefaults.mockReset().mockResolvedValue({
     vcpu: 1,
     ram_mb: 1024,
@@ -274,6 +327,11 @@ beforeEach(() => {
   delete process.env.ENABLED_BACKENDS;
   delete process.env.ENABLED_RUNTIME_FAMILIES;
   delete process.env.ENABLED_SANDBOX_PROFILES;
+  RELEASE_ENV_KEYS.forEach((key) => delete process.env[key]);
+  process.env.NORA_UPGRADE_STATE_DIR = fs.mkdtempSync(
+    path.join(os.tmpdir(), "nora-release-upgrade-"),
+  );
+  delete global.fetch;
 });
 
 describe("admin routes", () => {
@@ -473,6 +531,123 @@ describe("admin routes", () => {
       expect.stringContaining("Agent Hub"),
       expect.any(Object),
     );
+  });
+
+  it("returns release upgrade status for admins when one-click upgrade is disabled", async () => {
+    const res = await withToken(request(app).get("/admin/release-upgrade"), adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        autoUpgrade: expect.objectContaining({
+          enabled: false,
+          available: false,
+          mode: "github_direct",
+          disabledReason: expect.stringContaining("Auto-upgrade is disabled"),
+        }),
+        runnerReachable: null,
+        job: null,
+        logTail: [],
+      }),
+    );
+    expect(res.body.release).toEqual(
+      expect.objectContaining({
+        canAutoUpgrade: false,
+        autoUpgrade: expect.objectContaining({
+          enabled: false,
+          available: false,
+        }),
+      }),
+    );
+  });
+
+  it("marks direct GitHub release upgrade unavailable without a host repo path", async () => {
+    process.env.NORA_CURRENT_VERSION = "1.0.0";
+    process.env.NORA_LATEST_VERSION = "1.1.0";
+    process.env.NORA_AUTO_UPGRADE_ENABLED = "true";
+
+    const res = await withToken(request(app).get("/admin/release-upgrade"), adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        autoUpgrade: expect.objectContaining({
+          enabled: true,
+          available: false,
+          mode: "github_direct",
+          disabledReason: expect.stringContaining("NORA_HOST_REPO_DIR"),
+        }),
+        runnerReachable: null,
+      }),
+    );
+  });
+
+  it("starts a direct GitHub release upgrade runner for admins", async () => {
+    const monitoringModule = require("../monitoring");
+    process.env.NORA_CURRENT_VERSION = "1.0.0";
+    process.env.NORA_LATEST_VERSION = "1.1.0";
+    process.env.NORA_RELEASE_NOTES_URL = "https://nora.test/releases/1.1.0";
+    process.env.NORA_AUTO_UPGRADE_ENABLED = "true";
+    process.env.NORA_HOST_REPO_DIR = "/srv/nora";
+    process.env.NORA_UPGRADE_REPO = "https://github.com/solomon2773/nora.git";
+    process.env.NORA_UPGRADE_REF = "master";
+    process.env.NORA_UPGRADE_RUNNER_IMAGE = "docker:29-cli";
+
+    const res = await withToken(request(app).post("/admin/release-upgrade"), adminToken);
+
+    expect(res.status).toBe(202);
+    expect(mockDockerCreateVolume).toHaveBeenCalledWith({ Name: "nora_upgrade_state" });
+    expect(mockDockerPull).toHaveBeenCalledWith("docker:29-cli", expect.any(Function));
+    expect(mockDockerCreateContainer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Image: "docker:29-cli",
+        Env: expect.arrayContaining([
+          "NORA_UPGRADE_REPO=https://github.com/solomon2773/nora.git",
+          "NORA_UPGRADE_REF=master",
+          "NORA_UPGRADE_TARGET_VERSION=1.1.0",
+          "NORA_HOST_REPO_DIR=/srv/nora",
+        ]),
+        WorkingDir: "/srv/nora",
+        HostConfig: expect.objectContaining({
+          Binds: expect.arrayContaining([
+            "/srv/nora:/srv/nora",
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "nora_upgrade_state:/var/lib/nora-upgrade",
+          ]),
+        }),
+      }),
+    );
+    expect(mockDockerContainerStart).toHaveBeenCalled();
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        runnerReachable: true,
+        job: expect.objectContaining({
+          phase: "running",
+          targetVersion: "1.1.0",
+          containerId: "runner-1",
+          sourceRepo: "https://github.com/solomon2773/nora.git",
+        }),
+        logTail: expect.arrayContaining([expect.stringContaining("Queued direct GitHub upgrade")]),
+      }),
+    );
+    expect(monitoringModule.logEvent).toHaveBeenCalledWith(
+      "admin_release_upgrade_started",
+      expect.stringContaining("1.1.0"),
+      expect.any(Object),
+    );
+  });
+
+  it("does not start a release upgrade when no update is available", async () => {
+    process.env.NORA_CURRENT_VERSION = "1.1.0";
+    process.env.NORA_LATEST_VERSION = "1.1.0";
+    process.env.NORA_AUTO_UPGRADE_ENABLED = "true";
+    process.env.NORA_HOST_REPO_DIR = "/srv/nora";
+
+    const res = await withToken(request(app).post("/admin/release-upgrade"), adminToken);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/latest release/i);
+    expect(mockDockerCreateContainer).not.toHaveBeenCalled();
   });
 
   it("rejects invalid deployment default updates", async () => {

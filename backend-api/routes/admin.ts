@@ -8,6 +8,7 @@ const { scanTemplatePayloadForSecrets } = require("../agentHubSafety");
 const { buildAgentHubTemplateUpdate } = require("../agentHubTemplateEdits");
 const snapshots = require("../snapshots");
 const containerManager = require("../containerManager");
+const releaseUpgrade = require("../releaseUpgrade");
 const { addDeploymentJob, getDLQJobs, retryDLQJob } = require("../redisQueue");
 const { requireAdmin } = require("../middleware/auth");
 const { asyncHandler } = require("../middleware/errorHandler");
@@ -659,6 +660,42 @@ router.put(
     );
 
     res.json(nextSettings);
+  }),
+);
+
+router.get(
+  "/release-upgrade",
+  asyncHandler(async (_req, res) => {
+    res.json(await releaseUpgrade.getReleaseUpgradeStatus());
+  }),
+);
+
+router.post(
+  "/release-upgrade",
+  asyncHandler(async (req, res) => {
+    res.locals.auditContext = {
+      settings: {
+        kind: "release_upgrade",
+      },
+    };
+
+    const result = await releaseUpgrade.startReleaseUpgrade({ actor: req.user });
+    const targetVersion = result.release?.latestVersion || "the latest release";
+
+    await monitoring.logEvent(
+      "admin_release_upgrade_started",
+      `Admin started Nora upgrade to ${targetVersion}`,
+      adminAuditMetadata(req, {
+        settings: {
+          kind: "release_upgrade",
+          targetVersion,
+          currentVersion: result.release?.currentVersion || null,
+          jobId: result.job?.id || null,
+        },
+      }),
+    );
+
+    res.status(202).json(result);
   }),
 );
 

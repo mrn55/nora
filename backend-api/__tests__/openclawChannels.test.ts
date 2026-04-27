@@ -280,7 +280,7 @@ describe("openclaw channel catalog compatibility", () => {
       { timeout: 240000 },
     );
     expect(mockRunContainerCommand.mock.calls[0][1]).toContain(
-      "install_openclaw_plugin '@openclaw/whatsapp' 'whatsapp'",
+      "install_openclaw_plugin 'whatsapp' '@openclaw/whatsapp'",
     );
     expect(mockRunContainerCommand.mock.calls[0][1]).toContain(
       "OPENCLAW_PLUGIN_INSTALL_MAX_OLD_SPACE_MB:-256",
