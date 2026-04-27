@@ -248,7 +248,6 @@ const RELEASE_ENV_KEYS = [
   "GIT_SHA",
   "NORA_GITHUB_REPO",
   "NORA_RELEASE_REPO",
-  "NORA_GITHUB_TOKEN",
   "NORA_RELEASE_CACHE_TTL_MS",
   "NORA_LATEST_VERSION",
   "NORA_LATEST_PUBLISHED_AT",
@@ -580,6 +579,27 @@ describe("admin routes", () => {
         runnerReachable: null,
       }),
     );
+  });
+
+  it("rejects direct GitHub release upgrade repos with embedded credentials", async () => {
+    process.env.NORA_CURRENT_VERSION = "1.0.0";
+    process.env.NORA_LATEST_VERSION = "1.1.0";
+    process.env.NORA_AUTO_UPGRADE_ENABLED = "true";
+    process.env.NORA_HOST_REPO_DIR = "/srv/nora";
+    process.env.NORA_UPGRADE_REPO = "https://token@github.com/solomon2773/nora.git";
+
+    const res = await withToken(request(app).get("/admin/release-upgrade"), adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body.autoUpgrade).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        available: false,
+        mode: "github_direct",
+        disabledReason: expect.stringContaining("public HTTPS GitHub repository URL"),
+      }),
+    );
+    expect(res.body.runnerReachable).toBe(null);
   });
 
   it("starts a direct GitHub release upgrade runner for admins", async () => {

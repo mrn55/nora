@@ -34,6 +34,7 @@ function buildAutoUpgrade(env = process.env, options = {}) {
   const hostRepoDir = readString(env.NORA_HOST_REPO_DIR);
   const hostRepoDirIsUsable = hostRepoDir.startsWith("/");
   const sourceRepo = readString(env.NORA_UPGRADE_REPO) || DEFAULT_UPGRADE_REPO;
+  const sourceRepoIsPublicGithubHttps = isPublicGithubHttpsRepo(sourceRepo);
   const sourceRef = readString(env.NORA_UPGRADE_REF) || DEFAULT_UPGRADE_REF;
   const runnerImage = readString(env.NORA_UPGRADE_RUNNER_IMAGE) || DEFAULT_UPGRADE_RUNNER_IMAGE;
   const stateVolume = readString(env.NORA_UPGRADE_STATE_VOLUME) || "nora_upgrade_state";
@@ -49,11 +50,15 @@ function buildAutoUpgrade(env = process.env, options = {}) {
   } else if (!hostRepoDirIsUsable) {
     disabledReason =
       "Direct GitHub upgrade requires NORA_HOST_REPO_DIR to be an absolute Linux host path visible to Docker.";
+  } else if (!sourceRepoIsPublicGithubHttps) {
+    disabledReason =
+      "Direct GitHub upgrade requires NORA_UPGRADE_REPO to be a public HTTPS GitHub repository URL without embedded credentials.";
   }
 
   return {
     enabled,
-    available: enabled && Boolean(hostRepoDir) && hostRepoDirIsUsable,
+    available:
+      enabled && Boolean(hostRepoDir) && hostRepoDirIsUsable && sourceRepoIsPublicGithubHttps,
     mode: "github_direct",
     sourceRepo,
     sourceRef,
@@ -108,6 +113,28 @@ function normalizeGithubRepo(value) {
   }
 
   return normalized;
+}
+
+function isPublicGithubHttpsRepo(value) {
+  const normalized = readString(value);
+  if (!normalized) return false;
+
+  let url;
+  try {
+    url = new URL(normalized);
+  } catch (_error) {
+    return false;
+  }
+
+  if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "github.com") {
+    return false;
+  }
+
+  if (url.username || url.password || url.search || url.hash) {
+    return false;
+  }
+
+  return Boolean(normalizeGithubRepo(url.pathname));
 }
 
 function parseSemver(value) {
@@ -231,12 +258,11 @@ async function fetchGithubLatestRelease(env = process.env) {
     return null;
   }
 
-  const token = readString(env.NORA_GITHUB_TOKEN) || readString(env.GITHUB_TOKEN) || null;
   const cacheTtlMs = parsePositiveInteger(
     env.NORA_RELEASE_CACHE_TTL_MS,
     DEFAULT_RELEASE_CACHE_TTL_MS,
   );
-  const cacheKey = `${repo}:${token ? "auth" : "anon"}`;
+  const cacheKey = repo;
 
   if (
     cacheTtlMs > 0 &&
@@ -250,9 +276,6 @@ async function fetchGithubLatestRelease(env = process.env) {
     Accept: "application/vnd.github+json",
     "User-Agent": "nora-release-checker",
   };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
 
   const requestOptions = { headers };
   if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {

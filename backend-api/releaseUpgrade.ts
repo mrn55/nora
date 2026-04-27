@@ -102,8 +102,6 @@ function redactText(input, env = process.env) {
     env.JWT_SECRET,
     env.ENCRYPTION_KEY,
     env.DB_PASSWORD,
-    env.GITHUB_TOKEN,
-    env.NORA_GITHUB_TOKEN,
     env.NORA_UPGRADE_REPO,
     env.STRIPE_SECRET_KEY,
     env.STRIPE_WEBHOOK_SECRET,

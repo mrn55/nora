@@ -26,7 +26,6 @@ const RELEASE_ENV_KEYS = [
   "GIT_SHA",
   "NORA_GITHUB_REPO",
   "NORA_RELEASE_REPO",
-  "NORA_GITHUB_TOKEN",
   "NORA_RELEASE_CACHE_TTL_MS",
   "NORA_LATEST_VERSION",
   "NORA_LATEST_PUBLISHED_AT",
@@ -515,6 +514,7 @@ describe("public platform config", () => {
         }),
       }),
     );
+    expect(global.fetch.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
     expect(res.body.release).toEqual(
       expect.objectContaining({
         currentVersion: "1.2.3",
