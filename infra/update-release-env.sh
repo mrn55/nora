@@ -11,6 +11,9 @@ Updates or appends:
   NORA_CURRENT_COMMIT
   NORA_GITHUB_REPO (when provided)
 
+Removes retired release metadata token keys:
+  NORA_GITHUB_TOKEN
+
 The version argument may be empty for source checkouts where only the commit
 is known.
 EOF
@@ -73,6 +76,10 @@ awk \
   /^NORA_GITHUB_REPO=/ && github_repo != "" {
     print "NORA_GITHUB_REPO=" github_repo
     saw_repo = 1
+    next
+  }
+
+  /^NORA_GITHUB_TOKEN=/ {
     next
   }
 
