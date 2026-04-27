@@ -52,9 +52,12 @@ services:
     command: ["npm", "start"]
     environment:
       DEPLOYMENT_WORKER_CONCURRENCY: ${DEPLOYMENT_WORKER_CONCURRENCY:-6}
+      NODE_PATH: /app/node_modules
     restart: unless-stopped
     volumes: !override
       - /var/run/docker.sock:/var/run/docker.sock
+      # worker.ts imports shared backend helpers through ../../backend-api/*.
+      - ./backend-api:/backend-api:ro
 
   postgres:
     restart: unless-stopped
