@@ -56,8 +56,6 @@ services:
     restart: unless-stopped
     volumes: !override
       - /var/run/docker.sock:/var/run/docker.sock
-      # worker.ts imports shared backend helpers through ../../backend-api/*.
-      - ./backend-api:/backend-api:ro
 
   postgres:
     restart: unless-stopped

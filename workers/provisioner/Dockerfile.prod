@@ -9,5 +9,10 @@ COPY tsconfig.base.json /tsconfig.base.json
 COPY workers/provisioner/ ./
 COPY agent-runtime /agent-runtime
 COPY backend-api /backend-api
+# Install backend-api's runtime deps inside the image so worker.ts's
+# `require("../../backend-api/{agentSecretOverrides,agentMigrations,hermesUi}")`
+# can resolve transitive deps (notably `pg`) without depending on the host
+# having backend-api/node_modules populated.
+RUN cd /backend-api && (npm ci --omit=dev || npm install --omit=dev)
 
 CMD ["npm", "start"]
