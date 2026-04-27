@@ -21,11 +21,15 @@ if (!repository || !headSha || !token || requiredWorkflowNames.length === 0) {
 
 const apiBaseUrl = `https://api.github.com/repos/${repository}/actions/runs`;
 const deadline = Date.now() + timeoutMs;
+let reportedRecentRunFallback = false;
 
-async function fetchWorkflowRuns() {
+async function fetchWorkflowRunPage({ useHeadShaFilter, page }) {
   const url = new URL(apiBaseUrl);
-  url.searchParams.set("head_sha", headSha);
   url.searchParams.set("per_page", "100");
+  url.searchParams.set("page", String(page));
+  if (useHeadShaFilter) {
+    url.searchParams.set("head_sha", headSha);
+  }
 
   const response = await fetch(url, {
     headers: {
@@ -43,10 +47,44 @@ async function fetchWorkflowRuns() {
   return Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
 }
 
+async function fetchWorkflowRuns({ useHeadShaFilter }) {
+  const runs = [];
+
+  for (let page = 1; page <= 3; page += 1) {
+    const pageRuns = await fetchWorkflowRunPage({ useHeadShaFilter, page });
+    runs.push(...pageRuns);
+    if (pageRuns.length < 100) {
+      break;
+    }
+  }
+
+  return runs;
+}
+
+async function fetchWorkflowRunsForHeadSha() {
+  const filteredRuns = await fetchWorkflowRuns({ useHeadShaFilter: true });
+  if (filteredRuns.length > 0) {
+    return filteredRuns.filter((run) => run.head_sha === headSha);
+  }
+
+  const recentRuns = await fetchWorkflowRuns({ useHeadShaFilter: false });
+  const matchingRuns = recentRuns.filter((run) => run.head_sha === headSha);
+  if (matchingRuns.length > 0 && !reportedRecentRunFallback) {
+    console.log("head_sha workflow run filter returned no runs; using recent-run fallback.");
+    reportedRecentRunFallback = true;
+  }
+
+  return matchingRuns;
+}
+
 function summarizeStatusByWorkflow(runs) {
   const latestByName = new Map();
 
   for (const run of runs) {
+    if (run.head_sha !== headSha) {
+      continue;
+    }
+
     if (!requiredWorkflowNames.includes(run.name)) {
       continue;
     }
@@ -76,7 +114,7 @@ function isFailureConclusion(conclusion) {
 }
 
 while (Date.now() < deadline) {
-  const runs = await fetchWorkflowRuns();
+  const runs = await fetchWorkflowRunsForHeadSha();
   const latestByName = summarizeStatusByWorkflow(runs);
   let hasPending = false;
 
