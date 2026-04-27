@@ -400,10 +400,10 @@ export default function AdminSettingsPage() {
         : null;
   const canStartOneClickUpgrade = Boolean(
     oneClickEnabled &&
-      runnerReachable !== false &&
-      release?.updateAvailable &&
-      !upgradeRunning &&
-      !upgradeStarting,
+    runnerReachable !== false &&
+    release?.updateAvailable &&
+    !upgradeRunning &&
+    !upgradeStarting,
   );
   const releaseStatus = getReleaseStatus(release);
   const bannerFeatureEnabled = Boolean(systemBanner?.featureEnabled);
