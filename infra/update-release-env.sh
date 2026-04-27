@@ -10,6 +10,9 @@ Updates or appends:
   NORA_CURRENT_VERSION
   NORA_CURRENT_COMMIT
   NORA_GITHUB_REPO (when provided)
+
+The version argument may be empty for source checkouts where only the commit
+is known.
 EOF
 }
 
@@ -28,8 +31,8 @@ version="$2"
 commit="$3"
 github_repo="${4:-}"
 
-if [ -z "$env_file" ] || [ -z "$version" ] || [ -z "$commit" ]; then
-  echo "env file, version, and commit are required" >&2
+if [ -z "$env_file" ] || [ -z "$commit" ]; then
+  echo "env file and commit are required" >&2
   exit 1
 fi
 

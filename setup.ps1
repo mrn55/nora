@@ -22,6 +22,7 @@ $ErrorActionPreference = "Stop"
 
 $ENV_FILE = ".env"
 $ENV_BACKUP_FILE = $null
+$NORA_GITHUB_REPO_SLUG = "solomon2773/nora"
 $PUBLIC_NGINX_TEMPLATE = "infra/nginx_public.conf.template"
 $TLS_NGINX_TEMPLATE = "infra/nginx_tls.conf"
 $PUBLIC_PROD_COMPOSE_OVERRIDE_TEMPLATE = "infra/docker-compose.public-prod.yml"
@@ -108,6 +109,89 @@ function Update-SourceCheckout {
     } else {
         Write-Info "Skipping git pull because $branch has no upstream."
     }
+}
+
+function Resolve-CurrentReleaseCommit {
+    $null = git rev-parse --is-inside-work-tree 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return ""
+    }
+
+    $commit = git rev-parse HEAD 2>$null | Select-Object -First 1
+    if ($LASTEXITCODE -ne 0 -or -not $commit) {
+        return ""
+    }
+
+    return $commit.Trim()
+}
+
+function Resolve-CurrentReleaseVersion {
+    $null = git rev-parse --is-inside-work-tree 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return ""
+    }
+
+    $exactTag = git describe --tags --exact-match 2>$null | Select-Object -First 1
+    if ($LASTEXITCODE -eq 0 -and $exactTag) {
+        return $exactTag.Trim()
+    }
+
+    $latestTag = git describe --tags --abbrev=0 2>$null | Select-Object -First 1
+    if ($LASTEXITCODE -ne 0 -or -not $latestTag) {
+        return ""
+    }
+
+    $latestTag = $latestTag.Trim()
+    $null = git merge-base --is-ancestor $latestTag HEAD 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        return $latestTag
+    }
+
+    return ""
+}
+
+function Update-ReleaseTrackingEnv {
+    param([string]$EnvPath)
+
+    if (-not (Test-Path $EnvPath)) {
+        return
+    }
+
+    $currentCommit = Resolve-CurrentReleaseCommit
+    if (-not $currentCommit) {
+        Write-Warn "Skipping release tracking stamp because the current Git commit could not be resolved."
+        return
+    }
+
+    $currentVersion = Resolve-CurrentReleaseVersion
+    $lines = Get-Content -LiteralPath $EnvPath
+    $updatedLines = New-Object System.Collections.Generic.List[string]
+    $sawVersion = $false
+    $sawCommit = $false
+    $sawRepo = $false
+
+    foreach ($line in $lines) {
+        if ($line -match '^NORA_CURRENT_VERSION=') {
+            $updatedLines.Add("NORA_CURRENT_VERSION=$currentVersion")
+            $sawVersion = $true
+        } elseif ($line -match '^NORA_CURRENT_COMMIT=') {
+            $updatedLines.Add("NORA_CURRENT_COMMIT=$currentCommit")
+            $sawCommit = $true
+        } elseif ($line -match '^NORA_GITHUB_REPO=') {
+            $updatedLines.Add("NORA_GITHUB_REPO=$NORA_GITHUB_REPO_SLUG")
+            $sawRepo = $true
+        } else {
+            $updatedLines.Add($line)
+        }
+    }
+
+    if (-not $sawVersion) { $updatedLines.Add("NORA_CURRENT_VERSION=$currentVersion") }
+    if (-not $sawCommit) { $updatedLines.Add("NORA_CURRENT_COMMIT=$currentCommit") }
+    if (-not $sawRepo) { $updatedLines.Add("NORA_GITHUB_REPO=$NORA_GITHUB_REPO_SLUG") }
+
+    $updatedLines | Out-File -FilePath $EnvPath -Encoding utf8NoBOM
+    $label = if ($currentVersion) { $currentVersion } else { "source checkout" }
+    Write-Ok "Release tracking stamped: $label @ $($currentCommit.Substring(0, [Math]::Min(12, $currentCommit.Length)))"
 }
 
 function Remove-LocalAgentContainers {
@@ -370,6 +454,7 @@ if ($SETUP_MODE -eq "update") {
     Write-Header "Updating Nora"
     Write-Info "Code update mode keeps $ENV_FILE, Postgres/backup volumes, and provisioned instances."
     Update-SourceCheckout
+    Update-ReleaseTrackingEnv -EnvPath $ENV_FILE
     Start-NoraComposeStack
     Write-Host ""
     Write-Info "Update complete. No compose volumes or agent Docker/K8s/VM instances were removed."
@@ -721,6 +806,14 @@ Write-Header "Writing Configuration"
 Write-Info "Writing $ENV_FILE..."
 
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+$NORA_CURRENT_VERSION = Resolve-CurrentReleaseVersion
+$NORA_CURRENT_COMMIT = Resolve-CurrentReleaseCommit
+if ($NORA_CURRENT_COMMIT) {
+    $label = if ($NORA_CURRENT_VERSION) { $NORA_CURRENT_VERSION } else { "source checkout" }
+    Write-Ok "Release tracking: $label @ $($NORA_CURRENT_COMMIT.Substring(0, [Math]::Min(12, $NORA_CURRENT_COMMIT.Length)))"
+} else {
+    Write-Warn "Release tracking commit could not be resolved; Admin Settings will show tracking incomplete."
+}
 
 $envContent = @"
 # ============================================================
@@ -780,9 +873,9 @@ STRIPE_PRICE_PRO=
 STRIPE_PRICE_ENTERPRISE=
 
 # ── Release Tracking / Admin Upgrade Banner ─────────────────
-NORA_CURRENT_VERSION=
-NORA_CURRENT_COMMIT=
-NORA_GITHUB_REPO=solomon2773/nora
+NORA_CURRENT_VERSION=$NORA_CURRENT_VERSION
+NORA_CURRENT_COMMIT=$NORA_CURRENT_COMMIT
+NORA_GITHUB_REPO=$NORA_GITHUB_REPO_SLUG
 NORA_GITHUB_TOKEN=
 NORA_RELEASE_CACHE_TTL_MS=300000
 NORA_LATEST_VERSION=

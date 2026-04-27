@@ -468,6 +468,27 @@ describe("public platform config", () => {
     );
   });
 
+  it("tracks commit-only source builds without marking them outdated", async () => {
+    process.env.NORA_CURRENT_COMMIT = "abc123def456";
+    process.env.NORA_LATEST_VERSION = "1.3.0";
+    process.env.NORA_LATEST_PUBLISHED_AT = "2026-04-10T12:00:00.000Z";
+
+    const res = await request(app).get("/config/platform");
+
+    expect(res.status).toBe(200);
+    expect(res.body.release).toEqual(
+      expect.objectContaining({
+        currentVersion: null,
+        currentCommit: "abc123def456",
+        latestVersion: "1.3.0",
+        severity: "info",
+        updateAvailable: false,
+        upgradeRequired: false,
+        trackingConfigured: true,
+      }),
+    );
+  });
+
   it("uses the latest GitHub release when explicit latest metadata is not set", async () => {
     process.env.NORA_CURRENT_VERSION = "1.2.3";
     process.env.NORA_GITHUB_REPO = "solomon2773/nora";

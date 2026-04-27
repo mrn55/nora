@@ -344,8 +344,9 @@ async function buildReleaseInfo(env = process.env) {
     null;
   const latestVersion = latestRelease?.latestVersion || null;
   const installMethod = readString(env.NORA_INSTALL_METHOD) || "source";
+  const canCompareReleaseVersions = Boolean(currentVersion && latestVersion);
   const updateAvailable =
-    Boolean(latestVersion) && compareVersions(currentVersion, latestVersion) < 0;
+    canCompareReleaseVersions && compareVersions(currentVersion, latestVersion) < 0;
   const severity = updateAvailable
     ? normalizeSeverity(env.NORA_LATEST_SEVERITY, "warning")
     : "info";

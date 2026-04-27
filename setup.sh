@@ -17,6 +17,7 @@ set -euo pipefail
 
 ENV_FILE=".env"
 ENV_BACKUP_FILE=""
+NORA_GITHUB_REPO_SLUG="solomon2773/nora"
 PUBLIC_NGINX_TEMPLATE="infra/nginx_public.conf.template"
 TLS_NGINX_TEMPLATE="infra/nginx_tls.conf"
 PUBLIC_PROD_COMPOSE_OVERRIDE_TEMPLATE="infra/docker-compose.public-prod.yml"
@@ -151,6 +152,57 @@ update_source_checkout() {
   else
     info "Skipping git pull because ${branch} has no upstream."
   fi
+}
+
+resolve_current_release_commit() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  git rev-parse HEAD 2>/dev/null || true
+}
+
+resolve_current_release_version() {
+  local exact_tag latest_tag
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  exact_tag="$(git describe --tags --exact-match 2>/dev/null || true)"
+  if [ -n "$exact_tag" ]; then
+    printf "%s\n" "$exact_tag"
+    return 0
+  fi
+
+  latest_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+  if [ -n "$latest_tag" ] && git merge-base --is-ancestor "$latest_tag" HEAD >/dev/null 2>&1; then
+    printf "%s\n" "$latest_tag"
+  fi
+}
+
+stamp_release_tracking_env() {
+  local env_path="$1"
+  local current_commit current_version
+
+  if [ ! -f "$env_path" ]; then
+    return 0
+  fi
+
+  current_commit="$(resolve_current_release_commit)"
+  if [ -z "$current_commit" ]; then
+    warn "Skipping release tracking stamp because the current Git commit could not be resolved."
+    return 0
+  fi
+
+  current_version="$(resolve_current_release_version)"
+  if [ ! -f "infra/update-release-env.sh" ]; then
+    warn "Skipping release tracking stamp because infra/update-release-env.sh is missing."
+    return 0
+  fi
+
+  bash infra/update-release-env.sh "$env_path" "$current_version" "$current_commit" "$NORA_GITHUB_REPO_SLUG"
+  ok "Release tracking stamped: ${current_version:-source checkout} @ ${current_commit:0:12}"
 }
 
 remove_local_agent_containers() {
@@ -432,6 +484,7 @@ if [ "$SETUP_MODE" = "update" ]; then
   header "Updating Nora"
   info "Code update mode keeps $ENV_FILE, Postgres/backup volumes, and provisioned instances."
   update_source_checkout
+  stamp_release_tracking_env "$ENV_FILE"
   start_compose_stack
   echo ""
   info "Update complete. No compose volumes or agent Docker/K8s/VM instances were removed."
@@ -805,6 +858,14 @@ header "Writing Configuration"
 
 info "Writing $ENV_FILE..."
 
+NORA_CURRENT_VERSION="$(resolve_current_release_version)"
+NORA_CURRENT_COMMIT="$(resolve_current_release_commit)"
+if [ -n "$NORA_CURRENT_COMMIT" ]; then
+  ok "Release tracking: ${NORA_CURRENT_VERSION:-source checkout} @ ${NORA_CURRENT_COMMIT:0:12}"
+else
+  warn "Release tracking commit could not be resolved; Admin Settings will show tracking incomplete."
+fi
+
 cat > "$ENV_FILE" <<EOF
 # ============================================================
 # Nora — Environment Configuration
@@ -863,9 +924,9 @@ STRIPE_PRICE_PRO=
 STRIPE_PRICE_ENTERPRISE=
 
 # ── Release Tracking / Admin Upgrade Banner ─────────────────
-NORA_CURRENT_VERSION=
-NORA_CURRENT_COMMIT=
-NORA_GITHUB_REPO=solomon2773/nora
+NORA_CURRENT_VERSION=${NORA_CURRENT_VERSION}
+NORA_CURRENT_COMMIT=${NORA_CURRENT_COMMIT}
+NORA_GITHUB_REPO=${NORA_GITHUB_REPO_SLUG}
 NORA_GITHUB_TOKEN=
 NORA_RELEASE_CACHE_TTL_MS=300000
 NORA_LATEST_VERSION=
