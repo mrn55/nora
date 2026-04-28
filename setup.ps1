@@ -10,6 +10,7 @@
 #
 # Clones the repo (if needed), generates secrets and database
 # credentials, configures the platform, and starts Nora.
+# Requires PowerShell 7+ (pwsh). Windows PowerShell 5 is not supported.
 # ============================================================
 
 param(
@@ -19,6 +20,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "[error] setup.ps1 requires PowerShell 7 or newer." -ForegroundColor Red
+    Write-Host "        Current version: $($PSVersionTable.PSVersion)"
+    Write-Host "        Install PowerShell 7, then run this script from pwsh:"
+    Write-Host "        pwsh -ExecutionPolicy Bypass -File .\setup.ps1"
+    exit 1
+}
 
 $ENV_FILE = ".env"
 $ENV_BACKUP_FILE = $null
@@ -108,6 +117,41 @@ function Update-SourceCheckout {
         git pull --ff-only
     } else {
         Write-Info "Skipping git pull because $branch has no upstream."
+    }
+}
+
+function Refresh-ReleaseTags {
+    $null = git rev-parse --is-inside-work-tree 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return
+    }
+
+    $branch = git symbolic-ref --quiet --short HEAD 2>$null | Select-Object -First 1
+    $remote = ""
+
+    if ($LASTEXITCODE -eq 0 -and $branch) {
+        $branch = $branch.Trim()
+        $remote = git config --get "branch.$branch.remote" 2>$null | Select-Object -First 1
+        if ($LASTEXITCODE -ne 0) { $remote = "" }
+    }
+
+    if (-not $remote) {
+        $remote = git remote 2>$null | Select-Object -First 1
+        if ($LASTEXITCODE -ne 0) { $remote = "" }
+    }
+
+    if ($remote) { $remote = $remote.Trim() }
+    if (-not $remote) {
+        Write-Warn "Skipping release tag refresh because this checkout has no Git remote."
+        return
+    }
+
+    Write-Info "Fetching release tags from $remote..."
+    git fetch --tags --prune $remote
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "Release tags refreshed"
+    } else {
+        Write-Warn "Release tag refresh failed; Admin Settings may show stale release tracking."
     }
 }
 
@@ -352,12 +396,257 @@ function Wait-ForDocker {
     exit 1
 }
 
+function Read-EnvValue {
+    param([string]$EnvPath, [string]$Name, [string]$Default = "")
+
+    if (-not (Test-Path -LiteralPath $EnvPath)) {
+        return $Default
+    }
+
+    $pattern = '^\s*' + [regex]::Escape($Name) + '\s*=(.*)$'
+    foreach ($line in Get-Content -LiteralPath $EnvPath) {
+        if ($line -match $pattern) {
+            $value = $matches[1].Trim()
+            if ($value.Length -ge 2) {
+                $first = $value.Substring(0, 1)
+                $last = $value.Substring($value.Length - 1, 1)
+                if (($first -eq '"' -and $last -eq '"') -or ($first -eq "'" -and $last -eq "'")) {
+                    $value = $value.Substring(1, $value.Length - 2)
+                }
+            }
+            return $value
+        }
+    }
+
+    return $Default
+}
+
+function ConvertTo-PortNumber {
+    param([string]$Value, [int]$Default, [string]$Name)
+
+    if (-not $Value) {
+        return $Default
+    }
+
+    $port = 0
+    if ([int]::TryParse($Value.Trim(), [ref]$port) -and $port -ge 1 -and $port -le 65535) {
+        return $port
+    }
+
+    Write-Warn "Invalid $Name value '$Value' — using default $Default."
+    return $Default
+}
+
+function Test-HostPortAvailable {
+    param([int]$Port, [string]$BindAddress = "0.0.0.0")
+
+    $listener = $null
+    try {
+        $ipAddress = if ($BindAddress -eq "0.0.0.0" -or $BindAddress -eq "*") {
+            [System.Net.IPAddress]::Any
+        } else {
+            [System.Net.IPAddress]::Parse($BindAddress)
+        }
+
+        $listener = [System.Net.Sockets.TcpListener]::new($ipAddress, $Port)
+        $listener.Start()
+        return $true
+    } catch [System.Net.Sockets.SocketException] {
+        return $false
+    } catch {
+        return $false
+    } finally {
+        if ($listener) {
+            $listener.Stop()
+        }
+    }
+}
+
+function Test-ComposeServiceOwnsPort {
+    param([string]$ServiceName, [int]$ContainerPort, [int]$HostPort)
+
+    try {
+        $publishedPorts = docker compose port $ServiceName $ContainerPort 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $publishedPorts) {
+            return $false
+        }
+
+        foreach ($publishedPort in @($publishedPorts)) {
+            if ($publishedPort -match ':(\d+)$' -and [int]$matches[1] -eq $HostPort) {
+                return $true
+            }
+        }
+    } catch {
+        return $false
+    }
+
+    return $false
+}
+
+function Get-PortOwnerSummary {
+    param([int]$Port)
+
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
+        return "another process"
+    }
+
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 3)
+    if ($listeners.Count -eq 0) {
+        return "another process"
+    }
+
+    $owners = @()
+    foreach ($listener in $listeners) {
+        $processName = "PID $($listener.OwningProcess)"
+        try {
+            $process = Get-Process -Id $listener.OwningProcess -ErrorAction Stop
+            $processName = "$($process.ProcessName) (PID $($listener.OwningProcess))"
+        } catch {}
+        $owners += "$($listener.LocalAddress):$($listener.LocalPort) by $processName"
+    }
+
+    return ($owners -join "; ")
+}
+
+function Find-NextAvailablePort {
+    param([int]$StartPort, [string]$BindAddress = "0.0.0.0")
+
+    if ($StartPort -gt 65535) {
+        return 0
+    }
+
+    for ($candidate = $StartPort; $candidate -le 65535; $candidate += 1) {
+        if (Test-HostPortAvailable -Port $candidate -BindAddress $BindAddress) {
+            return $candidate
+        }
+    }
+
+    return 0
+}
+
+function Resolve-AvailableHostPort {
+    param(
+        [int]$PreferredPort,
+        [string]$Purpose,
+        [string]$ServiceName,
+        [int]$ContainerPort,
+        [string]$BindAddress = "0.0.0.0"
+    )
+
+    $port = $PreferredPort
+    while ($true) {
+        if ((Test-ComposeServiceOwnsPort -ServiceName $ServiceName -ContainerPort $ContainerPort -HostPort $port) -or
+            (Test-HostPortAvailable -Port $port -BindAddress $BindAddress)) {
+            return $port
+        }
+
+        Write-Warn "$Purpose port $port is already in use by $(Get-PortOwnerSummary -Port $port)."
+        $suggestedPort = Find-NextAvailablePort -StartPort ($port + 1) -BindAddress $BindAddress
+        if (-not $suggestedPort) {
+            Write-Err "No available TCP port found after $port."
+            exit 1
+        }
+        $portAnswer = Read-Host "  Enter another host port [$suggestedPort]"
+        if (-not $portAnswer) {
+            $port = $suggestedPort
+            continue
+        }
+
+        $selectedPort = 0
+        if ([int]::TryParse($portAnswer.Trim(), [ref]$selectedPort) -and $selectedPort -ge 1 -and $selectedPort -le 65535) {
+            $port = $selectedPort
+        } else {
+            Write-Warn "Enter a TCP port between 1 and 65535."
+        }
+    }
+}
+
+function New-PortCheck {
+    param(
+        [string]$Name,
+        [string]$ServiceName,
+        [int]$ContainerPort,
+        [int]$HostPort,
+        [string]$BindAddress,
+        [string]$EnvVar
+    )
+
+    [pscustomobject]@{
+        Name = $Name
+        ServiceName = $ServiceName
+        ContainerPort = $ContainerPort
+        HostPort = $HostPort
+        BindAddress = $BindAddress
+        EnvVar = $EnvVar
+    }
+}
+
+function Get-NoraHostPortChecks {
+    param(
+        [string]$EnvPath = $ENV_FILE,
+        [int]$NginxHttpPort = 0
+    )
+
+    if ($NginxHttpPort -le 0) {
+        $NginxHttpPort = ConvertTo-PortNumber -Value (Read-EnvValue -EnvPath $EnvPath -Name "NGINX_HTTP_PORT" -Default "8080") -Default 8080 -Name "NGINX_HTTP_PORT"
+    }
+    $backendApiPort = ConvertTo-PortNumber -Value (Read-EnvValue -EnvPath $EnvPath -Name "BACKEND_API_PORT" -Default "4100") -Default 4100 -Name "BACKEND_API_PORT"
+
+    $checks = @()
+    $checks += New-PortCheck -Name "web gateway" -ServiceName "nginx" -ContainerPort 80 -HostPort $NginxHttpPort -BindAddress "0.0.0.0" -EnvVar "NGINX_HTTP_PORT"
+    $checks += New-PortCheck -Name "backend API" -ServiceName "backend-api" -ContainerPort 4000 -HostPort $backendApiPort -BindAddress "127.0.0.1" -EnvVar "BACKEND_API_PORT"
+    $checks += New-PortCheck -Name "Postgres" -ServiceName "postgres" -ContainerPort 5432 -HostPort 5433 -BindAddress "127.0.0.1" -EnvVar ""
+
+    if ((Test-Path -LiteralPath $COMPOSE_OVERRIDE_FILE) -and
+        (Select-String -LiteralPath $COMPOSE_OVERRIDE_FILE -Pattern '(^|\s|")443:443($|\s|")' -Quiet)) {
+        $checks += New-PortCheck -Name "HTTPS gateway" -ServiceName "nginx" -ContainerPort 443 -HostPort 443 -BindAddress "0.0.0.0" -EnvVar ""
+    }
+
+    return $checks
+}
+
+function Assert-NoraHostPortsAvailable {
+    param([array]$Checks)
+
+    $blocked = @()
+    foreach ($check in $Checks) {
+        if ($check.HostPort -lt 1 -or $check.HostPort -gt 65535) {
+            $blocked += [pscustomobject]@{ Check = $check; Owner = "invalid port" }
+            continue
+        }
+
+        if (Test-ComposeServiceOwnsPort -ServiceName $check.ServiceName -ContainerPort $check.ContainerPort -HostPort $check.HostPort) {
+            continue
+        }
+
+        if (-not (Test-HostPortAvailable -Port $check.HostPort -BindAddress $check.BindAddress)) {
+            $blocked += [pscustomobject]@{ Check = $check; Owner = (Get-PortOwnerSummary -Port $check.HostPort) }
+        }
+    }
+
+    if ($blocked.Count -eq 0) {
+        Write-Ok "Required host ports are available"
+        return
+    }
+
+    Write-Err "One or more required host ports are already in use."
+    foreach ($item in $blocked) {
+        $check = $item.Check
+        $hint = if ($check.EnvVar) { " Set $($check.EnvVar) in $ENV_FILE to use a different port." } else { "" }
+        Write-Host ("  {0}: {1}:{2} is blocked by {3}.{4}" -f $check.Name, $check.BindAddress, $check.HostPort, $item.Owner, $hint)
+    }
+    Write-Host "  Stop the conflicting service or change the Nora host port, then re-run setup."
+    exit 1
+}
+
 # ── Pre-flight checks & auto-install ──────────────────────
 
 $REPO_URL = "https://github.com/solomon2773/nora.git"
 $INSTALL_DIR = "nora"
 
 Write-Header "Pre-flight Checks"
+
+Write-Ok "PowerShell found: $($PSVersionTable.PSVersion)"
 
 # Ensure Git
 Install-GitIfMissing
@@ -454,7 +743,9 @@ if ($SETUP_MODE -eq "update") {
     Write-Header "Updating Nora"
     Write-Info "Code update mode keeps $ENV_FILE, Postgres/backup volumes, and provisioned instances."
     Update-SourceCheckout
+    Refresh-ReleaseTags
     Update-ReleaseTrackingEnv -EnvPath $ENV_FILE
+    Assert-NoraHostPortsAvailable -Checks (Get-NoraHostPortChecks -EnvPath $ENV_FILE)
     Start-NoraComposeStack
     Write-Host ""
     Write-Info "Update complete. No compose volumes or agent Docker/K8s/VM instances were removed."
@@ -720,7 +1011,10 @@ switch ($accessAnswer) {
     }
     default {
         Clear-PublicAccessArtifacts
-        Write-Ok "Local mode — Nora will be available at http://localhost:8080"
+        $NGINX_HTTP_PORT = Resolve-AvailableHostPort -PreferredPort 8080 -Purpose "Local web gateway" -ServiceName "nginx" -ContainerPort 80
+        $NEXTAUTH_URL = "http://localhost:$NGINX_HTTP_PORT"
+        $CORS_ORIGINS = $NEXTAUTH_URL
+        Write-Ok "Local mode — Nora will be available at $NEXTAUTH_URL"
     }
 }
 
@@ -841,6 +1135,7 @@ DB_PORT=5432
 REDIS_HOST=redis
 REDIS_PORT=6379
 PORT=4000
+BACKEND_API_PORT=4100
 
 # ── Access / URL ─────────────────────────────────────────────
 NGINX_CONFIG_FILE=$NGINX_CONFIG_FILE
@@ -1016,6 +1311,7 @@ if (-not $CAN_START_NORA) {
 }
 
 Write-Host ""
+Assert-NoraHostPortsAvailable -Checks (Get-NoraHostPortChecks -EnvPath $ENV_FILE -NginxHttpPort ([int]$NGINX_HTTP_PORT))
 Start-NoraComposeStack
 
 # ── Done ─────────────────────────────────────────────────────

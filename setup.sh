@@ -154,6 +154,30 @@ update_source_checkout() {
   fi
 }
 
+refresh_release_tags() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local branch remote
+  branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if [ -n "$branch" ]; then
+    remote="$(git config --get "branch.${branch}.remote" 2>/dev/null || true)"
+  fi
+  remote="${remote:-$(git remote 2>/dev/null | sed -n '1p' || true)}"
+  if [ -z "$remote" ]; then
+    warn "Skipping release tag refresh because this checkout has no Git remote."
+    return 0
+  fi
+
+  info "Fetching release tags from ${remote}..."
+  if git fetch --tags --prune "$remote"; then
+    ok "Release tags refreshed"
+  else
+    warn "Release tag refresh failed; Admin Settings may show stale release tracking."
+  fi
+}
+
 resolve_current_release_commit() {
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     return 0
@@ -245,6 +269,289 @@ start_compose_stack() {
   docker compose up -d --build
   echo ""
   ok "Nora is running!"
+}
+
+read_env_value() {
+  local env_path="$1" name="$2" default_value="$3" line value first last
+
+  if [ ! -f "$env_path" ]; then
+    printf "%s\n" "$default_value"
+    return 0
+  fi
+
+  line="$(grep -E "^[[:space:]]*${name}[[:space:]]*=" "$env_path" 2>/dev/null | tail -n 1 || true)"
+  if [ -z "$line" ]; then
+    printf "%s\n" "$default_value"
+    return 0
+  fi
+
+  value="${line#*=}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  if [ "${#value}" -ge 2 ]; then
+    first="${value:0:1}"
+    last="${value: -1}"
+    if { [ "$first" = '"' ] && [ "$last" = '"' ]; } || { [ "$first" = "'" ] && [ "$last" = "'" ]; }; then
+      value="${value:1:${#value}-2}"
+    fi
+  fi
+
+  printf "%s\n" "$value"
+}
+
+to_port_number() {
+  local value="$1" default_value="$2" name="$3"
+
+  if [ -z "$value" ]; then
+    printf "%s\n" "$default_value"
+    return 0
+  fi
+
+  if [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -ge 1 ] && [ "$value" -le 65535 ]; then
+    printf "%s\n" "$value"
+    return 0
+  fi
+
+  warn "Invalid ${name} value '${value}' — using default ${default_value}." >&2
+  printf "%s\n" "$default_value"
+}
+
+test_host_port_available() {
+  local port="$1" bind_address="${2:-0.0.0.0}" probe_status
+
+  if command -v ss >/dev/null 2>&1; then
+    ! ss -H -ltn 2>/dev/null | awk -v port=":${port}" '$4 ~ port "$" { found = 1 } END { exit found ? 0 : 1 }'
+    return $?
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    ! lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+    return $?
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    ! netstat -an 2>/dev/null | awk -v port="\\.${port}" '$0 ~ /LISTEN/ && $4 ~ port "$" { found = 1 } END { exit found ? 0 : 1 }'
+    return $?
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    set +e
+    python3 - "$port" "$bind_address" <<'PY'
+import errno
+import socket
+import sys
+
+port = int(sys.argv[1])
+bind_address = sys.argv[2]
+sock = None
+try:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((bind_address, port))
+except OSError as exc:
+    if exc.errno in (errno.EADDRINUSE, errno.EADDRNOTAVAIL):
+        sys.exit(1)
+    sys.exit(2)
+finally:
+    if sock is not None:
+        sock.close()
+PY
+    probe_status=$?
+    set -e
+    case "$probe_status" in
+      0) return 0 ;;
+      1) return 1 ;;
+      *) warn "Unable to bind-probe port ${port}; treating it as available." >&2; return 0 ;;
+    esac
+  fi
+
+  if command -v python >/dev/null 2>&1; then
+    set +e
+    python - "$port" "$bind_address" <<'PY'
+import errno
+import socket
+import sys
+
+port = int(sys.argv[1])
+bind_address = sys.argv[2]
+sock = None
+try:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((bind_address, port))
+except OSError as exc:
+    if exc.errno in (errno.EADDRINUSE, errno.EADDRNOTAVAIL):
+        sys.exit(1)
+    sys.exit(2)
+finally:
+    if sock is not None:
+        sock.close()
+PY
+    probe_status=$?
+    set -e
+    case "$probe_status" in
+      0) return 0 ;;
+      1) return 1 ;;
+      *) warn "Unable to bind-probe port ${port}; treating it as available." >&2; return 0 ;;
+    esac
+  fi
+
+  warn "No local port scanner found; skipping availability probe for port ${port}." >&2
+  return 0
+}
+
+compose_service_owns_port() {
+  local service="$1" container_port="$2" host_port="$3" published_ports published_port
+
+  published_ports="$(docker compose port "$service" "$container_port" 2>/dev/null || true)"
+  if [ -z "$published_ports" ]; then
+    return 1
+  fi
+
+  while IFS= read -r published_port; do
+    case "$published_port" in
+      *:"$host_port") return 0 ;;
+    esac
+  done <<EOF
+$published_ports
+EOF
+
+  return 1
+}
+
+port_owner_summary() {
+  local port="$1" owner
+
+  if command -v lsof >/dev/null 2>&1; then
+    owner="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { printf "%s (PID %s) on %s", $1, $2, $9; exit }')"
+    if [ -n "$owner" ]; then
+      printf "%s\n" "$owner"
+      return 0
+    fi
+  fi
+
+  if command -v ss >/dev/null 2>&1; then
+    owner="$(ss -H -ltnp 2>/dev/null | awk -v port=":${port}" '$4 ~ port "$" { print; exit }')"
+    if [ -n "$owner" ]; then
+      printf "%s\n" "$owner"
+      return 0
+    fi
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    owner="$(netstat -anp 2>/dev/null | awk -v port="[:.]${port}" '$0 ~ /LISTEN/ && $4 ~ port "$" { print; exit }')"
+    if [ -n "$owner" ]; then
+      printf "%s\n" "$owner"
+      return 0
+    fi
+  fi
+
+  printf "another process\n"
+}
+
+find_next_available_port() {
+  local start_port="$1" bind_address="${2:-0.0.0.0}" candidate
+
+  if [ "$start_port" -gt 65535 ]; then
+    return 1
+  fi
+
+  for ((candidate = start_port; candidate <= 65535; candidate++)); do
+    if test_host_port_available "$candidate" "$bind_address"; then
+      printf "%s\n" "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+resolve_available_host_port() {
+  local preferred_port="$1" purpose="$2" service="$3" container_port="$4" bind_address="${5:-0.0.0.0}"
+  local port suggested_port port_answer
+
+  port="$preferred_port"
+  while true; do
+    if compose_service_owns_port "$service" "$container_port" "$port" || test_host_port_available "$port" "$bind_address"; then
+      printf "%s\n" "$port"
+      return 0
+    fi
+
+    warn "${purpose} port ${port} is already in use by $(port_owner_summary "$port")." >&2
+    if ! suggested_port="$(find_next_available_port "$((port + 1))" "$bind_address")"; then
+      error "No available TCP port found after ${port}."
+      exit 1
+    fi
+    if [ ! -r /dev/tty ]; then
+      error "${purpose} port ${port} is unavailable and no interactive terminal is attached."
+      error "Set NGINX_HTTP_PORT in ${ENV_FILE} or stop the conflicting service, then re-run setup."
+      exit 1
+    fi
+    printf "  Enter another host port [%s]: " "$suggested_port" > /dev/tty
+    read -r port_answer < /dev/tty
+    port_answer="${port_answer:-$suggested_port}"
+
+    if [[ "$port_answer" =~ ^[0-9]+$ ]] && [ "$port_answer" -ge 1 ] && [ "$port_answer" -le 65535 ]; then
+      port="$port_answer"
+    else
+      warn "Enter a TCP port between 1 and 65535." >&2
+    fi
+  done
+}
+
+get_nora_host_port_checks() {
+  local env_path="${1:-$ENV_FILE}" nginx_http_port="${2:-}" backend_api_port
+
+  if [ -z "$nginx_http_port" ]; then
+    nginx_http_port="$(to_port_number "$(read_env_value "$env_path" "NGINX_HTTP_PORT" "8080")" "8080" "NGINX_HTTP_PORT")"
+  fi
+  backend_api_port="$(to_port_number "$(read_env_value "$env_path" "BACKEND_API_PORT" "4100")" "4100" "BACKEND_API_PORT")"
+
+  printf "web gateway|nginx|80|%s|0.0.0.0|NGINX_HTTP_PORT\n" "$nginx_http_port"
+  printf "backend API|backend-api|4000|%s|127.0.0.1|BACKEND_API_PORT\n" "$backend_api_port"
+  printf "Postgres|postgres|5432|5433|127.0.0.1|\n"
+
+  if [ -f "$COMPOSE_OVERRIDE_FILE" ] && grep -Eq '(^|[[:space:]"'\''])443:443($|[[:space:]"'\''])' "$COMPOSE_OVERRIDE_FILE"; then
+    printf "HTTPS gateway|nginx|443|443|0.0.0.0|\n"
+  fi
+}
+
+assert_nora_host_ports_available() {
+  local env_path="${1:-$ENV_FILE}" nginx_http_port="${2:-}" blocked=0
+  local line name service container_port host_port bind_address env_var owner hint
+
+  while IFS='|' read -r name service container_port host_port bind_address env_var; do
+    [ -z "$name" ] && continue
+
+    if ! [[ "$host_port" =~ ^[0-9]+$ ]] || [ "$host_port" -lt 1 ] || [ "$host_port" -gt 65535 ]; then
+      printf "  %s: invalid host port '%s'.\n" "$name" "$host_port"
+      blocked=1
+      continue
+    fi
+
+    if compose_service_owns_port "$service" "$container_port" "$host_port"; then
+      continue
+    fi
+
+    if ! test_host_port_available "$host_port" "$bind_address"; then
+      owner="$(port_owner_summary "$host_port")"
+      hint=""
+      if [ -n "$env_var" ]; then
+        hint=" Set ${env_var} in ${ENV_FILE} to use a different port."
+      fi
+      printf "  %s: %s:%s is blocked by %s.%s\n" "$name" "$bind_address" "$host_port" "$owner" "$hint"
+      blocked=1
+    fi
+  done < <(get_nora_host_port_checks "$env_path" "$nginx_http_port")
+
+  if [ "$blocked" -eq 0 ]; then
+    ok "Required host ports are available"
+    return 0
+  fi
+
+  error "One or more required host ports are already in use."
+  error "Stop the conflicting service or change the Nora host port, then re-run setup."
+  exit 1
 }
 
 # ── OS detection ────────────────────────────────────────────
@@ -484,7 +791,9 @@ if [ "$SETUP_MODE" = "update" ]; then
   header "Updating Nora"
   info "Code update mode keeps $ENV_FILE, Postgres/backup volumes, and provisioned instances."
   update_source_checkout
+  refresh_release_tags
   stamp_release_tracking_env "$ENV_FILE"
+  assert_nora_host_ports_available "$ENV_FILE"
   start_compose_stack
   echo ""
   info "Update complete. No compose volumes or agent Docker/K8s/VM instances were removed."
@@ -759,7 +1068,10 @@ case "$access_answer" in
     ;;
   *)
     clear_public_access_artifacts
-    ok "Local mode — Nora will be available at http://localhost:8080"
+    NGINX_HTTP_PORT="$(resolve_available_host_port "8080" "Local web gateway" "nginx" "80")"
+    NEXTAUTH_URL="http://localhost:${NGINX_HTTP_PORT}"
+    CORS_ORIGINS="${NEXTAUTH_URL}"
+    ok "Local mode — Nora will be available at ${NEXTAUTH_URL}"
     ;;
 esac
 
@@ -892,6 +1204,7 @@ DB_PORT=5432
 REDIS_HOST=redis
 REDIS_PORT=6379
 PORT=4000
+BACKEND_API_PORT=4100
 
 # ── Access / URL ─────────────────────────────────────────────
 NGINX_CONFIG_FILE=${NGINX_CONFIG_FILE}
@@ -1065,6 +1378,7 @@ if [ "$CAN_START_NORA" != true ]; then
 fi
 
 echo ""
+assert_nora_host_ports_available "$ENV_FILE" "$NGINX_HTTP_PORT"
 info "Building nora-openclaw-agent:local (prebaked openclaw + tsx)..."
 echo ""
 docker build \
