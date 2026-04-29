@@ -89,10 +89,10 @@ The public repo does not present every runtime path at the same maturity. The cu
 | Path | Status | Notes |
 |---|---|---|
 | **OpenClaw + Docker** | GA | Default self-hosted path and broadest operator contract |
-| **OpenClaw + Kubernetes** | Beta | Shared-cluster placement instead of the local Docker host |
+| **OpenClaw + Kubernetes** | Beta | Shared-cluster placement through a configured Kubernetes API instead of the local Docker host |
 | **NemoClaw + OpenClaw** | Experimental | NVIDIA secure sandbox path with stricter isolation |
 | **Hermes + Docker** | Experimental | Deployment-first Hermes contract with WebUI, logs, exec, and env sync |
-| **OpenClaw + Proxmox** | Blocked in current public build | Visible in the catalog, but not release-ready for normal onboarding |
+| **OpenClaw + Proxmox** | Beta | LXC placement through configured Proxmox API and SSH bootstrap |
 
 ### Runtime Transitions
 
@@ -114,10 +114,10 @@ Nora is built to grow with infrastructure requirements, but the public repo does
 |---|---|---|
 | **Single-host Nora + OpenClaw Docker** | GA | Evaluation, smaller internal environments, and the clearest first production path |
 | **Nora control plane on public cloud or on-prem** | Supported topology | Teams placing the control plane inside infrastructure they already manage |
-| **Nora + OpenClaw Kubernetes** | Beta | Shared-cluster environments that need workload placement beyond the local Docker host |
+| **Nora + OpenClaw Kubernetes** | Beta | Shared-cluster environments with configured Kubernetes API access |
 | **Nora + NemoClaw OpenClaw** | Experimental | Stronger sandboxing with NVIDIA/OpenShell policy controls |
 | **Nora + Hermes Docker** | Experimental | Teams validating Hermes under Nora's deployment-first contract |
-| **Nora + OpenClaw Proxmox** | Blocked in current public build | Visible in the catalog, but intentionally not onboarding-ready yet |
+| **Nora + OpenClaw Proxmox** | Beta | Proxmox-backed LXC environments with API credentials and SSH bootstrap configured |
 
 That footprint matters because Nora is not just a single-agent launcher. It is an operator surface that starts small and stays useful as the infrastructure underneath it gets more serious.
 

@@ -673,7 +673,13 @@ export default function AgentDetail() {
 
           {activeTab === "metrics" && <MetricsTab agentId={id} />}
 
-          {activeTab === "files" && <AgentFilesTab agentId={id} agentStatus={agent.status} />}
+          {activeTab === "files" && (
+            <AgentFilesTab
+              agentId={id}
+              agentStatus={agent.status}
+              agentContainerId={agent.container_id}
+            />
+          )}
 
           {/* Terminal — always mounted when agent is running, hidden via CSS when not active */}
           {agent.status === "running" ? (

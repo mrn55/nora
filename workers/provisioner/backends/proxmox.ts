@@ -18,6 +18,7 @@ const {
   HERMES_DASHBOARD_PORT,
 } = require("../../../agent-runtime/lib/contracts");
 const { shellSingleQuote } = require("../../../agent-runtime/lib/containerCommand");
+const { isProxmoxApiTokenId } = require("../../../agent-runtime/lib/backendCatalog");
 const {
   buildTelemetry,
   buildUnavailableTelemetry,
@@ -104,6 +105,14 @@ function derivePairedDevice(gatewayToken) {
   });
 }
 
+function proxmoxAuthErrorMessage(statusCode) {
+  return (
+    `Proxmox API authentication failed (HTTP ${statusCode}). ` +
+    "Check PROXMOX_TOKEN_ID uses user@realm!tokenname, " +
+    "PROXMOX_TOKEN_SECRET is the API token secret, and the token has VM/LXC privileges."
+  );
+}
+
 class ProxmoxBackend extends ProvisionerBackend {
   constructor() {
     super();
@@ -128,6 +137,11 @@ class ProxmoxBackend extends ProvisionerBackend {
   _assertConfigured() {
     if (!this.baseUrl || !this.tokenId || !this.tokenSecret) {
       throw new Error("Proxmox API is not configured");
+    }
+    if (!isProxmoxApiTokenId(this.tokenId)) {
+      throw new Error(
+        "Proxmox API token id must use API token format user@realm!tokenname. Set PROXMOX_TOKEN_ID to the token id, not just the user name.",
+      );
     }
     if (!this.sshHost || !this.sshUser) {
       throw new Error("Proxmox SSH is not configured");
@@ -207,6 +221,10 @@ class ProxmoxBackend extends ProvisionerBackend {
               const detail = parsed?.errors
                 ? JSON.stringify(parsed.errors)
                 : parsed?.message || raw || `HTTP ${statusCode}`;
+              if (statusCode === 401 || statusCode === 403) {
+                reject(new Error(proxmoxAuthErrorMessage(statusCode)));
+                return;
+              }
               reject(new Error(detail));
               return;
             }

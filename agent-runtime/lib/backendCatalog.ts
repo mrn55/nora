@@ -336,6 +336,13 @@ function hasAnyValue(env, keys) {
   return keys.some((key) => typeof env[key] === "string" && env[key].trim() !== "");
 }
 
+function isProxmoxApiTokenId(value) {
+  const tokenId = String(value || "").trim();
+  if (!tokenId.includes("!")) return false;
+  const [userPart, tokenName, ...rest] = tokenId.split("!");
+  return Boolean(userPart && tokenName && rest.length === 0);
+}
+
 function baseDeployTargetIssue(deployTarget, env = process.env) {
   switch (normalizeDeployTargetName(deployTarget)) {
     case "k8s":
@@ -344,6 +351,9 @@ function baseDeployTargetIssue(deployTarget, env = process.env) {
     case "proxmox":
       if (!env.PROXMOX_API_URL || !env.PROXMOX_TOKEN_ID || !env.PROXMOX_TOKEN_SECRET) {
         return "Proxmox execution target requires PROXMOX_API_URL, PROXMOX_TOKEN_ID, and PROXMOX_TOKEN_SECRET.";
+      }
+      if (!isProxmoxApiTokenId(env.PROXMOX_TOKEN_ID)) {
+        return "Proxmox execution target requires PROXMOX_TOKEN_ID in API token format user@realm!tokenname.";
       }
       if (!env.PROXMOX_SSH_HOST || !env.PROXMOX_SSH_USER) {
         return "Proxmox execution target requires PROXMOX_SSH_HOST and PROXMOX_SSH_USER for pct bootstrap.";
@@ -817,6 +827,7 @@ module.exports = {
   isKnownDeployTarget,
   isKnownRuntimeFamily,
   isKnownSandboxProfile,
+  isProxmoxApiTokenId,
   normalizeBackendName,
   normalizeDeployTargetName,
   normalizeRuntimeFamilyName,

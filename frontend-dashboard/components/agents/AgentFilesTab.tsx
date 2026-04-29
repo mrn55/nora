@@ -59,7 +59,7 @@ function buildBreadcrumbs(currentPath = "") {
   }));
 }
 
-export default function AgentFilesTab({ agentId, agentStatus }) {
+export default function AgentFilesTab({ agentId, agentStatus, agentContainerId }) {
   const toast = useToast();
   const uploadInputRef = useRef(null);
   const [roots, setRoots] = useState([]);
@@ -77,16 +77,17 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
 
   const activeRoot = useMemo(
     () => roots.find((root) => root.id === activeRootId) || null,
-    [roots, activeRootId]
+    [roots, activeRootId],
   );
   const activeRootIsSingleFile = activeRoot?.kind === "file";
   const canMutateCurrentRoot = activeRoot?.access === "rw" && !activeRootIsSingleFile;
-  const breadcrumbs = useMemo(
-    () => buildBreadcrumbs(currentPath),
-    [currentPath]
-  );
+  const breadcrumbs = useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
+  const runtimeCanExposeFiles = agentStatus === "running" || agentStatus === "warning";
+  const hasContainerId = typeof agentContainerId === "string" && agentContainerId.trim().length > 0;
+  const fileAccessReady = runtimeCanExposeFiles && hasContainerId;
 
   async function loadRoots() {
+    if (!fileAccessReady) return;
     setRootsLoading(true);
     try {
       const res = await fetchWithAuth(`/api/agents/${agentId}/files/roots`);
@@ -105,7 +106,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
   }
 
   async function loadTree(rootId = activeRootId, nextPath = currentPath) {
-    if (!rootId) return;
+    if (!fileAccessReady || !rootId) return;
     setTreeLoading(true);
     try {
       const params = new URLSearchParams({ root: rootId });
@@ -134,25 +135,40 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
   }
 
   useEffect(() => {
+    if (!fileAccessReady) {
+      setRoots([]);
+      setRootsLoading(false);
+      setTreeLoading(false);
+      setFileLoading(false);
+      setBusyAction("");
+      setActiveRootId("");
+      setCurrentPath("");
+      setEntries([]);
+      setEntriesRootId("");
+      resetFileSelection();
+      return;
+    }
     if (!agentId) return;
     loadRoots();
-  }, [agentId]);
+  }, [agentId, fileAccessReady]);
 
   useEffect(() => {
-    if (!activeRootId) return;
+    if (!fileAccessReady || !activeRootId) return;
     resetFileSelection();
     loadTree(activeRootId, currentPath);
-  }, [activeRootId, currentPath]);
+  }, [activeRootId, currentPath, fileAccessReady]);
 
   useEffect(() => {
+    if (!fileAccessReady) return;
     if (!activeRootIsSingleFile) return;
     if (entriesRootId !== activeRootId) return;
     if (entries.length !== 1 || entries[0]?.type !== "file") return;
     if (selectedFile?.path === entries[0].path) return;
     openFile(entries[0]);
-  }, [activeRootId, activeRootIsSingleFile, entries, entriesRootId, selectedFile]);
+  }, [activeRootId, activeRootIsSingleFile, entries, entriesRootId, fileAccessReady, selectedFile]);
 
   async function openFile(entry) {
+    if (!fileAccessReady) return;
     setFileLoading(true);
     try {
       const params = new URLSearchParams({
@@ -193,7 +209,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
   }
 
   async function saveFile() {
-    if (!selectedFile) return;
+    if (!fileAccessReady || !selectedFile) return;
     setBusyAction("save");
     try {
       const contentBase64 = bytesToBase64(new TextEncoder().encode(editorValue));
@@ -218,7 +234,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
               text: editorValue,
               size: new TextEncoder().encode(editorValue).length,
             }
-          : current
+          : current,
       );
       setEditorDirty(false);
       toast.success("File saved");
@@ -233,7 +249,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
 
   async function handleUpload(event) {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!fileAccessReady || !file) return;
     setBusyAction("upload");
     try {
       const res = await fetchWithAuth(
@@ -245,7 +261,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
             "X-File-Name": file.name,
           },
           body: await file.arrayBuffer(),
-        }
+        },
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -265,6 +281,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
   }
 
   async function createFolder() {
+    if (!fileAccessReady) return;
     const folderName = window.prompt("Folder name");
     if (!folderName) return;
     setBusyAction("mkdir");
@@ -293,6 +310,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
   }
 
   async function downloadPath(targetPath = currentPath || selectedFile?.path || "") {
+    if (!fileAccessReady) return;
     setBusyAction("download");
     try {
       const params = new URLSearchParams({ root: activeRootId });
@@ -323,6 +341,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
   }
 
   async function removeEntry(entry) {
+    if (!fileAccessReady) return;
     if (!window.confirm(`Delete ${entry.name}?`)) return;
     setBusyAction(`delete:${entry.path}`);
     try {
@@ -351,20 +370,35 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
     }
   }
 
-  if (agentStatus !== "running" && agentStatus !== "warning") {
+  if (!runtimeCanExposeFiles) {
     return (
       <div className="rounded-[1.75rem] border border-slate-200 bg-white px-6 py-10">
         <div className="max-w-xl">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-            Files
-          </p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Files</p>
           <h3 className="mt-2 text-lg font-black text-slate-900">
             File access is available once the runtime is live.
           </h3>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            Nora reads the actual runtime filesystem for this tab. Start the agent,
-            then return here to browse the workspace, inspect curated system paths,
-            export content, or edit files inside the writable workspace.
+            Nora reads the actual runtime filesystem for this tab. Start the agent, then return here
+            to browse the workspace, inspect curated system paths, export content, or edit files
+            inside the writable workspace.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasContainerId) {
+    return (
+      <div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 px-6 py-10">
+        <div className="max-w-xl">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">Files</p>
+          <h3 className="mt-2 text-lg font-black text-slate-900">
+            Waiting for the runtime container.
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-amber-900/80">
+            The agent is marked live, but Nora has not received a container id yet. Refresh after
+            deployment finishes, or redeploy if this state persists.
           </p>
         </div>
       </div>
@@ -373,12 +407,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
 
   return (
     <div className="space-y-5">
-      <input
-        ref={uploadInputRef}
-        type="file"
-        className="hidden"
-        onChange={handleUpload}
-      />
+      <input ref={uploadInputRef} type="file" className="hidden" onChange={handleUpload} />
 
       <div className="rounded-[1.75rem] border border-slate-200 bg-white px-6 py-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -390,10 +419,9 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
               Workspace stays fully writable. System paths stay constrained.
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-500">
-              Use the workspace root for broad edits, uploads, and cleanup. Curated
-              runtime paths stay browse-first, and dedicated config roots can expose
-              a single live file for safe in-place changes without widening the rest
-              of the write surface.
+              Use the workspace root for broad edits, uploads, and cleanup. Curated runtime paths
+              stay browse-first, and dedicated config roots can expose a single live file for safe
+              in-place changes without widening the rest of the write surface.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -402,7 +430,11 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
               onClick={() => loadTree()}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition-all hover:bg-slate-100"
             >
-              {treeLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {treeLoading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
               Refresh
             </button>
             <button
@@ -480,9 +512,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                   {root.access === "rw" ? (root.kind === "file" ? "RW FILE" : "RW") : "RO"}
                 </span>
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                {root.description}
-              </p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">{root.description}</p>
               <p className="mt-2 font-mono text-[11px] text-slate-400">{root.path}</p>
             </button>
           );
@@ -529,7 +559,10 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                   <button
                     type="button"
                     onClick={() => {
-                      const nextPath = breadcrumbs.slice(0, -1).map((crumb) => crumb.label).join("/");
+                      const nextPath = breadcrumbs
+                        .slice(0, -1)
+                        .map((crumb) => crumb.label)
+                        .join("/");
                       setCurrentPath(nextPath);
                     }}
                     className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-slate-50"
@@ -550,7 +583,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                         ? "Upload a file or create a folder in the workspace to start shaping the runtime."
                         : activeRootIsSingleFile
                           ? "This dedicated config root only exposes one live file for editing."
-                        : "This read-only path is currently empty."}
+                          : "This read-only path is currently empty."}
                     </p>
                   </div>
                 ) : (
@@ -638,9 +671,7 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                 </p>
               </>
             ) : (
-              <p className="mt-2 text-sm text-slate-500">
-                Select a file to inspect or edit it.
-              </p>
+              <p className="mt-2 text-sm text-slate-500">Select a file to inspect or edit it.</p>
             )}
           </div>
 
@@ -655,11 +686,10 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
                   Use this panel for the actual file contents.
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                  Nora reads the live runtime filesystem rather than a synthetic
-                  database view. Workspace files can be edited in place, and
-                  dedicated config roots can expose a single live file without
-                  opening broader runtime paths for mutation. Binary files and
-                  read-only roots stay download only.
+                  Nora reads the live runtime filesystem rather than a synthetic database view.
+                  Workspace files can be edited in place, and dedicated config roots can expose a
+                  single live file without opening broader runtime paths for mutation. Binary files
+                  and read-only roots stay download only.
                 </p>
               </div>
             ) : selectedFile.isText ? (
@@ -711,13 +741,10 @@ export default function AgentFilesTab({ agentId, agentStatus }) {
               </div>
             ) : (
               <div className="max-w-md">
-                <p className="text-sm font-bold text-slate-900">
-                  Binary file loaded.
-                </p>
+                <p className="text-sm font-bold text-slate-900">Binary file loaded.</p>
                 <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                  Nora detected binary or non-UTF-8 content, so this path stays
-                  preview-free here. Download it from the file list or export the
-                  current folder.
+                  Nora detected binary or non-UTF-8 content, so this path stays preview-free here.
+                  Download it from the file list or export the current folder.
                 </p>
               </div>
             )}

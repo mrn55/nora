@@ -55,6 +55,21 @@ describe("proxmox runtime selection", () => {
     expect(status.maturityTier).toBe("beta");
   });
 
+  it("rejects Proxmox token ids that are not API token ids", () => {
+    process.env.PROXMOX_TOKEN_ID = "root@pam";
+
+    const status = getRuntimeSelectionStatus({
+      runtime_family: "openclaw",
+      deploy_target: "proxmox",
+      sandbox_profile: "standard",
+    });
+
+    expect(status.available).toBe(false);
+    expect(status.issue).toBe(
+      "Proxmox execution target requires PROXMOX_TOKEN_ID in API token format user@realm!tokenname.",
+    );
+  });
+
   it("keeps the first available deploy target as the default standard path", () => {
     const catalog = getBackendCatalog();
 
