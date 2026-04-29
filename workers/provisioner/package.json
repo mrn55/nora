@@ -5,8 +5,9 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "start": "tsx worker.ts",
-    "typecheck": "tsc --noEmit"
+    "start": "node dist/worker.js",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json --outDir dist"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
