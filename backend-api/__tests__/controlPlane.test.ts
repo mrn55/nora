@@ -1146,7 +1146,7 @@ describe("Hermes dashboard embed", () => {
         status: 200,
         headers: new Headers({ "content-type": "application/javascript" }),
         text: async () =>
-          'function AM({basename:e="/",children:t}){return t}const api="/api/status";Ex.createRoot(document.getElementById("root")).render(r.jsx(AM,{children:r.jsx(Gb,{children:r.jsx("div",{children:"ok"})})}));',
+          'function AM({basename:e="/",children:t,window:i}){return t}const api="/api/status";const plugin="/dashboard-plugins/example/dist/index.js";Ex.createRoot(document.getElementById("root")).render(r.jsx(AM,{children:r.jsx(Gb,{children:r.jsx("div",{children:"ok"})})}));',
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -1174,6 +1174,11 @@ describe("Hermes dashboard embed", () => {
     expect(htmlRes.headers["set-cookie"]).toEqual(
       expect.arrayContaining([expect.stringContaining("__nora_hermes_embed_agent-1=")]),
     );
+    expect(htmlRes.headers["set-cookie"]).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("__nora_hermes_dashboard_token_agent-1=dash-session"),
+      ]),
+    );
     expect(htmlRes.headers["content-security-policy"]).toContain(
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
     );
@@ -1194,6 +1199,9 @@ describe("Hermes dashboard embed", () => {
 
     expect(jsRes.status).toBe(200);
     expect(jsRes.text).toContain('"/api/agents/agent-1/hermes-ui/embed/api/status"');
+    expect(jsRes.text).toContain(
+      '"/api/agents/agent-1/hermes-ui/embed/dashboard-plugins/example/dist/index.js"',
+    );
     expect(jsRes.text).toContain('basename:"/api/agents/agent-1/hermes-ui/embed"');
     expect(global.fetch).toHaveBeenNthCalledWith(
       2,
@@ -1226,6 +1234,9 @@ describe("Hermes dashboard embed", () => {
     // proxy boundary, and the upstream image may be operator-supplied.
     const envCall = global.fetch.mock.calls[3];
     expect(envCall[0]).toBe("http://10.0.0.40:9119/api/env");
+    expect(envCall[1].headers).toEqual(
+      expect.objectContaining({ "X-Hermes-Session-Token": "dash-session" }),
+    );
     expect(envCall[1].headers).not.toHaveProperty("Authorization");
   });
 
@@ -1292,6 +1303,9 @@ describe("Hermes dashboard embed", () => {
     expect(configCall[0]).toBe("http://10.0.0.41:9119/api/config");
     expect(configCall[1].method).toBe("PUT");
     expect(configCall[1].headers["Content-Type"]).toBe("application/json");
+    expect(configCall[1].headers).toEqual(
+      expect.objectContaining({ "X-Hermes-Session-Token": "dash-session" }),
+    );
     expect(configCall[1].headers).not.toHaveProperty("Authorization");
     expect(configCall[1].body).toBe(JSON.stringify({ config: { model: "gpt-5.4" } }));
   });

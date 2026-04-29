@@ -68,6 +68,8 @@ const app = express();
 const EMBED_SESSION_TTL_MS = 15 * 60 * 1000;
 const EMBED_SESSION_COOKIE_PREFIX = "__nora_gateway_embed_";
 const HERMES_EMBED_SESSION_COOKIE_PREFIX = "__nora_hermes_embed_";
+const HERMES_DASHBOARD_TOKEN_COOKIE_PREFIX = "__nora_hermes_dashboard_token_";
+const HERMES_DASHBOARD_SESSION_HEADER = "X-Hermes-Session-Token";
 const EMBED_CONTENT_SECURITY_POLICY = [
   "default-src 'self' data: blob: https:",
   "base-uri 'self'",
@@ -282,6 +284,11 @@ function rewriteHermesEmbedHtml(html, agentId) {
     .replace(/(["'])\/favicon\.ico(["'])/g, `$1${embedBase}/favicon.ico$2`);
 }
 
+function extractHermesDashboardSessionToken(html) {
+  const match = String(html || "").match(/window\.__HERMES_SESSION_TOKEN__\s*=\s*(["'])([^"']+)\1/);
+  return match?.[2] || "";
+}
+
 function rewriteHermesEmbedCss(css, agentId) {
   const embedBase = hermesEmbedBasePath(agentId);
   return css.replace(/url\((['"]?)\/fonts\//g, `url($1${embedBase}/fonts/`);
@@ -289,7 +296,9 @@ function rewriteHermesEmbedCss(css, agentId) {
 
 function rewriteHermesEmbedJavascript(source, agentId) {
   const embedBase = hermesEmbedBasePath(agentId);
-  let rewritten = source.replace(/(["'`])\/api\//g, `$1${embedBase}/api/`);
+  let rewritten = source
+    .replace(/(["'`])\/api\//g, `$1${embedBase}/api/`)
+    .replace(/(["'`])\/dashboard-plugins\//g, `$1${embedBase}/dashboard-plugins/`);
   const routerMarker = "jsx($y,{children:";
   if (rewritten.includes(routerMarker)) {
     rewritten = rewritten.replace(
@@ -298,7 +307,7 @@ function rewriteHermesEmbedJavascript(source, agentId) {
     );
   }
   const browserRouterName = rewritten.match(
-    /function\s+([A-Za-z_$][\w$]*)\(\{basename:[^}]*children:/,
+    /function\s+([A-Za-z_$][\w$]*)\(\{basename:[^}]*children:[^}]*window:/,
   )?.[1];
   if (browserRouterName) {
     const routerRenderPattern = new RegExp(
@@ -748,10 +757,19 @@ async function proxyEmbeddedHermes(req, res) {
 
     const hermesPath = getEmbeddedHermesPath(req);
     const targetUrl = `${dashboardUrlForAgent(access.agent, hermesPath)}${buildForwardedSearch(req)}`;
+    const cookies = parseCookieHeader(req.headers.cookie || "");
+    const dashboardTokenCookieName = getEmbedSessionCookieName(
+      access.agentId,
+      HERMES_DASHBOARD_TOKEN_COOKIE_PREFIX,
+    );
+    const dashboardSessionToken = cookies[dashboardTokenCookieName];
     const headers = {
       Accept: req.headers.accept || "*/*",
       "Accept-Encoding": "identity",
     };
+    if (dashboardSessionToken) {
+      headers[HERMES_DASHBOARD_SESSION_HEADER] = dashboardSessionToken;
+    }
     // Intentionally do NOT forward the client's Authorization header to the
     // tenant-owned Hermes container. The embed session cookie already
     // authenticates this request at the proxy boundary; forwarding the
@@ -783,7 +801,18 @@ async function proxyEmbeddedHermes(req, res) {
     res.status(resp.status);
 
     if (/text\/html/i.test(contentType)) {
-      const html = rewriteHermesEmbedHtml(await resp.text(), access.agentId);
+      const rawHtml = await resp.text();
+      const hermesSessionToken = extractHermesDashboardSessionToken(rawHtml);
+      if (hermesSessionToken) {
+        res.cookie(dashboardTokenCookieName, hermesSessionToken, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: requestProtocol(req) === "https",
+          maxAge: EMBED_SESSION_TTL_MS,
+          path: "/",
+        });
+      }
+      const html = rewriteHermesEmbedHtml(rawHtml, access.agentId);
       setEmbedHtmlHeaders(res);
       res.send(html);
       return;
