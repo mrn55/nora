@@ -5,7 +5,12 @@ const {
   resolveRequestedRuntimeFields,
 } = require("../agentRuntimeFields");
 
-const ENV_KEYS = ["ENABLED_BACKENDS", "ENABLED_RUNTIME_FAMILIES", "ENABLED_SANDBOX_PROFILES"];
+const ENV_KEYS = [
+  "ENABLED_BACKENDS",
+  "ENABLED_RUNTIME_FAMILIES",
+  "ENABLED_SANDBOX_PROFILES",
+  "KUBECONFIG",
+];
 
 function clearRuntimeEnv() {
   for (const key of ENV_KEYS) delete process.env[key];
@@ -228,5 +233,41 @@ describe("agent runtime fields", () => {
         },
       ),
     ).toBe(false);
+  });
+
+  it("treats K3s as a Kubernetes deploy-target alias", () => {
+    process.env.ENABLED_BACKENDS = "docker,k3s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    expect(
+      buildAgentRuntimeFields({
+        runtime_family: "openclaw",
+        deploy_target: "k3s",
+        sandbox_profile: "nemoclaw",
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        runtime_family: "openclaw",
+        deploy_target: "k8s",
+        sandbox_profile: "nemoclaw",
+        backend_type: "k8s",
+        sandbox_type: "nemoclaw",
+      }),
+    );
+
+    expect(
+      resolveRequestedRuntimeFields({
+        request: {
+          deploy_target: "k3s",
+          sandbox_profile: "nemoclaw",
+        },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        deploy_target: "k8s",
+        sandbox_profile: "nemoclaw",
+        backend_type: "k8s",
+      }),
+    );
   });
 });

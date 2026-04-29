@@ -57,6 +57,12 @@ describe("provisioning runtime/gateway contracts", () => {
     delete process.env.K8S_RUNTIME_NODE_PORT;
     delete process.env.K8S_GATEWAY_NODE_PORT;
     delete process.env.K8S_RUNTIME_HOST;
+    delete process.env.K8S_SERVICE_ANNOTATIONS_JSON;
+    delete process.env.K8S_LOAD_BALANCER_SOURCE_RANGES;
+    delete process.env.K8S_LOAD_BALANCER_CLASS;
+    delete process.env.K8S_LOAD_BALANCER_READY_TIMEOUT_MS;
+    delete process.env.K8S_LOAD_BALANCER_READY_INTERVAL_MS;
+    delete process.env.NVIDIA_API_KEY;
   });
 
   it("clears the abort timer even when a readiness fetch fails", async () => {
@@ -324,6 +330,160 @@ describe("provisioning runtime/gateway contracts", () => {
       gatewayHost: "nora-kind-control-plane",
       gatewayHostPort: 32079,
     }));
+  });
+
+  it("returns load-balancer endpoints for cloud kubernetes services", async () => {
+    process.env.K8S_EXPOSURE_MODE = "load-balancer";
+    process.env.K8S_SERVICE_ANNOTATIONS_JSON =
+      '{"service.beta.kubernetes.io/aws-load-balancer-scheme":"internal"}';
+    process.env.K8S_LOAD_BALANCER_SOURCE_RANGES = "203.0.113.10/32, 198.51.100.0/24";
+    process.env.K8S_LOAD_BALANCER_CLASS = "eks.amazonaws.com/nlb";
+    process.env.K8S_LOAD_BALANCER_READY_TIMEOUT_MS = "50";
+    process.env.K8S_LOAD_BALANCER_READY_INTERVAL_MS = "1";
+    mockCreateNamespacedService.mockResolvedValueOnce({
+      body: {
+        spec: {
+          ports: [
+            { name: "gateway", port: OPENCLAW_GATEWAY_PORT },
+            { name: "runtime", port: AGENT_RUNTIME_PORT },
+          ],
+        },
+      },
+    });
+    mockReadNamespacedService.mockResolvedValueOnce({
+      body: {
+        status: {
+          loadBalancer: {
+            ingress: [{ hostname: "agent-lb.example.elb.amazonaws.com" }],
+          },
+        },
+      },
+    });
+
+    const K8sBackend = require("../../workers/provisioner/backends/k8s");
+    const backend = new K8sBackend();
+
+    const result = await backend.create({
+      id: "789",
+      name: "LoadBalancer QA",
+      vcpu: 2,
+      ram_mb: 2048,
+      env: { OPENAI_API_KEY: "test-key" },
+    });
+
+    const service = mockCreateNamespacedService.mock.calls[0][0].body;
+
+    expect(service.metadata.annotations).toEqual({
+      "service.beta.kubernetes.io/aws-load-balancer-scheme": "internal",
+    });
+    expect(service.spec).toEqual(expect.objectContaining({
+      type: "LoadBalancer",
+      loadBalancerSourceRanges: ["203.0.113.10/32", "198.51.100.0/24"],
+      loadBalancerClass: "eks.amazonaws.com/nlb",
+    }));
+    expect(service.spec.ports.some((port) => port.nodePort != null)).toBe(false);
+    expect(mockReadNamespacedService).toHaveBeenCalledWith({
+      name: "oclaw-agent-789",
+      namespace: "openclaw-agents",
+    });
+    expect(result).toEqual(expect.objectContaining({
+      host: "oclaw-agent-789.openclaw-agents.svc.cluster.local",
+      runtimeHost: "agent-lb.example.elb.amazonaws.com",
+      runtimePort: AGENT_RUNTIME_PORT,
+      gatewayHost: "agent-lb.example.elb.amazonaws.com",
+      gatewayPort: OPENCLAW_GATEWAY_PORT,
+    }));
+  });
+
+  it("deploys NemoClaw through the kubernetes adapter when selected as a sandbox", async () => {
+    process.env.K8S_EXPOSURE_MODE = "load-balancer";
+    process.env.K8S_LOAD_BALANCER_READY_TIMEOUT_MS = "50";
+    process.env.K8S_LOAD_BALANCER_READY_INTERVAL_MS = "1";
+    process.env.NVIDIA_API_KEY = "test-nvidia-key";
+    mockCreateNamespacedService.mockResolvedValueOnce({
+      body: {
+        status: {
+          loadBalancer: {
+            ingress: [{ ip: "192.0.2.24" }],
+          },
+        },
+      },
+    });
+
+    const K8sBackend = require("../../workers/provisioner/backends/k8s");
+    const backend = new K8sBackend();
+
+    await backend.create({
+      id: "nemo",
+      name: "Nemo LoadBalancer QA",
+      image: "registry.example.com/nora-nemoclaw-agent:stable",
+      vcpu: 2,
+      ram_mb: 2048,
+      sandboxProfile: "nemoclaw",
+      env: { NEMOCLAW_MODEL: "nvidia/test-model" },
+    });
+
+    const deployment = mockCreateNamespacedDeployment.mock.calls[0][0].body;
+    const container = deployment.spec.template.spec.containers[0];
+    const envVars = Object.fromEntries(container.env.map((entry) => [entry.name, entry.value]));
+
+    expect(container.image).toBe("registry.example.com/nora-nemoclaw-agent:stable");
+    expect(container.workingDir).toBe("/sandbox");
+    expect(envVars).toEqual(expect.objectContaining({
+      HOME: "/sandbox",
+      OPENCLAW_CLI_PATH: "/usr/bin/openclaw",
+      OPENCLAW_TSX_BIN: "/usr/bin/tsx",
+      NEMOCLAW_MODEL: "nvidia/test-model",
+      NVIDIA_API_KEY: "test-nvidia-key",
+    }));
+    expect(container.args.join(" ")).toContain("nemoclaw@latest");
+  });
+
+  it("rejects invalid kubernetes service annotations json", () => {
+    process.env.K8S_SERVICE_ANNOTATIONS_JSON = "[]";
+
+    const K8sBackend = require("../../workers/provisioner/backends/k8s");
+
+    expect(() => new K8sBackend()).toThrow(
+      "K8S_SERVICE_ANNOTATIONS_JSON must be a JSON object",
+    );
+  });
+
+  it("times out when a cloud load balancer address is not assigned", async () => {
+    process.env.K8S_EXPOSURE_MODE = "load-balancer";
+    process.env.K8S_LOAD_BALANCER_READY_TIMEOUT_MS = "2";
+    process.env.K8S_LOAD_BALANCER_READY_INTERVAL_MS = "1";
+    mockCreateNamespacedService.mockResolvedValueOnce({
+      body: {
+        status: {
+          loadBalancer: {
+            ingress: [],
+          },
+        },
+      },
+    });
+    mockReadNamespacedService.mockResolvedValue({
+      body: {
+        status: {
+          loadBalancer: {
+            ingress: [],
+          },
+        },
+      },
+    });
+
+    const K8sBackend = require("../../workers/provisioner/backends/k8s");
+    const backend = new K8sBackend();
+
+    await expect(
+      backend.create({
+        id: "999",
+        name: "Pending LoadBalancer QA",
+        vcpu: 2,
+        ram_mb: 2048,
+        env: { OPENAI_API_KEY: "test-key" },
+      }),
+    ).rejects.toThrow("Timed out waiting for K8s LoadBalancer address for oclaw-agent-999");
   });
 });
 

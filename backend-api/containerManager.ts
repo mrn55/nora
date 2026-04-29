@@ -89,6 +89,7 @@ function getBackendInstance(type) {
       break;
     }
     case "k8s":
+    case "k3s":
     case "kubernetes": {
       const K8sBackend = require(resolveBackendPath("k8s"));
       backendCache[type] = new K8sBackend();

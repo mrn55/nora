@@ -875,6 +875,7 @@ header "Deploy Backends"
 
 DOCKER_BACKEND_ENABLED="true"
 K8S_BACKEND_ENABLED="false"
+K8S_BACKEND_ID="k3s"
 PROXMOX_BACKEND_ENABLED="false"
 HERMES_RUNTIME_ENABLED="false"
 NEMOCLAW_SANDBOX_ENABLED="false"
@@ -883,6 +884,11 @@ K8S_EXPOSURE_MODE="cluster-ip"
 K8S_RUNTIME_NODE_PORT=""
 K8S_GATEWAY_NODE_PORT=""
 K8S_RUNTIME_HOST=""
+K8S_SERVICE_ANNOTATIONS_JSON=""
+K8S_LOAD_BALANCER_SOURCE_RANGES=""
+K8S_LOAD_BALANCER_CLASS=""
+K8S_LOAD_BALANCER_READY_TIMEOUT_MS="600000"
+K8S_LOAD_BALANCER_READY_INTERVAL_MS="5000"
 PROXMOX_API_URL=""
 PROXMOX_TOKEN_ID=""
 PROXMOX_TOKEN_SECRET=""
@@ -907,13 +913,28 @@ else
   ok "Docker backend enabled"
 fi
 
-printf "  Enable Kubernetes backend? [y/N] "
+printf "  Enable K3s/Kubernetes backend? [y/N] "
 read -r k8s_backend_answer < /dev/tty
 if [[ "$k8s_backend_answer" =~ ^[Yy]$ ]]; then
   K8S_BACKEND_ENABLED="true"
-  ok "Kubernetes backend enabled — ensure kubeconfig is available in backend-api and worker-provisioner"
+  printf "  Kubernetes-compatible target [k3s] (enter k8s for AKS/GKE/EKS or upstream Kubernetes): "
+  read -r input < /dev/tty
+  case "$input" in
+    ""|[Kk]3[Ss])
+      K8S_BACKEND_ID="k3s"
+      ok "K3s backend enabled — ensure kubeconfig is available in backend-api and worker-provisioner"
+      ;;
+    [Kk]8[Ss]|[Kk][Uu][Bb][Ee][Rr][Nn][Ee][Tt][Ee][Ss])
+      K8S_BACKEND_ID="k8s"
+      ok "Kubernetes backend enabled — ensure kubeconfig is available in backend-api and worker-provisioner"
+      ;;
+    *)
+      K8S_BACKEND_ID="k3s"
+      warn "Unknown Kubernetes-compatible target '${input}' — using k3s. Set ENABLED_BACKENDS to k8s later to switch."
+      ;;
+  esac
 else
-  info "Kubernetes backend disabled"
+  info "K3s/Kubernetes backend disabled"
 fi
 
 printf "  Enable Proxmox backend? [y/N] "
@@ -981,7 +1002,7 @@ fi
 
 enabled_backends=()
 [ "$DOCKER_BACKEND_ENABLED" = "true" ] && enabled_backends+=("docker")
-[ "$K8S_BACKEND_ENABLED" = "true" ] && enabled_backends+=("k8s")
+[ "$K8S_BACKEND_ENABLED" = "true" ] && enabled_backends+=("$K8S_BACKEND_ID")
 [ "$PROXMOX_BACKEND_ENABLED" = "true" ] && enabled_backends+=("proxmox")
 
 if [ ${#enabled_backends[@]} -eq 0 ]; then
@@ -1262,12 +1283,19 @@ ENABLED_RUNTIME_FAMILIES=${ENABLED_RUNTIME_FAMILIES}
 ENABLED_BACKENDS=${ENABLED_BACKENDS}
 ENABLED_SANDBOX_PROFILES=${ENABLED_SANDBOX_PROFILES}
 
-# ── Kubernetes (when ENABLED_BACKENDS includes k8s) ──────────
+# ── K3s/Kubernetes (when ENABLED_BACKENDS includes k3s or k8s) ─
+# K3s is the default Kubernetes-compatible target id. Use k8s for
+# upstream Kubernetes, AKS, GKE, or EKS. Both ids use the same adapter.
 K8S_NAMESPACE=${K8S_NAMESPACE}
 K8S_EXPOSURE_MODE=${K8S_EXPOSURE_MODE}
 K8S_RUNTIME_NODE_PORT=${K8S_RUNTIME_NODE_PORT}
 K8S_GATEWAY_NODE_PORT=${K8S_GATEWAY_NODE_PORT}
 K8S_RUNTIME_HOST=${K8S_RUNTIME_HOST}
+K8S_SERVICE_ANNOTATIONS_JSON=${K8S_SERVICE_ANNOTATIONS_JSON}
+K8S_LOAD_BALANCER_SOURCE_RANGES=${K8S_LOAD_BALANCER_SOURCE_RANGES}
+K8S_LOAD_BALANCER_CLASS=${K8S_LOAD_BALANCER_CLASS}
+K8S_LOAD_BALANCER_READY_TIMEOUT_MS=${K8S_LOAD_BALANCER_READY_TIMEOUT_MS}
+K8S_LOAD_BALANCER_READY_INTERVAL_MS=${K8S_LOAD_BALANCER_READY_INTERVAL_MS}
 
 # ── Proxmox (when ENABLED_BACKENDS includes proxmox) ─────────
 PROXMOX_API_URL=${PROXMOX_API_URL}
@@ -1287,6 +1315,8 @@ PROXMOX_SSH_PASSWORD=${PROXMOX_SSH_PASSWORD}
 # ── NemoClaw / NVIDIA (when ENABLED_SANDBOX_PROFILES includes nemoclaw) ──
 NVIDIA_API_KEY=${NVIDIA_API_KEY}
 NEMOCLAW_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b
+# For K3s/Kubernetes targets, use a registry image your nodes can pull
+# or preload nora-nemoclaw-agent:local onto the target nodes.
 NEMOCLAW_SANDBOX_IMAGE=nora-nemoclaw-agent:local
 
 # ── Security ─────────────────────────────────────────────────

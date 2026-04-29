@@ -29,7 +29,7 @@ flowchart LR
     end
 
     subgraph RuntimeInfra["Runtime execution layer"]
-        Worker --> Adapters["Backend adapters<br/>Docker / Kubernetes / Proxmox"]
+        Worker --> Adapters["Backend adapters<br/>Docker / K3s/Kubernetes / Proxmox"]
         Adapters --> Runtime["Provisioned agent runtime"]
         API <--> Runtime
     end
@@ -134,7 +134,7 @@ Nora chooses a concrete backend through three layers of intent:
 | Layer | Current values | Meaning |
 |---|---|---|
 | Runtime family | `openclaw`, `hermes` | Which operator contract the runtime satisfies. |
-| Deploy target | `docker`, `k8s`, `proxmox` | Where the runtime should be scheduled. |
+| Deploy target | `docker`, `k8s`, `proxmox` | Where the runtime should be scheduled. `k3s` is the default user-facing Kubernetes-compatible id and normalizes to `k8s` internally. |
 | Sandbox profile | `standard`, `nemoclaw` | Which isolation profile should wrap the runtime. |
 
 The worker resolves the final backend through shared metadata in `agent-runtime/lib/backendCatalog.ts`.
@@ -144,9 +144,9 @@ The worker resolves the final backend through shared metadata in `agent-runtime/
 | Backend path | Runtime family | Maturity | Notes |
 |---|---|---|---|
 | OpenClaw + Docker | `openclaw` | GA | Recommended default path for most self-hosted installs. |
-| OpenClaw + Kubernetes | `openclaw` | Beta | Uses Kubernetes workloads instead of the local Docker host. |
+| OpenClaw + K3s/Kubernetes | `openclaw` | Beta | Uses K3s or Kubernetes workloads instead of the local Docker host. |
 | OpenClaw + Proxmox | `openclaw` | Beta | Provisions LXC runtimes through the Proxmox API and pct bootstrap. |
-| OpenClaw + Docker/Kubernetes/Proxmox + NemoClaw | `openclaw` | Experimental | Uses NVIDIA secure sandboxing as a sandbox profile on supported OpenClaw execution targets. |
+| OpenClaw + Docker/K3s/Kubernetes/Proxmox + NemoClaw | `openclaw` | Experimental | Uses NVIDIA secure sandboxing as a sandbox profile on supported OpenClaw execution targets. |
 | Hermes + Docker/Proxmox | `hermes` | Experimental | Narrower runtime contract with its own dashboard surface; Proxmox uses a ready-made Hermes LXC template. |
 
 ### Provisioning Lifecycle
@@ -209,7 +209,7 @@ The runtime family determines which operator capabilities Nora expects after lau
 | Local single-host | Nora nginx on `NGINX_HTTP_PORT` | One Docker Compose host | Local Docker by default | Evaluation, local proof, small self-hosted installs |
 | Public domain with Nora-managed ingress | Nora nginx on public ports | One Docker Compose host | Local Docker or supported external targets | Straightforward public self-hosting |
 | Public domain behind external reverse proxy | Host or upstream proxy terminates public traffic and forwards to Nora | One Docker Compose host | Local Docker or supported external targets | Existing nginx, Cloudflare, or host-managed TLS setups |
-| External runtime targets | Same ingress as above | One Docker Compose host | Kubernetes, Proxmox, or specialized sandbox paths | Teams that need different runtime placement without changing the operator workflow |
+| External runtime targets | Same ingress as above | One Docker Compose host | K3s/Kubernetes, Proxmox, or specialized sandbox paths | Teams that need different runtime placement without changing the operator workflow |
 
 ### Topology Map
 
@@ -228,7 +228,7 @@ flowchart TB
 
     subgraph ExecutionTargets["Runtime execution targets"]
         Docker["Local Docker host"]
-        K8s["Kubernetes cluster"]
+        K8s["K3s/Kubernetes cluster"]
         Proxmox["Proxmox API path"]
     end
 
@@ -246,7 +246,7 @@ The clearest public path today is still one host running the control plane, with
 - `backend-api/` also owns migration draft inspection/storage and all runtime file access mediation. Browser users do not receive direct host or container filesystem access.
 - `workers/provisioner/` handles long-running infrastructure work outside the request path. It consumes queued jobs and writes the result back into control-plane state.
 - `agent-runtime/` defines the runtime-side contract used after launch. Control-plane code depends on that contract rather than embedding backend-specific assumptions everywhere.
-- External execution systems such as Docker, Kubernetes, Proxmox, and NVIDIA secure sandboxes are reached through backend adapters instead of directly from browser surfaces.
+- External execution systems such as Docker, K3s/Kubernetes, Proxmox, and NVIDIA secure sandboxes are reached through backend adapters instead of directly from browser surfaces.
 
 ## Current Constraints
 
@@ -254,5 +254,5 @@ The clearest public path today is still one host running the control plane, with
 - OpenClaw is the default runtime family. Hermes is available as a narrower, deployment-first runtime path with a different operator contract.
 - Migration recreates runtimes under Nora control; it does not adopt a legacy runtime in place.
 - Hermes is a runtime family, not a backend id. Docker and Proxmox are the current Hermes execution targets, and Hermes import applies only the supported Nora-managed/runtime state described above.
-- Kubernetes, Proxmox, and NemoClaw are execution-target options for agents, not separate control-plane products.
+- K3s/Kubernetes, Proxmox, and NemoClaw are execution-target options for agents, not separate control-plane products.
 - Public architecture docs should describe current repo behavior and supported paths honestly, without inventing private-only operating procedures or future guarantees.

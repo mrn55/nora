@@ -434,6 +434,26 @@ describe("public platform config", () => {
     );
   });
 
+  it("normalizes K3s enabled-backend aliases to the Kubernetes target", async () => {
+    process.env.ENABLED_BACKENDS = "k3s";
+    process.env.KUBECONFIG = "/tmp/test-kubeconfig";
+
+    const res = await request(app).get("/config/backends");
+
+    expect(res.status).toBe(200);
+    expect(res.body.enabledBackends).toEqual(["k8s"]);
+    expect(res.body.executionTargets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "k8s",
+          label: "K3s / Kubernetes",
+          enabled: true,
+          available: true,
+        }),
+      ]),
+    );
+  });
+
   it("returns release metadata when a newer version is announced", async () => {
     process.env.NORA_CURRENT_VERSION = "1.2.3";
     process.env.NORA_CURRENT_COMMIT = "abc123def456";
@@ -1126,7 +1146,7 @@ describe("Hermes dashboard embed", () => {
         status: 200,
         headers: new Headers({ "content-type": "application/javascript" }),
         text: async () =>
-          'const api="/api/status";Ex.createRoot(document.getElementById("root")).render(r.jsx($y,{children:r.jsx(Gb,{children:r.jsx("div",{children:"ok"})})}));',
+          'function AM({basename:e="/",children:t}){return t}const api="/api/status";Ex.createRoot(document.getElementById("root")).render(r.jsx(AM,{children:r.jsx(Gb,{children:r.jsx("div",{children:"ok"})})}));',
       })
       .mockResolvedValueOnce({
         ok: true,

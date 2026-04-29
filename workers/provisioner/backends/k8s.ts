@@ -17,6 +17,10 @@ const {
   toK8sLaunch,
 } = require("../../../agent-runtime/lib/containerCommand");
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 class K8sBackend extends ProvisionerBackend {
   constructor() {
     super();
@@ -29,7 +33,29 @@ class K8sBackend extends ProvisionerBackend {
     this.coreApi = this.kc.makeApiClient(k8s.CoreV1Api);
     this.appsApi = this.kc.makeApiClient(k8s.AppsV1Api);
     this.namespace = process.env.K8S_NAMESPACE || "openclaw-agents";
-    this.exposureMode = (process.env.K8S_EXPOSURE_MODE || "cluster-ip").toLowerCase();
+    this.exposureMode = this._normalizeExposureMode(process.env.K8S_EXPOSURE_MODE);
+    this.serviceAnnotations = this._parseServiceAnnotations(process.env.K8S_SERVICE_ANNOTATIONS_JSON);
+    this.loadBalancerSourceRanges = this._parseCsv(process.env.K8S_LOAD_BALANCER_SOURCE_RANGES);
+    this.loadBalancerClass = String(process.env.K8S_LOAD_BALANCER_CLASS || "").trim();
+    this.loadBalancerReadyTimeoutMs = this._normalizePositiveInt(
+      process.env.K8S_LOAD_BALANCER_READY_TIMEOUT_MS,
+      600000,
+    );
+    this.loadBalancerReadyIntervalMs = this._normalizePositiveInt(
+      process.env.K8S_LOAD_BALANCER_READY_INTERVAL_MS,
+      5000,
+    );
+  }
+
+  _normalizeExposureMode(value) {
+    const normalized = String(value || "cluster-ip").trim().toLowerCase();
+    if (normalized === "loadbalancer") return "load-balancer";
+    return normalized;
+  }
+
+  _normalizePositiveInt(value, fallback) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
   _normalizePort(value) {
@@ -37,8 +63,45 @@ class K8sBackend extends ProvisionerBackend {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  _parseCsv(value) {
+    return String(value || "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  _parseServiceAnnotations(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return {};
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`K8S_SERVICE_ANNOTATIONS_JSON must be valid JSON: ${error.message}`);
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("K8S_SERVICE_ANNOTATIONS_JSON must be a JSON object");
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).map(([key, value]) => [key, String(value)]),
+    );
+  }
+
   _isNodePortExposure() {
     return this.exposureMode === "node-port";
+  }
+
+  _isLoadBalancerExposure() {
+    return this.exposureMode === "load-balancer";
+  }
+
+  _serviceType() {
+    if (this._isNodePortExposure()) return "NodePort";
+    if (this._isLoadBalancerExposure()) return "LoadBalancer";
+    return "ClusterIP";
   }
 
   _servicePorts() {
@@ -66,6 +129,70 @@ class K8sBackend extends ProvisionerBackend {
 
   _servicePortsWithoutNodePorts(ports = []) {
     return ports.map(({ nodePort, ...port }) => ({ ...port }));
+  }
+
+  _serviceObject(response) {
+    return response?.body || response || {};
+  }
+
+  _loadBalancerAddress(service) {
+    const ingress = service?.status?.loadBalancer?.ingress || [];
+    const first = ingress.find((entry) => entry?.ip || entry?.hostname);
+    return first?.ip || first?.hostname || null;
+  }
+
+  async _waitForLoadBalancerAddress(deployName, initialService) {
+    const deadline = Date.now() + this.loadBalancerReadyTimeoutMs;
+    let service = this._serviceObject(initialService);
+
+    while (Date.now() <= deadline) {
+      const address = this._loadBalancerAddress(service);
+      if (address) return address;
+
+      await sleep(this.loadBalancerReadyIntervalMs);
+      service = this._serviceObject(
+        await this.coreApi.readNamespacedService({
+          name: deployName,
+          namespace: this.namespace,
+        }),
+      );
+    }
+
+    throw new Error(
+      `Timed out waiting for K8s LoadBalancer address for ${deployName} after ` +
+        `${this.loadBalancerReadyTimeoutMs}ms`,
+    );
+  }
+
+  _buildService(deployName) {
+    const metadata = {
+      name: deployName,
+      namespace: this.namespace,
+    };
+    if (Object.keys(this.serviceAnnotations).length > 0) {
+      metadata.annotations = this.serviceAnnotations;
+    }
+
+    const spec = {
+      selector: { "openclaw.agent.id": String(deployName.replace("oclaw-agent-", "")) },
+      ports: this._servicePorts(),
+      type: this._serviceType(),
+    };
+    if (this._isLoadBalancerExposure()) {
+      if (this.loadBalancerSourceRanges.length > 0) {
+        spec.loadBalancerSourceRanges = this.loadBalancerSourceRanges;
+      }
+      if (this.loadBalancerClass) {
+        spec.loadBalancerClass = this.loadBalancerClass;
+      }
+    }
+
+    return {
+      apiVersion: "v1",
+      kind: "Service",
+      metadata,
+      spec,
+    };
   }
 
   _errorBodyText(error) {
@@ -325,21 +452,9 @@ class K8sBackend extends ProvisionerBackend {
     }
 
     // Create a service that exposes both the control-plane gateway and runtime
-    // sidecar. Default is ClusterIP for in-cluster control planes; local kind
-    // verification uses NodePort so the Docker-hosted backend can reach it.
-    const service = {
-      apiVersion: "v1",
-      kind: "Service",
-      metadata: {
-        name: deployName,
-        namespace: this.namespace,
-      },
-      spec: {
-        selector: { "openclaw.agent.id": String(id) },
-        ports: this._servicePorts(),
-        type: this._isNodePortExposure() ? "NodePort" : "ClusterIP",
-      },
-    };
+    // sidecar. ClusterIP is the in-cluster default, NodePort supports kind/local
+    // verification, and LoadBalancer covers cloud-managed clusters.
+    const service = this._buildService(deployName);
 
     let serviceResp = null;
     try {
@@ -381,6 +496,23 @@ class K8sBackend extends ProvisionerBackend {
     // v1.x returns the object directly; fall back to `.body` for belt-and-braces.
     const servicePorts =
       serviceResp?.spec?.ports || serviceResp?.body?.spec?.ports || service.spec.ports;
+
+    if (this._isLoadBalancerExposure()) {
+      const loadBalancerHost = await this._waitForLoadBalancerAddress(deployName, serviceResp);
+      console.log(
+        `[k8s] Deployment ${deployName} created -> ${host} ` +
+          `(load balancer ${loadBalancerHost})`,
+      );
+      return {
+        containerId: deployName,
+        host,
+        gatewayToken,
+        runtimeHost: loadBalancerHost,
+        runtimePort: AGENT_RUNTIME_PORT,
+        gatewayHost: loadBalancerHost,
+        gatewayPort: OPENCLAW_GATEWAY_PORT,
+      };
+    }
 
     if (this._isNodePortExposure()) {
       const runtimeNodePort = servicePorts.find((port) => port.name === "runtime")?.nodePort;

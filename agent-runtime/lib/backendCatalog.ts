@@ -93,13 +93,13 @@ const EXECUTION_TARGET_METADATA = Object.freeze({
   }),
   k8s: Object.freeze({
     id: "k8s",
-    label: "Kubernetes",
-    shortLabel: "Kubernetes",
+    label: "K3s / Kubernetes",
+    shortLabel: "K3s",
     summary:
-      "Run agents as Kubernetes workloads when Nora should provision into a shared cluster instead of the local Docker host.",
+      "Run agents as K3s or Kubernetes workloads when Nora should provision into a shared cluster instead of the local Docker host.",
     detail:
-      "Use a shared cluster when your control plane is wired to Kubernetes and you want Nora to place runtimes as Deployments and Services.",
-    badges: ["Cluster workload", "Service-backed", "Kube API"],
+      "Use K3s by default for the lightweight Kubernetes-compatible path, or switch to upstream and managed Kubernetes by using the k8s backend id.",
+    badges: ["K3s default", "Cluster workload", "Service-backed", "Kube API"],
   }),
   proxmox: Object.freeze({
     id: "proxmox",
@@ -150,7 +150,7 @@ function normalizeRuntimeFamilyName(value) {
 
 function normalizeDeployTargetName(value) {
   const normalized = String(value || "docker").trim().toLowerCase();
-  if (normalized === "kubernetes") return "k8s";
+  if (normalized === "kubernetes" || normalized === "k3s") return "k8s";
   return KNOWN_DEPLOY_TARGETS.includes(normalized) ? normalized : "docker";
 }
 
@@ -170,7 +170,11 @@ function isKnownRuntimeFamily(value) {
 
 function isKnownDeployTarget(value) {
   const normalized = String(value || "").trim().toLowerCase();
-  return normalized === "kubernetes" || KNOWN_DEPLOY_TARGETS.includes(normalized);
+  return (
+    normalized === "kubernetes" ||
+    normalized === "k3s" ||
+    KNOWN_DEPLOY_TARGETS.includes(normalized)
+  );
 }
 
 function isKnownBackend(value) {
@@ -751,6 +755,12 @@ function buildBackendEnablementMessage(backendOrStatus, env = process.env) {
     backendOrStatus && typeof backendOrStatus === "object"
       ? backendOrStatus
       : getBackendStatus(backendOrStatus, env);
+  if (status.id === "k8s") {
+    return (
+      `${status.label} is not enabled. Enable it with ` +
+      "ENABLED_BACKENDS=k3s, or use ENABLED_BACKENDS=k8s for upstream and managed Kubernetes."
+    );
+  }
   return (
     `${status.label} is not enabled. Enable it with ` +
     `ENABLED_BACKENDS=${status.id}.`

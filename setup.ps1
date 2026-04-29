@@ -825,6 +825,7 @@ Write-Header "Deploy Backends"
 
 $DOCKER_BACKEND_ENABLED = $true
 $K8S_BACKEND_ENABLED = $false
+$K8S_BACKEND_ID = "k3s"
 $PROXMOX_BACKEND_ENABLED = $false
 $HERMES_RUNTIME_ENABLED = $false
 $NEMOCLAW_SANDBOX_ENABLED = $false
@@ -833,6 +834,11 @@ $K8S_EXPOSURE_MODE = "cluster-ip"
 $K8S_RUNTIME_NODE_PORT = ""
 $K8S_GATEWAY_NODE_PORT = ""
 $K8S_RUNTIME_HOST = ""
+$K8S_SERVICE_ANNOTATIONS_JSON = ""
+$K8S_LOAD_BALANCER_SOURCE_RANGES = ""
+$K8S_LOAD_BALANCER_CLASS = ""
+$K8S_LOAD_BALANCER_READY_TIMEOUT_MS = "600000"
+$K8S_LOAD_BALANCER_READY_INTERVAL_MS = "5000"
 $PROXMOX_API_URL = ""
 $PROXMOX_TOKEN_ID = ""
 $PROXMOX_TOKEN_SECRET = ""
@@ -856,12 +862,31 @@ if ($dockerBackendAnswer -match '^[Nn]$') {
     Write-Ok "Docker backend enabled"
 }
 
-$k8sBackendAnswer = Read-Host "  Enable Kubernetes backend? [y/N]"
+$k8sBackendAnswer = Read-Host "  Enable K3s/Kubernetes backend? [y/N]"
 if ($k8sBackendAnswer -match '^[Yy]$') {
     $K8S_BACKEND_ENABLED = $true
-    Write-Ok "Kubernetes backend enabled — ensure kubeconfig is available in backend-api and worker-provisioner"
+    $targetInput = Read-Host "  Kubernetes-compatible target [k3s] (enter k8s for AKS/GKE/EKS or upstream Kubernetes)"
+    $normalizedTarget = if ($targetInput) { $targetInput.Trim().ToLowerInvariant() } else { "k3s" }
+    switch ($normalizedTarget) {
+        "k3s" {
+            $K8S_BACKEND_ID = "k3s"
+            Write-Ok "K3s backend enabled — ensure kubeconfig is available in backend-api and worker-provisioner"
+        }
+        "k8s" {
+            $K8S_BACKEND_ID = "k8s"
+            Write-Ok "Kubernetes backend enabled — ensure kubeconfig is available in backend-api and worker-provisioner"
+        }
+        "kubernetes" {
+            $K8S_BACKEND_ID = "k8s"
+            Write-Ok "Kubernetes backend enabled — ensure kubeconfig is available in backend-api and worker-provisioner"
+        }
+        default {
+            $K8S_BACKEND_ID = "k3s"
+            Write-Warn "Unknown Kubernetes-compatible target '$targetInput' — using k3s. Set ENABLED_BACKENDS to k8s later to switch."
+        }
+    }
 } else {
-    Write-Info "Kubernetes backend disabled"
+    Write-Info "K3s/Kubernetes backend disabled"
 }
 
 $proxmoxBackendAnswer = Read-Host "  Enable Proxmox backend? [y/N]"
@@ -917,7 +942,7 @@ if ($nemoclawSandboxAnswer -match '^[Yy]$') {
 
 $enabledBackends = @()
 if ($DOCKER_BACKEND_ENABLED) { $enabledBackends += "docker" }
-if ($K8S_BACKEND_ENABLED) { $enabledBackends += "k8s" }
+if ($K8S_BACKEND_ENABLED) { $enabledBackends += $K8S_BACKEND_ID }
 if ($PROXMOX_BACKEND_ENABLED) { $enabledBackends += "proxmox" }
 
 if ($enabledBackends.Count -eq 0) {
@@ -1193,12 +1218,19 @@ ENABLED_RUNTIME_FAMILIES=$ENABLED_RUNTIME_FAMILIES
 ENABLED_BACKENDS=$ENABLED_BACKENDS
 ENABLED_SANDBOX_PROFILES=$ENABLED_SANDBOX_PROFILES
 
-# ── Kubernetes (when ENABLED_BACKENDS includes k8s) ──────────
+# ── K3s/Kubernetes (when ENABLED_BACKENDS includes k3s or k8s) ─
+# K3s is the default Kubernetes-compatible target id. Use k8s for
+# upstream Kubernetes, AKS, GKE, or EKS. Both ids use the same adapter.
 K8S_NAMESPACE=$K8S_NAMESPACE
 K8S_EXPOSURE_MODE=$K8S_EXPOSURE_MODE
 K8S_RUNTIME_NODE_PORT=$K8S_RUNTIME_NODE_PORT
 K8S_GATEWAY_NODE_PORT=$K8S_GATEWAY_NODE_PORT
 K8S_RUNTIME_HOST=$K8S_RUNTIME_HOST
+K8S_SERVICE_ANNOTATIONS_JSON=$K8S_SERVICE_ANNOTATIONS_JSON
+K8S_LOAD_BALANCER_SOURCE_RANGES=$K8S_LOAD_BALANCER_SOURCE_RANGES
+K8S_LOAD_BALANCER_CLASS=$K8S_LOAD_BALANCER_CLASS
+K8S_LOAD_BALANCER_READY_TIMEOUT_MS=$K8S_LOAD_BALANCER_READY_TIMEOUT_MS
+K8S_LOAD_BALANCER_READY_INTERVAL_MS=$K8S_LOAD_BALANCER_READY_INTERVAL_MS
 
 # ── Proxmox (when ENABLED_BACKENDS includes proxmox) ─────────
 PROXMOX_API_URL=$PROXMOX_API_URL
@@ -1218,6 +1250,8 @@ PROXMOX_SSH_PASSWORD=$PROXMOX_SSH_PASSWORD
 # ── NemoClaw / NVIDIA (when ENABLED_SANDBOX_PROFILES includes nemoclaw) ──
 NVIDIA_API_KEY=$NVIDIA_API_KEY
 NEMOCLAW_DEFAULT_MODEL=nvidia/nemotron-3-super-120b-a12b
+# For K3s/Kubernetes targets, use a registry image your nodes can pull
+# or preload nora-nemoclaw-agent:local onto the target nodes.
 NEMOCLAW_SANDBOX_IMAGE=nora-nemoclaw-agent:local
 
 # ── Security ─────────────────────────────────────────────────

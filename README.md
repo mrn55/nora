@@ -89,8 +89,8 @@ The public repo does not present every runtime path at the same maturity. The cu
 | Path | Status | Notes |
 |---|---|---|
 | **OpenClaw + Docker** | GA | Default self-hosted path and broadest operator contract |
-| **OpenClaw + Kubernetes** | Beta | Shared-cluster placement through a configured Kubernetes API instead of the local Docker host |
-| **NemoClaw + OpenClaw** | Experimental | NVIDIA secure sandbox path with stricter isolation |
+| **OpenClaw + K3s/Kubernetes** | Beta | Shared-cluster placement through a configured Kubernetes-compatible API instead of the local Docker host |
+| **OpenClaw + NemoClaw** | Experimental | NVIDIA secure sandbox path with stricter isolation on Docker, K3s/Kubernetes, or Proxmox |
 | **Hermes + Docker** | Experimental | Deployment-first Hermes contract with WebUI, logs, exec, and env sync |
 | **OpenClaw + Proxmox** | Beta | LXC placement through configured Proxmox API and SSH bootstrap |
 
@@ -114,8 +114,8 @@ Nora is built to grow with infrastructure requirements, but the public repo does
 |---|---|---|
 | **Single-host Nora + OpenClaw Docker** | GA | Evaluation, smaller internal environments, and the clearest first production path |
 | **Nora control plane on public cloud or on-prem** | Supported topology | Teams placing the control plane inside infrastructure they already manage |
-| **Nora + OpenClaw Kubernetes** | Beta | Shared-cluster environments with configured Kubernetes API access |
-| **Nora + NemoClaw OpenClaw** | Experimental | Stronger sandboxing with NVIDIA/OpenShell policy controls |
+| **Nora + OpenClaw K3s/Kubernetes** | Beta | Shared-cluster environments with configured Kubernetes-compatible API access |
+| **Nora + OpenClaw NemoClaw** | Experimental | Stronger sandboxing with NVIDIA/OpenShell policy controls on supported execution targets |
 | **Nora + Hermes Docker** | Experimental | Teams validating Hermes under Nora's deployment-first contract |
 | **Nora + OpenClaw Proxmox** | Beta | Proxmox-backed LXC environments with API credentials and SSH bootstrap configured |
 
@@ -273,6 +273,8 @@ CORS_ORIGINS=http://localhost:8080
 # Runtime families and deploy backends
 ENABLED_RUNTIME_FAMILIES=openclaw,hermes
 ENABLED_BACKENDS=docker
+# K3s cluster mode: ENABLED_BACKENDS=docker,k3s
+# Managed/upstream Kubernetes: ENABLED_BACKENDS=docker,k8s
 ENABLED_SANDBOX_PROFILES=standard
 
 # Optional bootstrap admin
@@ -423,7 +425,7 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 - `admin-dashboard/` — admin surfaces for fleet, queue, audit, users, and Agent Hub moderation
 - `backend-api/` — auth, provisioning, migration draft import/export, live filesystem routes, key management, monitoring, Agent Hub logic, runtime coordination, and proxy routes
 - `agent-runtime/` — shared runtime contracts, endpoint conventions, bootstrap files, and backend catalog metadata
-- `workers/provisioner/` — deployment workers for Docker, Kubernetes, and Proxmox execution targets, with runtime-specific Docker adapters where needed
+- `workers/provisioner/` — deployment workers for Docker, K3s/Kubernetes, and Proxmox execution targets, with runtime-specific Docker adapters where needed
 - `e2e/` — Playwright end-to-end and smoke coverage
 - `infra/` — TLS, backup, and deployment-adjacent helpers
 
@@ -438,7 +440,7 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 | Database | PostgreSQL 15 |
 | Queue | BullMQ + Redis 7 |
 | Runtime families | OpenClaw, Hermes |
-| Provisioning backends | Docker, Kubernetes, Proxmox, NemoClaw |
+| Provisioning backends | Docker, K3s/Kubernetes, Proxmox, NemoClaw |
 | Secrets at rest | AES-256-GCM |
 
 ## Configuration
@@ -455,7 +457,7 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 | `NGINX_HTTP_PORT` | No | Host port for nginx in HTTP mode |
 | `PLATFORM_MODE` | No | `selfhosted` or `paas` |
 | `ENABLED_RUNTIME_FAMILIES` | No | Comma-separated runtime families. Supported values: `openclaw`, `hermes` |
-| `ENABLED_BACKENDS` | No | Comma-separated execution target ids. Supported values: `docker`, `k8s`, `proxmox` |
+| `ENABLED_BACKENDS` | No | Comma-separated execution target ids. Supported values: `docker`, `k3s`, `k8s`, `proxmox`. Use `k3s` by default for the Kubernetes-compatible path; switch to `k8s` for upstream Kubernetes, AKS, GKE, or EKS. Both ids use the same adapter internally. |
 | `ENABLED_SANDBOX_PROFILES` | No | Comma-separated sandbox profile ids. Supported values: `standard`, `nemoclaw` |
 | `CORS_ORIGINS` | No | Comma-separated allowed browser origins |
 | `DEFAULT_ADMIN_EMAIL` | No | Bootstrap admin seeded on first boot when paired with a strong password |
@@ -465,8 +467,12 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 
 | Variable | Description |
 |---|---|
-| `K8S_EXPOSURE_MODE` | `cluster-ip` by default, or `node-port` for local kind verification |
-| `K8S_NAMESPACE` | Kubernetes namespace for OpenClaw workloads |
+| `K8S_EXPOSURE_MODE` | `cluster-ip` by default, `node-port` for local kind/K3s verification, or `load-balancer` for AKS/GKE/EKS/K3s clusters with a load balancer controller |
+| `K8S_NAMESPACE` | K3s/Kubernetes namespace for OpenClaw and NemoClaw workloads |
+| `K8S_SERVICE_ANNOTATIONS_JSON` | Optional JSON object copied to Kubernetes Service annotations for cloud-provider load balancer settings |
+| `K8S_LOAD_BALANCER_SOURCE_RANGES` | Optional comma-separated CIDRs allowed to reach `load-balancer` Services |
+| `K8S_LOAD_BALANCER_CLASS` | Optional Kubernetes `spec.loadBalancerClass` for clusters that require one |
+| `K8S_LOAD_BALANCER_READY_TIMEOUT_MS` / `K8S_LOAD_BALANCER_READY_INTERVAL_MS` | Optional wait controls for cloud load balancer address assignment |
 | `PROXMOX_API_URL` / `PROXMOX_TOKEN_ID` / `PROXMOX_TOKEN_SECRET` | Proxmox API configuration |
 | `PROXMOX_SSH_HOST` / `PROXMOX_SSH_USER` / `PROXMOX_SSH_PRIVATE_KEY_PATH` | Proxmox SSH configuration for LXC bootstrap |
 | `PROXMOX_HERMES_TEMPLATE` / `PROXMOX_NEMOCLAW_TEMPLATE` | Required for Hermes or NemoClaw on Proxmox |
@@ -476,6 +482,97 @@ The canonical public architecture write-up lives in [architecture.md](architectu
 | `NORA_UPGRADE_REPO` / `NORA_UPGRADE_REF` / `NORA_UPGRADE_RUNNER_IMAGE` | Direct GitHub upgrade source and temporary Docker runner settings |
 
 If you want both families on Docker-backed paths, use `ENABLED_RUNTIME_FAMILIES=openclaw,hermes` with `ENABLED_BACKENDS=docker`. To expose NemoClaw as an OpenClaw sandbox choice, add `ENABLED_SANDBOX_PROFILES=standard,nemoclaw`.
+
+### K3s / Kubernetes: K3s, AKS, GKE, EKS
+
+Nora defaults the Kubernetes-compatible path to K3s because it is the cleanest lightweight self-hosted cluster target. Use `ENABLED_BACKENDS=docker,k3s` for K3s. Switch to upstream or managed Kubernetes by changing that entry to `k8s`, for example `ENABLED_BACKENDS=docker,k8s` for AKS, GKE, or EKS. Internally Nora stores both as the `k8s` deploy target because K3s uses the Kubernetes API.
+
+K3s, upstream Kubernetes, AKS, GKE, and EKS work when `backend-api` and `worker-provisioner` can authenticate to the cluster and reach the runtime Services they create. The setup scripts default the Kubernetes-compatible prompt to `k3s`; enter `k8s` at that prompt when the control plane should target managed or upstream Kubernetes instead.
+
+The environment variables keep the `K8S_` prefix for both K3s and Kubernetes because they configure the same adapter.
+
+For Docker Compose control planes, mount the same kubeconfig into both services with an override like this:
+
+```yaml
+services:
+  backend-api:
+    environment:
+      KUBECONFIG: /kubeconfig/config
+    volumes:
+      - ${KUBECONFIG_PATH}:/kubeconfig/config:ro
+
+  worker-provisioner:
+    environment:
+      KUBECONFIG: /kubeconfig/config
+    volumes:
+      - ${KUBECONFIG_PATH}:/kubeconfig/config:ro
+```
+
+Use one of these exposure modes:
+
+| Mode | Best fit | Required reachability |
+|---|---|---|
+| `cluster-ip` | Nora runs inside the same cluster or network path that resolves `*.svc.cluster.local` | Control plane can reach ClusterIP Services |
+| `node-port` | K3s, local kind, and advanced manually routed clusters | Control plane can reach node IPs on selected NodePorts |
+| `load-balancer` | AKS/GKE/EKS/K3s cloud-native or bare-metal LB access from outside the cluster | Control plane can reach the assigned load balancer IP or hostname |
+
+K3s example:
+
+```dotenv
+ENABLED_BACKENDS=docker,k3s
+K8S_NAMESPACE=openclaw-agents
+K8S_EXPOSURE_MODE=node-port
+K8S_RUNTIME_HOST=<k3s-node-or-vip>
+```
+
+Public/external load balancer example:
+
+```dotenv
+ENABLED_BACKENDS=docker,k8s
+K8S_NAMESPACE=openclaw-agents
+K8S_EXPOSURE_MODE=load-balancer
+K8S_LOAD_BALANCER_SOURCE_RANGES=203.0.113.10/32
+```
+
+Private/internal load balancer examples:
+
+```dotenv
+# AKS internal Azure Load Balancer
+K8S_EXPOSURE_MODE=load-balancer
+K8S_SERVICE_ANNOTATIONS_JSON={"service.beta.kubernetes.io/azure-load-balancer-internal":"true"}
+
+# GKE internal passthrough Network Load Balancer
+K8S_EXPOSURE_MODE=load-balancer
+K8S_SERVICE_ANNOTATIONS_JSON={"networking.gke.io/load-balancer-type":"Internal"}
+
+# EKS internal Network Load Balancer
+K8S_EXPOSURE_MODE=load-balancer
+K8S_SERVICE_ANNOTATIONS_JSON={"service.beta.kubernetes.io/aws-load-balancer-scheme":"internal"}
+```
+
+For EKS clusters using EKS Auto Mode, set `K8S_LOAD_BALANCER_CLASS=eks.amazonaws.com/nlb` if your cluster requires an explicit load balancer class. For EKS clusters using AWS Load Balancer Controller, keep the controller installed and use its Service annotations through `K8S_SERVICE_ANNOTATIONS_JSON`.
+
+NemoClaw uses the same execution targets as OpenClaw. Enable it as a sandbox profile, then choose the same K3s/Kubernetes target with `sandbox_profile=nemoclaw`:
+
+```dotenv
+ENABLED_BACKENDS=docker,k3s
+# Switch to docker,k8s for AKS, GKE, EKS, or upstream Kubernetes.
+ENABLED_SANDBOX_PROFILES=standard,nemoclaw
+NVIDIA_API_KEY=<your-nvidia-key>
+# For remote K3s/Kubernetes clusters, use a registry image the nodes can pull
+# or preload this image onto the target nodes.
+NEMOCLAW_SANDBOX_IMAGE=registry.example.com/nora-nemoclaw-agent:stable
+```
+
+Nora will deploy the agent through the K3s/Kubernetes adapter, install the NemoClaw sandbox package, and expose the NemoClaw management tab and API routes for status, policy, and approvals while the agent is running.
+
+After deploying a K3s/Kubernetes-backed agent, verify cloud address assignment with:
+
+```bash
+kubectl get svc -n openclaw-agents
+```
+
+If the Service stays `<pending>`, fix the cloud load balancer prerequisites first: subnet tags, controller installation, quota, firewall rules, or internal network routing. Public load balancers should be restricted with `K8S_LOAD_BALANCER_SOURCE_RANGES` whenever possible; private load balancers require Nora to run in the same VPC/VNet or a peered network.
 
 ## Development
 

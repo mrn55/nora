@@ -297,6 +297,19 @@ function rewriteHermesEmbedJavascript(source, agentId) {
       `jsx($y,{basename:${JSON.stringify(embedBase)},children:`,
     );
   }
+  const browserRouterName = rewritten.match(
+    /function\s+([A-Za-z_$][\w$]*)\(\{basename:[^}]*children:/,
+  )?.[1];
+  if (browserRouterName) {
+    const routerRenderPattern = new RegExp(
+      `(\\.jsx\\(${browserRouterName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},\\{)(children:)`,
+      "g",
+    );
+    rewritten = rewritten.replace(
+      routerRenderPattern,
+      `$1basename:${JSON.stringify(embedBase)},$2`,
+    );
+  }
   return rewritten;
 }
 
@@ -946,7 +959,7 @@ async function migrateDB() {
       WHERE runtime_family IS NULL OR BTRIM(runtime_family) = ''`,
     `UPDATE agents
         SET deploy_target = CASE
-          WHEN backend_type = 'kubernetes' THEN 'k8s'
+          WHEN backend_type IN ('kubernetes', 'k3s') THEN 'k8s'
           WHEN backend_type = 'hermes' THEN 'docker'
           WHEN backend_type = 'nemoclaw' THEN 'docker'
           WHEN backend_type IN ('docker', 'k8s', 'proxmox') THEN backend_type
@@ -960,12 +973,15 @@ async function migrateDB() {
           ELSE 'standard'
         END
       WHERE sandbox_profile IS NULL OR BTRIM(sandbox_profile) = ''`,
+    `UPDATE agents
+        SET deploy_target = 'k8s'
+      WHERE deploy_target IN ('kubernetes', 'k3s')`,
     `ALTER TABLE agents ALTER COLUMN runtime_family SET DEFAULT 'openclaw'`,
     `ALTER TABLE agents ALTER COLUMN deploy_target SET DEFAULT 'docker'`,
     `ALTER TABLE agents ALTER COLUMN sandbox_profile SET DEFAULT 'standard'`,
     `UPDATE agents
         SET backend_type = CASE
-          WHEN deploy_target = 'kubernetes' THEN 'k8s'
+          WHEN deploy_target IN ('kubernetes', 'k3s') THEN 'k8s'
           WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target
           ELSE 'docker'
         END
@@ -973,7 +989,7 @@ async function migrateDB() {
         AND deploy_target IS NOT NULL
         AND sandbox_profile IS NOT NULL
         AND backend_type IS DISTINCT FROM CASE
-          WHEN deploy_target = 'kubernetes' THEN 'k8s'
+          WHEN deploy_target IN ('kubernetes', 'k3s') THEN 'k8s'
           WHEN deploy_target IN ('docker', 'k8s', 'proxmox') THEN deploy_target
           ELSE 'docker'
         END`,

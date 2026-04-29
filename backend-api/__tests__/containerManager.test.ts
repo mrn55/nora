@@ -15,6 +15,14 @@ const mockHermesStatus = jest.fn();
 const mockHermesStats = jest.fn();
 const mockHermesLogs = jest.fn();
 const mockHermesExec = jest.fn();
+const mockK8sStart = jest.fn();
+const mockK8sStop = jest.fn();
+const mockK8sRestart = jest.fn();
+const mockK8sDestroy = jest.fn();
+const mockK8sStatus = jest.fn();
+const mockK8sStats = jest.fn();
+const mockK8sLogs = jest.fn();
+const mockK8sExec = jest.fn();
 
 jest.mock("../backends/hermes", () => {
   return jest.fn().mockImplementation(() => ({
@@ -39,6 +47,19 @@ jest.mock("../backends/nemoclaw", () => {
     stats: mockStats,
     logs: mockLogs,
     exec: mockExec,
+  }));
+});
+
+jest.mock("../../workers/provisioner/backends/k8s", () => {
+  return jest.fn().mockImplementation(() => ({
+    start: mockK8sStart,
+    stop: mockK8sStop,
+    restart: mockK8sRestart,
+    destroy: mockK8sDestroy,
+    status: mockK8sStatus,
+    stats: mockK8sStats,
+    logs: mockK8sLogs,
+    exec: mockK8sExec,
   }));
 });
 
@@ -69,6 +90,18 @@ describe("containerManager NemoClaw routing", () => {
     });
     mockHermesLogs.mockReset().mockResolvedValue("hermes-log-stream");
     mockHermesExec.mockReset().mockResolvedValue({ exec: "hermes-exec", stream: "hermes-stream" });
+    mockK8sStart.mockReset().mockResolvedValue(undefined);
+    mockK8sStop.mockReset().mockResolvedValue(undefined);
+    mockK8sRestart.mockReset().mockResolvedValue(undefined);
+    mockK8sDestroy.mockReset().mockResolvedValue(undefined);
+    mockK8sStatus.mockReset().mockResolvedValue({ running: true });
+    mockK8sStats.mockReset().mockResolvedValue({
+      backend_type: "k8s",
+      capabilities: { cpu: true, memory: true, network: true, disk: true, pids: false },
+      current: { recorded_at: "2026-04-08T00:00:00.000Z", running: true, uptime_seconds: 5 },
+    });
+    mockK8sLogs.mockReset().mockResolvedValue("k8s-log-stream");
+    mockK8sExec.mockReset().mockResolvedValue({ exec: "k8s-exec", stream: "k8s-stream" });
   });
 
   it("routes lifecycle, telemetry, logs, and exec calls to the NemoClaw backend", async () => {
@@ -115,6 +148,39 @@ describe("containerManager NemoClaw routing", () => {
     await containerManager.start(agent);
 
     expect(mockStart).toHaveBeenCalledWith("nemo-456");
+  });
+
+  it("keeps Kubernetes plus NemoClaw lifecycle calls on the Kubernetes adapter", async () => {
+    const containerManager = require("../containerManager");
+    const agent = {
+      runtime_family: "openclaw",
+      deploy_target: "k8s",
+      sandbox_profile: "nemoclaw",
+      backend_type: "k8s",
+      container_id: "oclaw-agent-nemo-k8s",
+    };
+
+    await containerManager.start(agent);
+    await containerManager.stop(agent);
+    await containerManager.restart(agent);
+    await containerManager.destroy(agent);
+    await containerManager.status(agent);
+    const telemetry = await containerManager.stats(agent);
+    const logs = await containerManager.logs(agent, { tail: 50 });
+    const exec = await containerManager.exec(agent, { tty: true });
+
+    expect(mockK8sStart).toHaveBeenCalledWith("oclaw-agent-nemo-k8s");
+    expect(mockK8sStop).toHaveBeenCalledWith("oclaw-agent-nemo-k8s");
+    expect(mockK8sRestart).toHaveBeenCalledWith("oclaw-agent-nemo-k8s");
+    expect(mockK8sDestroy).toHaveBeenCalledWith("oclaw-agent-nemo-k8s");
+    expect(mockK8sStatus).toHaveBeenCalledWith("oclaw-agent-nemo-k8s");
+    expect(mockK8sStats).toHaveBeenCalledWith("oclaw-agent-nemo-k8s", agent);
+    expect(mockK8sLogs).toHaveBeenCalledWith("oclaw-agent-nemo-k8s", { tail: 50 });
+    expect(mockK8sExec).toHaveBeenCalledWith("oclaw-agent-nemo-k8s", { tty: true });
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(telemetry).toEqual(expect.objectContaining({ backend_type: "k8s" }));
+    expect(logs).toBe("k8s-log-stream");
+    expect(exec).toEqual({ exec: "k8s-exec", stream: "k8s-stream" });
   });
 
   // ─── Null-container invariant ────────────────────────────────

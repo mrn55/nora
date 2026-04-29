@@ -36,7 +36,7 @@ export function normalizeDeployTarget(value) {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
-  if (normalized === "kubernetes") return "k8s";
+  if (normalized === "kubernetes" || normalized === "k3s") return "k8s";
   if (["docker", "k8s", "proxmox"].includes(normalized)) return normalized;
   return null;
 }
@@ -263,7 +263,7 @@ export function formatRuntimeFamilyLabel(value) {
 export function formatExecutionTargetLabel(value) {
   switch (normalizeDeployTarget(value)) {
     case "k8s":
-      return "Kubernetes";
+      return "K3s / Kubernetes";
     case "proxmox":
       return "Proxmox";
     default:
