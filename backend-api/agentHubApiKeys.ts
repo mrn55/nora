@@ -16,7 +16,10 @@ function generateRawKey() {
 }
 
 function hashApiKey(rawKey) {
-  return crypto.createHash("sha256").update(String(rawKey || ""), "utf8").digest("hex");
+  return crypto
+    .createHash("sha256")
+    .update(String(rawKey || ""), "utf8")
+    .digest("hex");
 }
 
 function keyPrefix(rawKey) {

@@ -861,10 +861,7 @@ export default function AgentHubTemplateDetail() {
                     />
                     <MetadataRow label="Category" value={detail.category || "General"} />
                     <MetadataRow label="Price" value={detail.price || "Free"} />
-                    <MetadataRow
-                      label="Owner"
-                      value={publisherName(detail)}
-                    />
+                    <MetadataRow label="Owner" value={publisherName(detail)} />
                     <MetadataRow
                       label="Publisher"
                       value={

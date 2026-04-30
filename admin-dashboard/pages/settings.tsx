@@ -368,9 +368,7 @@ export default function AdminSettingsPage() {
         body: JSON.stringify({
           defaultShareTarget: agentHubForm.defaultShareTarget,
           url: agentHubForm.url,
-          ...(agentHubForm.sourceApiKey
-            ? { sourceApiKey: agentHubForm.sourceApiKey }
-            : {}),
+          ...(agentHubForm.sourceApiKey ? { sourceApiKey: agentHubForm.sourceApiKey } : {}),
           clearSourceApiKey: agentHubForm.clearSourceApiKey,
         }),
       });

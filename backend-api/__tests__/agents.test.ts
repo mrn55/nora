@@ -198,18 +198,18 @@ jest.mock("../platformSettings", () => {
   const actual = jest.requireActual("../platformSettings");
   return {
     ...actual,
-	    getDeploymentDefaults: mockGetDeploymentDefaults,
-	    getAgentHubSourceApiKey: mockGetAgentHubSourceApiKey,
-	    getAgentHubSettings: jest.fn().mockResolvedValue({
-	      defaultShareTarget: "both",
-	      url: "https://nora.test",
-	      envUrl: "https://nora.test",
-	      sourceApiKeyConfigured: true,
-	      sourceApiKeySource: "database",
-	      sourceApiKeyMasked: "nora_hub..._key",
-	    }),
-	  };
-	});
+    getDeploymentDefaults: mockGetDeploymentDefaults,
+    getAgentHubSourceApiKey: mockGetAgentHubSourceApiKey,
+    getAgentHubSettings: jest.fn().mockResolvedValue({
+      defaultShareTarget: "both",
+      url: "https://nora.test",
+      envUrl: "https://nora.test",
+      sourceApiKeyConfigured: true,
+      sourceApiKeySource: "database",
+      sourceApiKeyMasked: "nora_hub..._key",
+    }),
+  };
+});
 jest.mock("../authSync", () => ({
   syncAuthToUserAgents: mockSyncAuthToUserAgents,
   runContainerCommand: mockRunContainerCommand,
@@ -3026,23 +3026,23 @@ describe("Agent Hub browse, share, download, and report", () => {
     expect(res.body).toEqual(
       expect.objectContaining({
         hub: expect.objectContaining({ name: "Nora Agent Hub" }),
-	        items: [
-	          expect.objectContaining({
-	            id: "listing-community-1",
-	            publisher: expect.objectContaining({
-	              displayName: "Publisher One",
-	              verified: true,
-	            }),
-	          }),
-	        ],
-	      }),
-	    );
-	  });
+        items: [
+          expect.objectContaining({
+            id: "listing-community-1",
+            publisher: expect.objectContaining({
+              displayName: "Publisher One",
+              verified: true,
+            }),
+          }),
+        ],
+      }),
+    );
+  });
 
-	  it("does not expose internal-only shares through the public Agent Hub detail route", async () => {
-	    const agentHubStoreModule = require("../agentHubStore");
-	    mockValidHubApiKey();
-	    agentHubStoreModule.getListing.mockResolvedValueOnce({
+  it("does not expose internal-only shares through the public Agent Hub detail route", async () => {
+    const agentHubStoreModule = require("../agentHubStore");
+    mockValidHubApiKey();
+    agentHubStoreModule.getListing.mockResolvedValueOnce({
       id: "listing-internal-1",
       name: "Internal Template",
       source_type: "community",
@@ -3050,55 +3050,55 @@ describe("Agent Hub browse, share, download, and report", () => {
       share_target: "internal",
     });
 
-	    const res = await hubKeyAuth(
-	      request(app).get("/agent-hub/catalog/listing-internal-1"),
-	    );
+    const res = await hubKeyAuth(request(app).get("/agent-hub/catalog/listing-internal-1"));
 
-	    expect(res.status).toBe(404);
-	  });
+    expect(res.status).toBe(404);
+  });
 
-	  it("binds hosted Agent Hub submissions to the API key owner", async () => {
-	    const agentHubStoreModule = require("../agentHubStore");
-	    const snapshotsModule = require("../snapshots");
-	    mockValidHubApiKey();
-	    agentHubStoreModule.upsertListing.mockResolvedValueOnce({
-	      id: "listing-submitted-1",
-	      status: "pending_review",
-	    });
+  it("binds hosted Agent Hub submissions to the API key owner", async () => {
+    const agentHubStoreModule = require("../agentHubStore");
+    const snapshotsModule = require("../snapshots");
+    mockValidHubApiKey();
+    agentHubStoreModule.upsertListing.mockResolvedValueOnce({
+      id: "listing-submitted-1",
+      status: "pending_review",
+    });
 
-	    const res = await hubKeyAuth(
-	      request(app).post("/agent-hub/submissions").send({
-	        listing: {
-	          name: "Submitted Template",
-	          description: "Submitted through a registered installation key",
-	          category: "Operations",
-	        },
-	        templatePayload: {
-	          files: [{ path: "AGENTS.md", content: "hello" }],
-	          memoryFiles: [],
-	          wiring: { channels: [], integrations: [] },
-	        },
-	      }),
-	    );
+    const res = await hubKeyAuth(
+      request(app)
+        .post("/agent-hub/submissions")
+        .send({
+          listing: {
+            name: "Submitted Template",
+            description: "Submitted through a registered installation key",
+            category: "Operations",
+          },
+          templatePayload: {
+            files: [{ path: "AGENTS.md", content: "hello" }],
+            memoryFiles: [],
+            wiring: { channels: [], integrations: [] },
+          },
+        }),
+    );
 
-	    expect(res.status).toBe(202);
-	    expect(snapshotsModule.createSnapshot).toHaveBeenCalledWith(
-	      null,
-	      "Submitted Template",
-	      "Submitted through a registered installation key",
-	      expect.any(Object),
-	      expect.any(Object),
-	    );
-	    expect(agentHubStoreModule.upsertListing).toHaveBeenCalledWith(
-	      expect.objectContaining({
-	        ownerUserId: "publisher-1",
-	        status: "pending_review",
-	        shareTarget: "community",
-	      }),
-	    );
-	  });
+    expect(res.status).toBe(202);
+    expect(snapshotsModule.createSnapshot).toHaveBeenCalledWith(
+      null,
+      "Submitted Template",
+      "Submitted through a registered installation key",
+      expect.any(Object),
+      expect.any(Object),
+    );
+    expect(agentHubStoreModule.upsertListing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerUserId: "publisher-1",
+        status: "pending_review",
+        shareTarget: "community",
+      }),
+    );
+  });
 
-	  it("lists published Agent Hub entries for authenticated users", async () => {
+  it("lists published Agent Hub entries for authenticated users", async () => {
     const agentHubStoreModule = require("../agentHubStore");
     agentHubStoreModule.listAgentHubLocalListings.mockResolvedValueOnce([
       { id: "listing-1", name: "Preset" },
@@ -3110,108 +3110,108 @@ describe("Agent Hub browse, share, download, and report", () => {
     expect(res.body).toEqual([expect.objectContaining({ id: "listing-1" })]);
   });
 
-	  it("lists the current user's Agent Hub listings", async () => {
-	    const agentHubStoreModule = require("../agentHubStore");
-	    agentHubStoreModule.listUserListings.mockResolvedValueOnce([
-	      { id: "listing-1", name: "My Listing", status: "pending_review" },
-	    ]);
+  it("lists the current user's Agent Hub listings", async () => {
+    const agentHubStoreModule = require("../agentHubStore");
+    agentHubStoreModule.listUserListings.mockResolvedValueOnce([
+      { id: "listing-1", name: "My Listing", status: "pending_review" },
+    ]);
 
     const res = await auth(request(app).get("/agent-hub/mine"));
 
     expect(res.status).toBe(200);
     expect(agentHubStoreModule.listUserListings).toHaveBeenCalledWith("user-1");
     expect(res.body[0]).toEqual(
-	      expect.objectContaining({ id: "listing-1", status: "pending_review" }),
-	    );
-	  });
+      expect.objectContaining({ id: "listing-1", status: "pending_review" }),
+    );
+  });
 
-	  it("lists source-catalog API keys for the current user", async () => {
-	    mockDb.query.mockResolvedValueOnce({
-	      rows: [
-	        {
-	          id: "hub-key-1",
-	          label: "Production install",
-	          key_prefix: "nora_hub_prod",
-	          status: "active",
-	          created_at: "2026-04-01T00:00:00.000Z",
-	          last_used_at: null,
-	          revoked_at: null,
-	        },
-	      ],
-	    });
+  it("lists source-catalog API keys for the current user", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "hub-key-1",
+          label: "Production install",
+          key_prefix: "nora_hub_prod",
+          status: "active",
+          created_at: "2026-04-01T00:00:00.000Z",
+          last_used_at: null,
+          revoked_at: null,
+        },
+      ],
+    });
 
-	    const res = await auth(request(app).get("/agent-hub/api-keys"));
+    const res = await auth(request(app).get("/agent-hub/api-keys"));
 
-	    expect(res.status).toBe(200);
-	    expect(res.body).toEqual([
-	      expect.objectContaining({
-	        id: "hub-key-1",
-	        label: "Production install",
-	        maskedKey: "nora_hub_prod...",
-	      }),
-	    ]);
-	  });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      expect.objectContaining({
+        id: "hub-key-1",
+        label: "Production install",
+        maskedKey: "nora_hub_prod...",
+      }),
+    ]);
+  });
 
-	  it("creates a source-catalog API key and returns the raw key once", async () => {
-	    mockDb.query.mockResolvedValueOnce({
-	      rows: [
-	        {
-	          id: "hub-key-1",
-	          label: "Production install",
-	          key_prefix: "nora_hub_generated",
-	          status: "active",
-	          created_at: "2026-04-01T00:00:00.000Z",
-	          last_used_at: null,
-	          revoked_at: null,
-	        },
-	      ],
-	    });
+  it("creates a source-catalog API key and returns the raw key once", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "hub-key-1",
+          label: "Production install",
+          key_prefix: "nora_hub_generated",
+          status: "active",
+          created_at: "2026-04-01T00:00:00.000Z",
+          last_used_at: null,
+          revoked_at: null,
+        },
+      ],
+    });
 
-	    const res = await auth(
-	      request(app).post("/agent-hub/api-keys").send({ label: "Production install" }),
-	    );
+    const res = await auth(
+      request(app).post("/agent-hub/api-keys").send({ label: "Production install" }),
+    );
 
-	    expect(res.status).toBe(201);
-	    expect(res.body).toEqual(
-	      expect.objectContaining({
-	        id: "hub-key-1",
-	        label: "Production install",
-	        apiKey: expect.stringMatching(/^nora_hub_/),
-	      }),
-	    );
-	    expect(mockDb.query).toHaveBeenCalledWith(
-	      expect.stringContaining("INSERT INTO agent_hub_api_keys"),
-	      expect.arrayContaining(["user-1", "Production install"]),
-	    );
-	  });
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        id: "hub-key-1",
+        label: "Production install",
+        apiKey: expect.stringMatching(/^nora_hub_/),
+      }),
+    );
+    expect(mockDb.query).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO agent_hub_api_keys"),
+      expect.arrayContaining(["user-1", "Production install"]),
+    );
+  });
 
-	  it("revokes a source-catalog API key owned by the current user", async () => {
-	    mockDb.query.mockResolvedValueOnce({
-	      rows: [
-	        {
-	          id: "hub-key-1",
-	          label: "Production install",
-	          key_prefix: "nora_hub_prod",
-	          status: "revoked",
-	          created_at: "2026-04-01T00:00:00.000Z",
-	          last_used_at: null,
-	          revoked_at: "2026-04-02T00:00:00.000Z",
-	        },
-	      ],
-	    });
+  it("revokes a source-catalog API key owned by the current user", async () => {
+    mockDb.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "hub-key-1",
+          label: "Production install",
+          key_prefix: "nora_hub_prod",
+          status: "revoked",
+          created_at: "2026-04-01T00:00:00.000Z",
+          last_used_at: null,
+          revoked_at: "2026-04-02T00:00:00.000Z",
+        },
+      ],
+    });
 
-	    const res = await auth(request(app).delete("/agent-hub/api-keys/hub-key-1"));
+    const res = await auth(request(app).delete("/agent-hub/api-keys/hub-key-1"));
 
-	    expect(res.status).toBe(200);
-	    expect(res.body).toEqual(
-	      expect.objectContaining({
-	        id: "hub-key-1",
-	        status: "revoked",
-	      }),
-	    );
-	  });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        id: "hub-key-1",
+        status: "revoked",
+      }),
+    );
+  });
 
-	  it("returns detailed Agent Hub template data", async () => {
+  it("returns detailed Agent Hub template data", async () => {
     const agentHubStoreModule = require("../agentHubStore");
     const snapshotsModule = require("../snapshots");
 
