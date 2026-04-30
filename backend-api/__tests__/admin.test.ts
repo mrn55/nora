@@ -44,10 +44,17 @@ const mockGetAgentHubSettings = jest.fn().mockResolvedValue({
   defaultShareTarget: "both",
   url: "https://nora.test",
   envUrl: "https://nora.test",
+  sourceApiKeyConfigured: false,
+  sourceApiKeySource: "none",
+  sourceApiKeyMasked: "",
 });
 const mockUpdateAgentHubSettings = jest.fn().mockResolvedValue({
   defaultShareTarget: "internal",
   url: "https://hub.nora.test",
+  envUrl: "https://hub.nora.test",
+  sourceApiKeyConfigured: true,
+  sourceApiKeySource: "database",
+  sourceApiKeyMasked: "nora_hub...test",
 });
 const mockDockerCreateVolume = jest.fn();
 const mockDockerPull = jest.fn();
@@ -317,11 +324,17 @@ beforeEach(() => {
     defaultShareTarget: "both",
     url: "https://nora.test",
     envUrl: "https://nora.test",
+    sourceApiKeyConfigured: false,
+    sourceApiKeySource: "none",
+    sourceApiKeyMasked: "",
   });
   mockUpdateAgentHubSettings.mockReset().mockResolvedValue({
     defaultShareTarget: "both",
     url: "https://nora.test",
     envUrl: "https://nora.test",
+    sourceApiKeyConfigured: false,
+    sourceApiKeySource: "none",
+    sourceApiKeyMasked: "",
   });
   delete process.env.ENABLED_BACKENDS;
   delete process.env.ENABLED_RUNTIME_FAMILIES;
@@ -477,20 +490,26 @@ describe("admin routes", () => {
   });
 
   it("returns the Agent Hub sharing settings for admins", async () => {
-    mockGetAgentHubSettings.mockResolvedValueOnce({
-      defaultShareTarget: "both",
-      url: "https://nora.solomontsao.com",
-      envUrl: "https://nora.solomontsao.com",
-    });
+	    mockGetAgentHubSettings.mockResolvedValueOnce({
+	      defaultShareTarget: "both",
+	      url: "https://nora.solomontsao.com",
+	      envUrl: "https://nora.solomontsao.com",
+	      sourceApiKeyConfigured: true,
+	      sourceApiKeySource: "env",
+	      sourceApiKeyMasked: "nora_hub...test",
+	    });
 
     const res = await withToken(request(app).get("/admin/settings/agent-hub"), adminToken);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
-      defaultShareTarget: "both",
-      url: "https://nora.solomontsao.com",
-      envUrl: "https://nora.solomontsao.com",
-    });
+	      defaultShareTarget: "both",
+	      url: "https://nora.solomontsao.com",
+	      envUrl: "https://nora.solomontsao.com",
+	      sourceApiKeyConfigured: true,
+	      sourceApiKeySource: "env",
+	      sourceApiKeyMasked: "nora_hub...test",
+	    });
   });
 
   it("updates the Agent Hub sharing settings for admins", async () => {
@@ -501,24 +520,29 @@ describe("admin routes", () => {
       envUrl: "https://nora.solomontsao.com",
     });
     mockUpdateAgentHubSettings.mockResolvedValueOnce({
-      defaultShareTarget: "internal",
-      url: "https://hub.internal.test",
-      envUrl: "https://nora.solomontsao.com",
-    });
+	      defaultShareTarget: "internal",
+	      url: "https://hub.internal.test",
+	      envUrl: "https://nora.solomontsao.com",
+	      sourceApiKeyConfigured: true,
+	      sourceApiKeySource: "database",
+	      sourceApiKeyMasked: "nora_hub...prod",
+	    });
 
     const res = await withToken(
       request(app).put("/admin/settings/agent-hub").send({
-        defaultShareTarget: "internal",
-        url: "https://hub.internal.test",
-      }),
+	        defaultShareTarget: "internal",
+	        url: "https://hub.internal.test",
+	        sourceApiKey: "nora_hub_prod",
+	      }),
       adminToken,
     );
 
     expect(res.status).toBe(200);
-    expect(mockUpdateAgentHubSettings).toHaveBeenCalledWith({
-      defaultShareTarget: "internal",
-      url: "https://hub.internal.test",
-    });
+	    expect(mockUpdateAgentHubSettings).toHaveBeenCalledWith({
+	      defaultShareTarget: "internal",
+	      url: "https://hub.internal.test",
+	      sourceApiKey: "nora_hub_prod",
+	    });
     expect(res.body).toEqual(
       expect.objectContaining({
         defaultShareTarget: "internal",

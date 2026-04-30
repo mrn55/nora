@@ -33,6 +33,8 @@ const DEFAULT_BANNER_FORM = {
 const DEFAULT_AGENT_HUB_FORM = {
   defaultShareTarget: "both",
   url: "https://nora.solomontsao.com",
+  sourceApiKey: "",
+  clearSourceApiKey: false,
 };
 
 function buildForm(defaults) {
@@ -56,6 +58,8 @@ function buildAgentHubForm(settings) {
   return {
     defaultShareTarget: settings?.defaultShareTarget || DEFAULT_AGENT_HUB_FORM.defaultShareTarget,
     url: settings?.url || DEFAULT_AGENT_HUB_FORM.url,
+    sourceApiKey: "",
+    clearSourceApiKey: false,
   };
 }
 
@@ -364,6 +368,10 @@ export default function AdminSettingsPage() {
         body: JSON.stringify({
           defaultShareTarget: agentHubForm.defaultShareTarget,
           url: agentHubForm.url,
+          ...(agentHubForm.sourceApiKey
+            ? { sourceApiKey: agentHubForm.sourceApiKey }
+            : {}),
+          clearSourceApiKey: agentHubForm.clearSourceApiKey,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -1054,6 +1062,54 @@ export default function AdminSettingsPage() {
                     />
                   </label>
 
+                  <label className="mt-4 block rounded-[1.25rem] border border-slate-200 bg-white px-4 py-4">
+                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                      Hosted Hub API Key
+                    </span>
+                    <input
+                      type="password"
+                      value={agentHubForm.sourceApiKey}
+                      onChange={(event) =>
+                        setAgentHubForm((current) => ({
+                          ...current,
+                          sourceApiKey: event.target.value,
+                          clearSourceApiKey: false,
+                        }))
+                      }
+                      placeholder={
+                        agentHubSettings?.sourceApiKeyConfigured
+                          ? "Leave blank to keep the saved key"
+                          : "Paste a hosted Agent Hub key"
+                      }
+                      className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-red-300"
+                    />
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500">
+                      <span>
+                        {agentHubSettings?.sourceApiKeyConfigured
+                          ? `Configured via ${agentHubSettings.sourceApiKeySource}`
+                          : "Required for community catalog pulls and submissions."}
+                      </span>
+                      {agentHubSettings?.sourceApiKeySource === "database" ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAgentHubForm((current) => ({
+                              ...current,
+                              sourceApiKey: "",
+                              clearSourceApiKey: true,
+                            }))
+                          }
+                          className="font-black text-red-600 hover:text-red-700"
+                        >
+                          Clear saved key
+                        </button>
+                      ) : null}
+                      {agentHubForm.clearSourceApiKey ? (
+                        <span className="font-black text-red-600">Clear on save</span>
+                      ) : null}
+                    </div>
+                  </label>
+
                   <div className="mt-6 flex flex-wrap items-center gap-3">
                     <button
                       onClick={handleSaveAgentHub}
@@ -1089,6 +1145,18 @@ export default function AdminSettingsPage() {
                       </p>
                       <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
                         Community catalog pulls and best-effort submissions use this host.
+                      </p>
+                    </div>
+                    <div className="rounded-[1.25rem] bg-slate-50 px-4 py-4">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {agentHubSettings?.sourceApiKeyConfigured
+                          ? agentHubSettings?.sourceApiKeyMasked || "Configured"
+                          : "No source-catalog key configured"}
+                      </p>
+                      <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                        {agentHubSettings?.sourceApiKeySource === "env"
+                          ? "NORA_AGENT_HUB_API_KEY is active and overrides the saved key."
+                          : "Hosted community catalog requests send this key to the source hub."}
                       </p>
                     </div>
                   </div>

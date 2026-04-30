@@ -49,6 +49,18 @@ function formatCount(value) {
   return `${numeric}`;
 }
 
+function publisherName(item) {
+  return item?.publisher?.displayName || item?.owner_name || item?.owner_email || "Community";
+}
+
+function formatSyncCadence(hub) {
+  const ttlSeconds = Number(hub?.cacheTtlSeconds || 0);
+  const ttlText =
+    ttlSeconds >= 60 ? `${Math.round(ttlSeconds / 60)} min cache` : `${ttlSeconds || 300}s cache`;
+  const syncedAt = hub?.lastSyncedAt ? new Date(hub.lastSyncedAt).toLocaleString() : "";
+  return syncedAt ? `${ttlText}. Last synced ${syncedAt}.` : ttlText;
+}
+
 function formatShareTarget(value) {
   if (value === "internal") return "Internal";
   if (value === "community") return "Community";
@@ -100,12 +112,12 @@ export default function AgentHub() {
   const [reportReason, setReportReason] = useState("spam");
   const [reportDetails, setReportDetails] = useState("");
 
-  async function loadAgentHub() {
+  async function loadAgentHub({ refreshCommunity = false } = {}) {
     setLoading(true);
     try {
       const [browseRes, communityRes, mineRes] = await Promise.all([
         fetchWithAuth("/api/agent-hub"),
-        fetchWithAuth("/api/agent-hub/community"),
+        fetchWithAuth(`/api/agent-hub/community${refreshCommunity ? "?refresh=true" : ""}`),
         fetchWithAuth("/api/agent-hub/mine"),
       ]);
 
@@ -305,7 +317,7 @@ export default function AgentHub() {
             </div>
 
             <button
-              onClick={loadAgentHub}
+              onClick={() => loadAgentHub({ refreshCommunity: true })}
               className="inline-flex items-center gap-2 self-start rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
             >
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
@@ -346,9 +358,11 @@ export default function AgentHub() {
                   : "border-emerald-100 bg-emerald-50 text-emerald-800",
               )}
             >
-              {communityHub.error
-                ? `Community sync failed from ${communityHub.url || "the configured hub"}: ${communityHub.error}`
-                : `Community catalog synced from ${communityHub.url || "the configured hub"}.`}
+              {communityHub.setupRequired
+                ? "Community catalog setup requires a hosted Agent Hub API key."
+                : communityHub.error
+                  ? `Community sync failed from ${communityHub.url || "the configured hub"}: ${communityHub.error}`
+                  : `Community catalog synced from ${communityHub.url || "the configured hub"}. ${formatSyncCadence(communityHub)}`}
             </div>
           )}
 
@@ -510,7 +524,7 @@ function AgentHubCard({
           {!isPreset && (
             <>
               <span>&bull;</span>
-              <span>{item.owner_name || item.owner_email || "Community"}</span>
+              <span>{publisherName(item)}</span>
             </>
           )}
         </div>

@@ -13,10 +13,13 @@ import {
   Shield,
   Key,
   Mail,
+  Plus,
+  RefreshCw,
   Calendar,
   BadgeCheck,
   Edit3,
   Check,
+  Copy,
   X,
   Camera,
 } from "lucide-react";
@@ -70,6 +73,11 @@ export default function SettingsPage() {
   const [nameInput, setNameInput] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [agentHubKeys, setAgentHubKeys] = useState([]);
+  const [agentHubKeyLabel, setAgentHubKeyLabel] = useState("Nora installation");
+  const [agentHubKeyLoading, setAgentHubKeyLoading] = useState(false);
+  const [agentHubKeyCreating, setAgentHubKeyCreating] = useState(false);
+  const [generatedAgentHubKey, setGeneratedAgentHubKey] = useState(null);
   const avatarInputRef = useRef(null);
   const toast = useToast();
 
@@ -82,11 +90,15 @@ export default function SettingsPage() {
       fetch("/api/config/platform")
         .then((r) => r.json())
         .catch(() => ({ mode: "selfhosted" })),
+      fetchWithAuth("/api/agent-hub/api-keys")
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => []),
     ])
-      .then(([p, s, c]) => {
+      .then(([p, s, c, hubKeys]) => {
         setProfile(p);
         setSubscription(s);
         setPlatformConfig(c);
+        setAgentHubKeys(Array.isArray(hubKeys) ? hubKeys : []);
         setNameInput(p?.name || "");
         setLoading(false);
       })
@@ -173,6 +185,67 @@ export default function SettingsPage() {
     }
     setSavingName(false);
     setEditingName(false);
+  }
+
+  async function loadAgentHubKeys() {
+    setAgentHubKeyLoading(true);
+    try {
+      const res = await fetchWithAuth("/api/agent-hub/api-keys");
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data.error || "Failed to load Agent Hub keys");
+      setAgentHubKeys(Array.isArray(data) ? data : []);
+    } catch (error) {
+      toast.error(error.message || "Failed to load Agent Hub keys");
+    } finally {
+      setAgentHubKeyLoading(false);
+    }
+  }
+
+  async function createAgentHubKey() {
+    setAgentHubKeyCreating(true);
+    setGeneratedAgentHubKey(null);
+    try {
+      const res = await fetchWithAuth("/api/agent-hub/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: agentHubKeyLabel }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to create Agent Hub key");
+      setGeneratedAgentHubKey(data.apiKey || null);
+      setAgentHubKeys((current) => [data, ...current.filter((entry) => entry.id !== data.id)]);
+      toast.success("Agent Hub key created");
+    } catch (error) {
+      toast.error(error.message || "Failed to create Agent Hub key");
+    } finally {
+      setAgentHubKeyCreating(false);
+    }
+  }
+
+  async function revokeAgentHubKey(keyId) {
+    try {
+      const res = await fetchWithAuth(`/api/agent-hub/api-keys/${keyId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to revoke Agent Hub key");
+      setAgentHubKeys((current) =>
+        current.map((entry) => (entry.id === keyId ? { ...entry, ...data } : entry)),
+      );
+      toast.success("Agent Hub key revoked");
+    } catch (error) {
+      toast.error(error.message || "Failed to revoke Agent Hub key");
+    }
+  }
+
+  async function copyAgentHubKey() {
+    if (!generatedAgentHubKey) return;
+    try {
+      await navigator.clipboard.writeText(generatedAgentHubKey);
+      toast.success("Agent Hub key copied");
+    } catch {
+      toast.error("Failed to copy key");
+    }
   }
 
   async function handlePasswordChange(e) {
@@ -440,6 +513,124 @@ export default function SettingsPage() {
             </div>
           </div>
           <LLMSetupWizard compact />
+        </section>
+
+        <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-center gap-3">
+              <Shield size={20} className="text-blue-600" />
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Agent Hub API Keys</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Create installation keys for source catalog access.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={loadAgentHubKeys}
+              disabled={agentHubKeyLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw size={15} className={agentHubKeyLoading ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
+
+          {generatedAgentHubKey ? (
+            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                New key
+              </p>
+              <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-center">
+                <code className="min-w-0 flex-1 break-all rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-800">
+                  {generatedAgentHubKey}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyAgentHubKey}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                >
+                  <Copy size={15} />
+                  Copy
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-5 grid gap-3 md:grid-cols-[1fr,auto]">
+            <label>
+              <span className="sr-only">Agent Hub API key label</span>
+              <input
+                type="text"
+                value={agentHubKeyLabel}
+                onChange={(event) => setAgentHubKeyLabel(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/20"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={createAgentHubKey}
+              disabled={agentHubKeyCreating}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {agentHubKeyCreating ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Plus size={16} />
+              )}
+              Create Key
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {agentHubKeys.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-500">
+                No Agent Hub keys yet.
+              </div>
+            ) : (
+              agentHubKeys.map((key) => {
+                const revoked = key.status === "revoked";
+                return (
+                  <div
+                    key={key.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-bold text-slate-900">{key.label}</p>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
+                            revoked
+                              ? "border-slate-200 bg-white text-slate-500"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          }`}
+                        >
+                          {revoked ? "Revoked" : "Active"}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-mono text-xs font-semibold text-slate-500">
+                        {key.maskedKey || key.keyPrefix}
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-slate-400">
+                        Last used{" "}
+                        {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : "never"}
+                      </p>
+                    </div>
+                    {!revoked ? (
+                      <button
+                        type="button"
+                        onClick={() => revokeAgentHubKey(key.id)}
+                        className="inline-flex items-center justify-center rounded-xl border border-red-200 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50"
+                      >
+                        Revoke
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </section>
 
         {/* Change Password — only for email/password users */}

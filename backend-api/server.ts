@@ -1050,6 +1050,7 @@ async function migrateDB() {
        system_banner_message TEXT NOT NULL DEFAULT '',
        agent_hub_default_share_target TEXT NOT NULL DEFAULT 'both',
        agent_hub_url TEXT NOT NULL DEFAULT 'https://nora.solomontsao.com',
+       agent_hub_api_key_encrypted TEXT,
        created_at TIMESTAMP DEFAULT NOW(),
        updated_at TIMESTAMP DEFAULT NOW()
      )`,
@@ -1062,6 +1063,7 @@ async function migrateDB() {
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN system_banner_message TEXT NOT NULL DEFAULT ''; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN agent_hub_default_share_target TEXT NOT NULL DEFAULT 'both'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN agent_hub_url TEXT NOT NULL DEFAULT 'https://nora.solomontsao.com'; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
+    `DO $$ BEGIN ALTER TABLE platform_settings ADD COLUMN agent_hub_api_key_encrypted TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$`,
     `CREATE TABLE IF NOT EXISTS snapshots (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
        agent_id UUID,
@@ -1237,6 +1239,19 @@ async function migrateDB() {
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_hub_listings_slug_unique ON agent_hub_listings(slug) WHERE slug IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_owner ON agent_hub_listings(owner_user_id, created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_source_status ON agent_hub_listings(source_type, status, published_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS agent_hub_api_keys (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+       label TEXT NOT NULL,
+       key_hash TEXT NOT NULL UNIQUE,
+       key_prefix TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'active',
+       last_used_at TIMESTAMP,
+       revoked_at TIMESTAMP,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_hub_api_keys_user ON agent_hub_api_keys(user_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_agent_hub_api_keys_hash_active ON agent_hub_api_keys(key_hash) WHERE status = 'active' AND revoked_at IS NULL`,
     `CREATE TABLE IF NOT EXISTS agent_hub_listing_versions (
        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
        listing_id UUID REFERENCES agent_hub_listings(id) ON DELETE CASCADE,

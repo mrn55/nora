@@ -52,6 +52,10 @@ function formatCount(value) {
   return `${numeric}`;
 }
 
+function publisherName(detail) {
+  return detail?.publisher?.displayName || detail?.owner_name || detail?.owner_email || "Nora";
+}
+
 function parseFilename(headerValue, fallbackName) {
   const match = /filename="([^"]+)"/i.exec(headerValue || "");
   return match?.[1] || fallbackName;
@@ -464,7 +468,7 @@ export default function AgentHubTemplateDetail() {
                     <span>&bull;</span>
                     <span>v{detail.current_version || 1}</span>
                     <span>&bull;</span>
-                    <span>{detail.owner_name || detail.owner_email || "Nora"}</span>
+                    <span>{publisherName(detail)}</span>
                     {detail.snapshot?.templateKey ? (
                       <>
                         <span>&bull;</span>
@@ -859,8 +863,19 @@ export default function AgentHubTemplateDetail() {
                     <MetadataRow label="Price" value={detail.price || "Free"} />
                     <MetadataRow
                       label="Owner"
-                      value={detail.owner_name || detail.owner_email || "Nora"}
+                      value={publisherName(detail)}
                     />
+                    <MetadataRow
+                      label="Publisher"
+                      value={
+                        detail.publisher?.verified
+                          ? `${publisherName(detail)} · verified`
+                          : publisherName(detail)
+                      }
+                    />
+                    {detail.publisher?.sourceHubUrl ? (
+                      <MetadataRow label="Source Hub" value={detail.publisher.sourceHubUrl} />
+                    ) : null}
                     <MetadataRow label="Version" value={`v${detail.current_version || 1}`} />
                     <MetadataRow
                       label="Template Key"

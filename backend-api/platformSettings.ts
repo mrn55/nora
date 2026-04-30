@@ -1,5 +1,6 @@
 // @ts-nocheck
 const db = require("./db");
+const { decrypt, encrypt, ensureEncryptionConfigured } = require("./crypto");
 
 const DEFAULT_DEPLOYMENT_DEFAULTS = Object.freeze({
   vcpu: 1,
@@ -15,6 +16,7 @@ const DEFAULT_SYSTEM_BANNER = Object.freeze({
 const DEFAULT_AGENT_HUB_SETTINGS = Object.freeze({
   defaultShareTarget: "both",
   url: "https://nora.solomontsao.com",
+  sourceApiKeyEncrypted: null,
 });
 const SYSTEM_BANNER_SEVERITIES = new Set(["warning", "critical"]);
 const AGENT_HUB_SHARE_TARGETS = new Set(["internal", "community", "both"]);
@@ -56,6 +58,13 @@ function normalizeUrl(value, fallback = DEFAULT_AGENT_HUB_SETTINGS.url) {
   } catch {
     return fallback;
   }
+}
+
+function maskSecret(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) return "";
+  if (normalized.length <= 12) return `${normalized.slice(0, 4)}...`;
+  return `${normalized.slice(0, 10)}...${normalized.slice(-4)}`;
 }
 
 function normalizeDeploymentDefaults(input = {}, fallback = DEFAULT_DEPLOYMENT_DEFAULTS) {
@@ -177,13 +186,32 @@ function normalizeAgentHubSettings(input = {}, fallback = DEFAULT_AGENT_HUB_SETT
   return {
     defaultShareTarget,
     url: normalizeUrl(input.agent_hub_url ?? input.url, fallback.url),
+    sourceApiKeyEncrypted:
+      input.agent_hub_api_key_encrypted ??
+      input.sourceApiKeyEncrypted ??
+      fallback.sourceApiKeyEncrypted ??
+      null,
   };
 }
 
 function resolveAgentHubSettingsPayload(settings) {
+  const envApiKey = normalizeText(process.env.NORA_AGENT_HUB_API_KEY);
+  let storedApiKeyMasked = "";
+  if (settings.sourceApiKeyEncrypted) {
+    try {
+      storedApiKeyMasked = maskSecret(decrypt(settings.sourceApiKeyEncrypted));
+    } catch {
+      storedApiKeyMasked = "unreadable";
+    }
+  }
+  const hasStoredApiKey = Boolean(settings.sourceApiKeyEncrypted);
   return {
-    ...settings,
+    defaultShareTarget: settings.defaultShareTarget,
+    url: settings.url,
     envUrl: normalizeUrl(process.env.NORA_AGENT_HUB_URL, settings.url),
+    sourceApiKeyConfigured: Boolean(envApiKey || hasStoredApiKey),
+    sourceApiKeySource: envApiKey ? "env" : hasStoredApiKey ? "database" : "none",
+    sourceApiKeyMasked: envApiKey ? maskSecret(envApiKey) : storedApiKeyMasked,
   };
 }
 
@@ -215,9 +243,21 @@ function parseRequiredAgentHubSettings(input = {}) {
     throw error;
   }
 
+  const sourceApiKey =
+    input.sourceApiKey === undefined || input.sourceApiKey === null
+      ? undefined
+      : normalizeText(input.sourceApiKey);
+  if (sourceApiKey !== undefined && sourceApiKey.length > 1000) {
+    const error = new Error("sourceApiKey must be 1000 characters or fewer");
+    error.statusCode = 400;
+    throw error;
+  }
+
   return {
     defaultShareTarget: rawShareTarget,
     url: normalizedUrl,
+    sourceApiKey,
+    clearSourceApiKey: parseBoolean(input.clearSourceApiKey, false),
   };
 }
 
@@ -248,7 +288,8 @@ async function getSystemBanner() {
 async function getAgentHubSettings() {
   const result = await db.query(
     `SELECT agent_hub_default_share_target,
-            agent_hub_url
+            agent_hub_url,
+            agent_hub_api_key_encrypted
        FROM platform_settings
       WHERE singleton = TRUE
       LIMIT 1`,
@@ -256,6 +297,20 @@ async function getAgentHubSettings() {
 
   const settings = normalizeAgentHubSettings(result.rows[0] || DEFAULT_AGENT_HUB_SETTINGS);
   return resolveAgentHubSettingsPayload(settings);
+}
+
+async function getAgentHubSourceApiKey() {
+  const envApiKey = normalizeText(process.env.NORA_AGENT_HUB_API_KEY);
+  if (envApiKey) return envApiKey;
+
+  const result = await db.query(
+    `SELECT agent_hub_api_key_encrypted
+       FROM platform_settings
+      WHERE singleton = TRUE
+      LIMIT 1`,
+  );
+  const encrypted = result.rows[0]?.agent_hub_api_key_encrypted;
+  return encrypted ? decrypt(encrypted) : "";
 }
 
 async function updateDeploymentDefaults(defaults = {}, limits = {}) {
@@ -311,21 +366,42 @@ async function updateSystemBanner(banner = {}) {
 
 async function updateAgentHubSettings(settings = {}) {
   const next = parseRequiredAgentHubSettings(settings);
+  const current = await db.query(
+    `SELECT agent_hub_api_key_encrypted
+       FROM platform_settings
+      WHERE singleton = TRUE
+      LIMIT 1`,
+  );
+  let encryptedApiKey = current.rows[0]?.agent_hub_api_key_encrypted || null;
+  if (next.clearSourceApiKey) {
+    encryptedApiKey = null;
+  } else if (next.sourceApiKey !== undefined) {
+    if (next.sourceApiKey) {
+      ensureEncryptionConfigured("Agent Hub source API key storage");
+      encryptedApiKey = encrypt(next.sourceApiKey);
+    } else {
+      encryptedApiKey = current.rows[0]?.agent_hub_api_key_encrypted || null;
+    }
+  }
+
   const result = await db.query(
     `INSERT INTO platform_settings(
        singleton,
        agent_hub_default_share_target,
        agent_hub_url,
+       agent_hub_api_key_encrypted,
        updated_at
      )
-     VALUES(TRUE, $1, $2, NOW())
+     VALUES(TRUE, $1, $2, $3, NOW())
      ON CONFLICT (singleton) DO UPDATE SET
        agent_hub_default_share_target = EXCLUDED.agent_hub_default_share_target,
        agent_hub_url = EXCLUDED.agent_hub_url,
+       agent_hub_api_key_encrypted = EXCLUDED.agent_hub_api_key_encrypted,
        updated_at = NOW()
      RETURNING agent_hub_default_share_target,
-               agent_hub_url`,
-    [next.defaultShareTarget, next.url],
+               agent_hub_url,
+               agent_hub_api_key_encrypted`,
+    [next.defaultShareTarget, next.url, encryptedApiKey],
   );
 
   return resolveAgentHubSettingsPayload(normalizeAgentHubSettings(result.rows[0] || next));
@@ -339,6 +415,7 @@ module.exports = {
   SYSTEM_BANNER_SEVERITIES,
   clampDeploymentDefaults,
   getAgentHubSettings,
+  getAgentHubSourceApiKey,
   getDeploymentDefaults,
   getSystemBanner,
   isSystemBannerFeatureEnabled,

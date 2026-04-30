@@ -62,6 +62,7 @@ const LISTING_SELECT = `
     s.template_key,
     s.agent_id AS source_agent_id,
     owner.name AS owner_name,
+    owner.avatar AS owner_avatar,
     owner.email AS owner_email,
     COALESCE(report_counts.open_report_count, 0)::int AS open_report_count
   FROM agent_hub_listings ml

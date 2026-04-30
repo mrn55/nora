@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   system_banner_message TEXT NOT NULL DEFAULT '',
   agent_hub_default_share_target TEXT NOT NULL DEFAULT 'both',
   agent_hub_url TEXT NOT NULL DEFAULT 'https://nora.solomontsao.com',
+  agent_hub_api_key_encrypted TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -169,6 +170,25 @@ CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_owner
 
 CREATE INDEX IF NOT EXISTS idx_agent_hub_listings_source_status
   ON agent_hub_listings(source_type, status, published_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_hub_api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  key_prefix TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  last_used_at TIMESTAMP,
+  revoked_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_hub_api_keys_user
+  ON agent_hub_api_keys(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_agent_hub_api_keys_hash_active
+  ON agent_hub_api_keys(key_hash)
+  WHERE status = 'active' AND revoked_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS agent_hub_listing_versions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -32,6 +32,18 @@ function normalizeCatalogItem(item = {}) {
   const listing = item.listing || item;
   const id = String(listing.id || listing.slug || item.id || "").trim();
   if (!id) return null;
+  const publisher =
+    listing.publisher && typeof listing.publisher === "object"
+      ? listing.publisher
+      : item.publisher && typeof item.publisher === "object"
+        ? item.publisher
+        : null;
+  const ownerName =
+    publisher?.displayName ||
+    listing.ownerName ||
+    listing.owner_name ||
+    item.owner_name ||
+    "Nora Community";
 
   return {
     ...item,
@@ -45,7 +57,15 @@ function normalizeCatalogItem(item = {}) {
     description: listing.description || item.description || "",
     category: listing.category || item.category || "General",
     price: listing.price || item.price || "Free",
-    owner_name: listing.ownerName || listing.owner_name || item.owner_name || "Nora Community",
+    owner_name: ownerName,
+    publisher: publisher
+      ? {
+          displayName: publisher.displayName || ownerName,
+          avatar: publisher.avatar || null,
+          verified: publisher.verified === true,
+          sourceHubUrl: publisher.sourceHubUrl || item.hubUrl || "",
+        }
+      : null,
     current_version: listing.version || listing.current_version || item.current_version || 1,
   };
 }
@@ -62,17 +82,22 @@ function normalizeCatalogPayload(payload = {}, { hubUrl = "", error = "" } = {})
     hub: {
       url: hubUrl,
       lastSyncedAt: new Date().toISOString(),
+      cacheTtlSeconds: Math.round(DEFAULT_CACHE_TTL_MS / 1000),
       error,
+      setupRequired: error === "Agent Hub API key is not configured",
     },
   };
 }
 
 async function fetchJson(url, options = {}) {
+  const apiKey = String(options.apiKey || "").trim();
+  const { apiKey: _apiKey, timeoutMs: _timeoutMs, ...fetchOptions } = options;
   const response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
     headers: {
       Accept: "application/json",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       ...(options.headers || {}),
     },
     signal: AbortSignal.timeout(options.timeoutMs || 5000),
@@ -89,6 +114,13 @@ async function fetchCatalog(settings = {}, options = {}) {
   if (!hubUrl) {
     return normalizeCatalogPayload([], { error: "Agent Hub URL is not configured" });
   }
+  const apiKey = String(settings.sourceApiKey || settings.apiKey || "").trim();
+  if (!apiKey) {
+    return normalizeCatalogPayload([], {
+      hubUrl,
+      error: "Agent Hub API key is not configured",
+    });
+  }
 
   const now = Date.now();
   if (
@@ -102,6 +134,7 @@ async function fetchCatalog(settings = {}, options = {}) {
 
   try {
     const payload = await fetchJson(buildHubUrl(hubUrl, "/api/agent-hub/catalog"), {
+      apiKey,
       timeoutMs: options.timeoutMs || 5000,
     });
     const normalized = normalizeCatalogPayload(payload, { hubUrl });
@@ -119,6 +152,7 @@ async function fetchCatalog(settings = {}, options = {}) {
       hub: {
         url: hubUrl,
         lastSyncedAt: fallback?.hub?.lastSyncedAt || null,
+        cacheTtlSeconds: Math.round(DEFAULT_CACHE_TTL_MS / 1000),
         error: error.message,
       },
     };
@@ -130,6 +164,10 @@ async function fetchListing(settings = {}, remoteId) {
   if (!hubUrl) {
     throw new Error("Agent Hub URL is not configured");
   }
+  const apiKey = String(settings.sourceApiKey || settings.apiKey || "").trim();
+  if (!apiKey) {
+    throw new Error("Agent Hub API key is not configured");
+  }
   const normalizedRemoteId = String(remoteId || "")
     .replace(/^hub:/, "")
     .trim();
@@ -138,6 +176,7 @@ async function fetchListing(settings = {}, remoteId) {
   }
   const payload = await fetchJson(
     buildHubUrl(hubUrl, `/api/agent-hub/catalog/${encodeURIComponent(normalizedRemoteId)}`),
+    { apiKey },
   );
   const listing = normalizeCatalogItem(payload.listing || payload);
   if (!listing) {
@@ -156,8 +195,13 @@ async function submitListing(settings = {}, payload = {}) {
   if (!hubUrl) {
     throw new Error("Agent Hub URL is not configured");
   }
+  const apiKey = String(settings.sourceApiKey || settings.apiKey || "").trim();
+  if (!apiKey) {
+    throw new Error("Agent Hub API key is not configured");
+  }
   return fetchJson(buildHubUrl(hubUrl, "/api/agent-hub/submissions"), {
     method: "POST",
+    apiKey,
     body: JSON.stringify(payload),
     timeoutMs: 5000,
   });

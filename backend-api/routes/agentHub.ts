@@ -4,10 +4,11 @@ const db = require("../db");
 const { addDeploymentJob } = require("../redisQueue");
 const billing = require("../billing");
 const agentHubStore = require("../agentHubStore");
+const agentHubApiKeys = require("../agentHubApiKeys");
 const { scanTemplatePayloadForSecrets } = require("../agentHubSafety");
 const { buildAgentHubTemplateUpdate } = require("../agentHubTemplateEdits");
 const { fetchCatalog, fetchListing, submitListing } = require("../agentHubRemote");
-const { getAgentHubSettings } = require("../platformSettings");
+const { getAgentHubSettings, getAgentHubSourceApiKey } = require("../platformSettings");
 const snapshots = require("../snapshots");
 const scheduler = require("../scheduler");
 const monitoring = require("../monitoring");
@@ -237,6 +238,14 @@ function agentHubAuditMetadata(req, context = {}) {
   return buildAuditMetadata(req, context);
 }
 
+async function getAgentHubRemoteSettings() {
+  const settings = await getAgentHubSettings();
+  return {
+    ...settings,
+    sourceApiKey: await getAgentHubSourceApiKey(),
+  };
+}
+
 async function buildListingTemplateDetail(listing, options = {}) {
   const snapshot = listing?.snapshot_id ? await snapshots.getSnapshot(listing.snapshot_id) : null;
   const templatePayload = snapshot
@@ -353,7 +362,7 @@ function buildCentralSubmissionPayload(listing, snapshot, templatePayload) {
 }
 
 async function submitToCentralHub(listing, snapshot, templatePayload) {
-  const settings = await getAgentHubSettings();
+  const settings = await getAgentHubRemoteSettings();
   try {
     const response = await submitListing(
       settings,
@@ -384,7 +393,7 @@ router.get(
 router.get(
   "/community",
   asyncHandler(async (req, res) => {
-    const settings = await getAgentHubSettings();
+    const settings = await getAgentHubRemoteSettings();
     const catalog = await fetchCatalog(settings, {
       refresh: req.query.refresh === "true",
     });
@@ -404,6 +413,52 @@ router.get(
   "/settings",
   asyncHandler(async (_req, res) => {
     res.json(await getAgentHubSettings());
+  }),
+);
+
+router.get(
+  "/api-keys",
+  asyncHandler(async (req, res) => {
+    res.json(await agentHubApiKeys.listApiKeys(req.user.id));
+  }),
+);
+
+router.post(
+  "/api-keys",
+  asyncHandler(async (req, res) => {
+    const key = await agentHubApiKeys.createApiKey(req.user.id, req.body?.label);
+    await monitoring.logEvent(
+      "agent_hub_api_key_created",
+      `Agent Hub API key "${key.label}" was created`,
+      agentHubAuditMetadata(req, {
+        result: {
+          keyId: key.id,
+          keyPrefix: key.keyPrefix,
+          label: key.label,
+        },
+      }),
+    );
+    res.status(201).json(key);
+  }),
+);
+
+router.delete(
+  "/api-keys/:id",
+  asyncHandler(async (req, res) => {
+    const key = await agentHubApiKeys.revokeApiKey(req.params.id, req.user.id);
+    if (!key) return res.status(404).json({ error: "Agent Hub API key not found" });
+    await monitoring.logEvent(
+      "agent_hub_api_key_revoked",
+      `Agent Hub API key "${key.label}" was revoked`,
+      agentHubAuditMetadata(req, {
+        result: {
+          keyId: key.id,
+          keyPrefix: key.keyPrefix,
+          label: key.label,
+        },
+      }),
+    );
+    res.json(key);
   }),
 );
 
@@ -561,7 +616,7 @@ router.post(
     let remoteInstall = false;
 
     if (isRemoteListingId(listingId)) {
-      const settings = await getAgentHubSettings();
+      const settings = await getAgentHubRemoteSettings();
       const remoteDetail = await fetchListing(settings, listingId);
       const detail = buildRemoteTemplateDetail(remoteDetail, { includeContent: true });
       listing = detail;
@@ -820,7 +875,7 @@ router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     if (isRemoteListingId(req.params.id)) {
-      const settings = await getAgentHubSettings();
+      const settings = await getAgentHubRemoteSettings();
       const remoteDetail = await fetchListing(settings, req.params.id);
       return res.json(buildRemoteTemplateDetail(remoteDetail, { includeContent: true }));
     }
@@ -838,7 +893,7 @@ router.get(
   "/:id/download",
   asyncHandler(async (req, res) => {
     if (isRemoteListingId(req.params.id)) {
-      const settings = await getAgentHubSettings();
+      const settings = await getAgentHubRemoteSettings();
       const remoteDetail = await fetchListing(settings, req.params.id);
       const detail = buildRemoteTemplateDetail(remoteDetail, { includeContent: true });
       const payload = {

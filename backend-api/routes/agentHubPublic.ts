@@ -2,6 +2,7 @@
 const express = require("express");
 const agentHubStore = require("../agentHubStore");
 const snapshots = require("../snapshots");
+const { requireAgentHubApiKey } = require("../agentHubApiKeys");
 const { scanTemplatePayloadForSecrets } = require("../agentHubSafety");
 const {
   extractTemplateDefaultsFromSnapshot,
@@ -25,10 +26,33 @@ function normalizeCategory(value) {
   return normalizeText(value, "General", 60) || "General";
 }
 
-function buildCatalogListing(listing, snapshot = null, templatePayload = null) {
+function requestBaseUrl(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim();
+  const forwardedHost = String(req.headers["x-forwarded-host"] || "")
+    .split(",")[0]
+    .trim();
+  const protocol = forwardedProto || req.protocol || "https";
+  const host = forwardedHost || req.get("host") || "";
+  return host ? `${protocol}://${host}` : "";
+}
+
+function buildPublisher(listing = {}, sourceHubUrl = "") {
+  const displayName = listing.owner_name || "Nora Community";
+  return {
+    displayName,
+    avatar: listing.owner_avatar || null,
+    verified: Boolean(listing.owner_user_id),
+    sourceHubUrl,
+  };
+}
+
+function buildCatalogListing(listing, snapshot = null, templatePayload = null, options = {}) {
   const template = templatePayload
     ? summarizeTemplatePayload(templatePayload, { includeContent: false })
     : null;
+  const publisher = buildPublisher(listing, options.sourceHubUrl || "");
 
   return {
     id: listing.id,
@@ -39,7 +63,8 @@ function buildCatalogListing(listing, snapshot = null, templatePayload = null) {
     price: listing.price || "Free",
     source_type: "community",
     status: listing.status,
-    ownerName: listing.owner_name || listing.owner_email || "Nora Community",
+    ownerName: publisher.displayName,
+    publisher,
     current_version: listing.current_version || 1,
     installs: listing.installs || 0,
     downloads: listing.downloads || 0,
@@ -76,12 +101,12 @@ function buildCatalogListing(listing, snapshot = null, templatePayload = null) {
   };
 }
 
-async function buildCatalogDetail(listing, { includeContent = false } = {}) {
+async function buildCatalogDetail(listing, { includeContent = false, sourceHubUrl = "" } = {}) {
   const snapshot = listing?.snapshot_id ? await snapshots.getSnapshot(listing.snapshot_id) : null;
   const templatePayload = snapshot
     ? extractTemplatePayloadFromSnapshot(snapshot, { includeBootstrap: true })
     : null;
-  const summary = buildCatalogListing(listing, snapshot, templatePayload);
+  const summary = buildCatalogListing(listing, snapshot, templatePayload, { sourceHubUrl });
   if (!includeContent || !templatePayload) return summary;
 
   return {
@@ -92,13 +117,17 @@ async function buildCatalogDetail(listing, { includeContent = false } = {}) {
   };
 }
 
-router.get("/catalog", async (_req, res, next) => {
+router.get("/catalog", requireAgentHubApiKey, async (req, res, next) => {
   try {
+    const sourceHubUrl = requestBaseUrl(req);
     const listings = await agentHubStore.listCommunityCatalog();
-    const items = await Promise.all(listings.map((listing) => buildCatalogDetail(listing)));
+    const items = await Promise.all(
+      listings.map((listing) => buildCatalogDetail(listing, { sourceHubUrl })),
+    );
     res.json({
       hub: {
         name: "Nora Agent Hub",
+        url: sourceHubUrl,
       },
       items,
     });
@@ -107,8 +136,9 @@ router.get("/catalog", async (_req, res, next) => {
   }
 });
 
-router.get("/catalog/:id", async (req, res, next) => {
+router.get("/catalog/:id", requireAgentHubApiKey, async (req, res, next) => {
   try {
+    const sourceHubUrl = requestBaseUrl(req);
     const listing = await agentHubStore.getListing(req.params.id);
     if (
       !listing ||
@@ -121,13 +151,13 @@ router.get("/catalog/:id", async (req, res, next) => {
     ) {
       return res.status(404).json({ error: "Listing not found" });
     }
-    res.json(await buildCatalogDetail(listing, { includeContent: true }));
+    res.json(await buildCatalogDetail(listing, { includeContent: true, sourceHubUrl }));
   } catch (error) {
     next(error);
   }
 });
 
-router.post("/submissions", async (req, res, next) => {
+router.post("/submissions", requireAgentHubApiKey, async (req, res, next) => {
   try {
     const payload = req.body || {};
     const listingPayload = payload.listing || payload;
@@ -160,7 +190,7 @@ router.post("/submissions", async (req, res, next) => {
     );
     const listing = await agentHubStore.upsertListing({
       snapshotId: snapshot.id,
-      ownerUserId: null,
+      ownerUserId: req.agentHubPublisher.id,
       name,
       description,
       price: "Free",
