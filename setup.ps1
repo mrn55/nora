@@ -1,5 +1,7 @@
+#requires -Version 7.0
+
 # ============================================================
-# Nora — One-line installer & setup (Windows PowerShell)
+# Nora — One-line installer & setup (PowerShell 7+)
 # ============================================================
 # Usage:
 #   iwr -useb https://raw.githubusercontent.com/solomon2773/nora/master/setup.ps1 | iex
@@ -17,6 +19,14 @@ param(
     [switch]$Update,
     [switch]$CleanReinstall
 )
+
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host "[error] Nora setup requires PowerShell 7 or newer." -ForegroundColor Red
+    Write-Host "        Install PowerShell 7, then run this script from pwsh:"
+    Write-Host "        pwsh"
+    Write-Host "        .\setup.ps1"
+    exit 1
+}
 
 $ErrorActionPreference = "Stop"
 
