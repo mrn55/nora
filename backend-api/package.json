@@ -5,9 +5,10 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "start": "tsx server.ts",
+    "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "jest --forceExit --detectOpenHandles"
+    "test": "jest --forceExit --detectOpenHandles",
+    "build": "tsc -p tsconfig.json --outDir dist"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
